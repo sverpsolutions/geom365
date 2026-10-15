@@ -64,3 +64,6 @@ superprompt/
 
 # Competitor gap analysis (quotes a competitor proposal - repo is public)
 GEOM365_*.md
+
+# Server database dumps
+deploy/backups/

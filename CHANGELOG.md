@@ -2,6 +2,14 @@
 
 Versions follow `MAJOR.MINOR.PATCH`. New work lands on the `testing` branch as `-beta.N` tags; once verified it is merged to `main` and tagged without the suffix.
 
+## Unreleased — 2026-10-15 (main) — VPS deployment, PO status fix
+
+### Added
+- **Docker deployment** for the Hostinger VPS (`deploy/`, `backend/Dockerfile`): private PostgreSQL 16, FastAPI backend (runs `alembic upgrade head` on start), Caddy web container routed by the server's Traefik with Let's Encrypt. Security headers (HSTS, nosniff, frame, referrer, permissions), login rate limit 10/min per IP, nightly `pg_dump` (14 days). Live at https://geom365.sverpsolutions.com. Runbook: `deploy/README.md`.
+
+### Fixed
+- **PO creation failed** with `po_headers_status_check`: the PO screen saves `pending_approval`, which the database did not allow. Migration `a1b3c5d7e9f1` allows `pending_approval` and `completed`.
+
 ## v1.5.0-beta.2 — 2026-10-03 (testing) — cash management, accounts payable, users & locations, company profile
 
 Run `alembic upgrade head` (4 migrations: `c6e8a0b2d4f5`, `d7f9b1c3e5a6`, `e8a0c2d4f6b7`, `f9b1d3e5a7c8`).
