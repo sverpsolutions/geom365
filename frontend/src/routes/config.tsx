@@ -7,7 +7,10 @@ import ItemMaster from '../pages/products/ItemMaster';
 import ProductAdd from '../pages/products/ProductAdd';
 import ImportProducts from '../pages/products/ImportProducts';
 import Suppliers from '../pages/masters/Suppliers';
+import SupplierDetail from '../pages/suppliers/SupplierDetail';
 import VendorApprovals from '../pages/suppliers/VendorApprovals';
+import VendorPortal from '../pages/suppliers/VendorPortal';
+import VendorRegistration from '../pages/suppliers/VendorRegistration';
 import HsnMaster from '../pages/masters/HsnMaster';
 import PosBilling from '../pages/billing/PosBilling';
 import InvoiceList from '../pages/billing/InvoiceList';
@@ -16,9 +19,15 @@ import InvoiceView from '../pages/billing/InvoiceView';
 import EstimateList from '../pages/billing/EstimateList';
 import EstimateCreate from '../pages/billing/EstimateCreate';
 import Purchases from '../pages/purchases/Purchases';
+import PurchaseEntry from '../pages/purchases/PurchaseEntry';
 import POList from '../pages/purchases/POList';
 import POCreate from '../pages/purchases/POCreate';
 import PODetail from '../pages/purchases/PODetail';
+import StockTakeList from '../pages/inventory/StockTakeList';
+import StockTakeCount from '../pages/inventory/StockTakeCount';
+import StockTakeView from '../pages/inventory/StockTakeView';
+import StockTakeVariancePrint from '../pages/inventory/StockTakeVariancePrint';
+import GRNPrint from '../pages/purchases/GRNPrint';
 import ReportCenter from '../pages/reports/ReportCenter';
 import SalesReport from '../pages/reports/SalesReport';
 import PurchaseReport from '../pages/reports/PurchaseReport';
@@ -63,9 +72,12 @@ import SystemHelp from '../pages/help/SystemHelp';
 import PortalHub from '../pages/help/PortalHub';
 import ThemeSettings from '../pages/settings/ThemeSettings';
 import UserManagement from '../pages/settings/UserManagement';
+import DashboardBuilder from '../pages/dashboard/DashboardBuilder';
 import MultiBranchTransfer from '../pages/inventory/MultiBranchTransfer';
 import TransferRegister from '../pages/inventory/TransferRegister';
 import SyncMonitor from '../pages/inventory/SyncMonitor';
+import ExpiryDashboard from '../pages/inventory/ExpiryDashboard';
+import BatchMaster from '../pages/inventory/BatchMaster';
 import LogisticList from '../pages/logistics/LogisticList';
 import LogisticTransferWizard from '../pages/logistics/LogisticTransferWizard';
 
@@ -109,7 +121,10 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '104', path: '/products/edit/:id', component: ProductAdd, title: 'Edit Item' },
   { id: '105', path: '/products/import', component: ImportProducts, title: 'Import Products' },
   { id: '201', path: '/masters/suppliers', component: Suppliers, title: 'Suppliers' },
+  { id: '204', path: '/masters/suppliers/:id', component: SupplierDetail, title: 'Supplier Master Detail' },
   { id: '202', path: '/masters/suppliers/approvals', component: VendorApprovals, title: 'Vendor Approvals' },
+  { id: '205', path: '/portal/vendor', component: VendorPortal, title: 'Vendor Portal' },
+  { id: '206', path: '/vendor/register', component: VendorRegistration, title: 'Vendor Registration' },
   { id: '203', path: '/masters/customers', component: Customers, title: 'Customers' },
   { id: '210', path: '/masters/groups', component: Groups, title: 'Item Groups' },
   { id: '211', path: '/masters/subgroups', component: SubGroups, title: 'Sub Groups' },
@@ -140,6 +155,8 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '403', path: '/purchases/po/create', component: POCreate, title: 'Create PO' },
   { id: '404', path: '/purchases/po/edit/:id', component: POCreate, title: 'Edit PO' },
   { id: '405', path: '/purchases/po/:id', component: PODetail, title: 'PO Detail' },
+  { id: '513', path: '/inventory/expiry-dashboard', component: ExpiryDashboard, title: 'Expiry & Batch Dashboard' },
+  { id: '514', path: '/inventory/batches', component: BatchMaster, title: 'Batch Master' },
   // was a mock-up page; the real stock view is the Stock Report
   { id: '501', path: '/inventory/status', component: StockReport, title: 'Stock Status' },
   { id: '502', path: '/inventory/sync', component: GlobalSync, title: 'Global Sync' },
@@ -179,6 +196,7 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '990', path: '/portals', component: PortalHub, title: 'Portal Hub' },
   { id: '910', path: '/settings/theme', component: ThemeSettings, title: 'Theme Settings' },
   { id: '911', path: '/settings/users', component: UserManagement, title: 'Users & Locations' },
+  { id: '912', path: '/settings/dashboard-builder', component: DashboardBuilder, title: 'Dashboard Builder' },
   { id: '801', path: '/hr/employees', component: () => <ComingSoon name="Employees" />, title: 'Employees' },
   { id: '802', path: '/hr/attendance', component: () => <ComingSoon name="Attendance" />, title: 'Attendance' },
   { id: '503', path: '/inventory/transfer/out', component: () => <TransferRegister direction="out" />, title: 'Stock Transfer OUT' },
@@ -191,6 +209,9 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '1002', path: '/logistics/new', component: LogisticTransferWizard, title: 'New Transfer' },
   { id: '1003', path: '/logistics/transfer/:id', component: LogisticTransferWizard, title: 'Logistics' },
   { id: '406', path: '/purchases/grn', component: Purchases, title: 'GRN — Inward' },
+  { id: '409', path: '/purchases/grn/new', component: PurchaseEntry, title: 'New Inward (GRN)' },
+  { id: '410', path: '/purchases/grn/:id', component: Purchases, title: 'GRN Detail' },
+  { id: '411', path: '/purchases/grn/print/:id', component: GRNPrint, title: 'GRN Print' },
   { id: '603', path: '/accounts/bills', component: BillEntry, title: 'Bill Entry (SPS)' },
   { id: '1101', path: '/schemes', component: () => <ComingSoon name="Schemes" />, title: 'Schemes' },
   { id: '1102', path: '/bulk-pricing', component: () => <ComingSoon name="Bulk Discount" />, title: 'Bulk Discount' },
@@ -211,7 +232,11 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '321', path: '/billing/returns/list', component: CreditNotes, title: 'Credit Notes' },
   { id: '407', path: '/purchase-returns/create', component: PurchaseReturn, title: 'Purchase Return' },
   { id: '408', path: '/purchase-returns', component: DebitNotes, title: 'Debit Notes' },
-  { id: '506', path: '/inventory/audit', component: () => <ComingSoon name="Physical Audit" />, title: 'Physical Audit' },
+  { id: '506', path: '/inventory/audit', component: StockTakeList, title: 'Physical Audit' },
+  { id: '508', path: '/inventory/stock-take', component: StockTakeList, title: 'Stock Take' },
+  { id: '509', path: '/inventory/stock-take/count/:id', component: StockTakeCount, title: 'Stock Count' },
+  { id: '511', path: '/inventory/stock-take/view/:id', component: StockTakeView, title: 'Stock Take Summary' },
+  { id: '512', path: '/inventory/stock-take/variance-print/:id', component: StockTakeVariancePrint, title: 'Variance Report' },
   { id: '507', path: '/inventory/barcode', component: () => <ComingSoon name="Barcode Printing" />, title: 'Barcode Printing' },
 ];
 

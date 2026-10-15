@@ -1,5 +1,6 @@
 import { matchesSearch } from '../../utils/search';
 import { useEffect, useState, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { suppliers_api, states_api, type supplier_list_item, type supplier_detail, type state_item, type supplier_gstin_item } from '../../api/suppliers'
 import PageHeader from '../../components/ui/PageHeader'
 import StatusBadge from '../../components/ui/StatusBadge'
@@ -500,9 +501,14 @@ export default function SuppliersPage({ searchQuery = '', onCountUpdate }: { sea
                     </td>
                     <td className="px-6 py-4 text-center"><StatusBadge active={s.status} /></td>
                     <td className="px-6 py-4 text-center">
-                      <button onClick={() => handleEdit(s.id)} className="text-[10px] font-black text-blue-600 hover:text-blue-800 uppercase border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-all">
-                        Edit
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <Link to={`/masters/suppliers/${s.id}`} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase border border-indigo-200 px-2.5 py-1.5 rounded-lg hover:bg-indigo-50 transition-all">
+                          View Details
+                        </Link>
+                        <button onClick={() => handleEdit(s.id)} className="text-[10px] font-black text-blue-600 hover:text-blue-800 uppercase border border-blue-200 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition-all">
+                          Edit
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1045,19 +1051,39 @@ export default function SuppliersPage({ searchQuery = '', onCountUpdate }: { sea
                       }} placeholder="Certificate number or remarks..." />
                     </div>
                     <div className="mt-4">
-                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">File Path / Reference</label>
-                      <div className="flex gap-2">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">File Upload (PDF, PNG, JPG)</label>
+                      <div className="flex gap-2 items-center flex-wrap">
                         <input
-                          type="text"
-                          value={doc.file_path || ''}
-                          onChange={e => {
-                            const arr = [...(form.documents || [])] as any[]
-                            arr[i].file_path = e.target.value
-                            setForm(f => ({ ...f, documents: arr }))
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg,.webp"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            const fd = new FormData()
+                            fd.append('file', file)
+                            try {
+                              toast.loading('Uploading document...', { id: 'doc-up' })
+                              const res = await suppliers_api.upload_file(fd)
+                              const arr = [...(form.documents || [])] as any[]
+                              arr[i].file_path = res.data.file_path
+                              setForm(f => ({ ...f, documents: arr }))
+                              toast.success('Document uploaded!', { id: 'doc-up' })
+                            } catch (err: any) {
+                              toast.error('Upload failed', { id: 'doc-up' })
+                            }
                           }}
-                          className="flex-1 border border-slate-200 rounded-lg px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm"
-                          placeholder="Enter file path or document reference..."
+                          className="flex-1 border border-slate-200 rounded-lg p-1.5 text-xs bg-slate-50 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[11px] file:font-bold file:bg-blue-600 file:text-white"
                         />
+                        {doc.file_path && (
+                          <a
+                            href={doc.file_path.startsWith('http') ? doc.file_path : `${doc.file_path}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold whitespace-nowrap hover:bg-blue-100"
+                          >
+                            View File
+                          </a>
+                        )}
                       </div>
                     </div>
                   </CardRow>

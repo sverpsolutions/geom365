@@ -118,6 +118,7 @@ export interface supplier_list_item {
   id: number;
   supplier_code: string | null;
   name: string;
+  supplier_name?: string;
   phone: string;
   city: string | null;
   gst_number: string | null;
@@ -150,6 +151,18 @@ export interface supplier_detail extends supplier_list_item {
   approved_at?: string | null;
   rejection_reason?: string | null;
   correction_notes?: string | null;
+  trade_name?: string | null;
+  designation?: string | null;
+  alt_phone?: string | null;
+  alt_email?: string | null;
+  msme_number?: string | null;
+  fssai_number?: string | null;
+  tan_number?: string | null;
+  business_constitution?: string | null;
+  product_categories?: string[] | any;
+  company_description?: string | null;
+  portal_sales_enabled?: boolean;
+  portal_sales_config?: Record<string, boolean>;
 
   // Nested
   addresses: supplier_address[];
@@ -210,4 +223,52 @@ export const suppliers_api = {
   upload_file: (formData: FormData) => api.post('/upload/supplier-doc', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
+  ledger: (id: number) => api.get<ledger_row[]>(`/suppliers/${id}/ledger`),
+  get_terms: (id: number) => api.get<supplier_terms[]>(`/suppliers/${id}/terms`),
+  add_terms: (id: number, terms_text: string) => api.post<supplier_terms>(`/suppliers/${id}/terms`, { terms_text }),
+  delete_terms: (supplier_id: number, term_id: number) => api.delete(`/suppliers/${supplier_id}/terms/${term_id}`),
+  
+  // Vendor Portal & Supplier Master VMS endpoints
+  get_pos: (id: number, params?: any) => api.get<any>(`/suppliers/${id}/pos`, { params }),
+  get_grns: (id: number, params?: any) => api.get<any>(`/suppliers/${id}/grns`, { params }),
+  get_sales: (id: number, params?: any) => api.get<any>(`/suppliers/${id}/sales`, { params }),
+  get_item_requests: (id: number, params?: any) => api.get<any[]>(`/suppliers/${id}/item-requests`, { params }),
+  review_item_request: (id: number, reqId: number, data: { action: string; review_notes?: string; create_product?: boolean }) =>
+    api.post(`/suppliers/${id}/item-requests/${reqId}/review`, data),
+  get_profile_requests: (id: number, params?: any) => api.get<any[]>(`/suppliers/${id}/profile-requests`, { params }),
+  review_profile_request: (id: number, reqId: number, data: { action: string; review_notes?: string }) =>
+    api.post(`/suppliers/${id}/profile-requests/${reqId}/review`, data),
+  update_portal_settings: (id: number, data: { portal_sales_enabled: boolean; portal_sales_config: Record<string, boolean> }) =>
+    api.put(`/suppliers/${id}/portal-settings`, data),
+  upload_document: (supplierId: number, formData: FormData) =>
+    api.post<supplier_document>(`/suppliers/${supplierId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  delete_document: (supplierId: number, docId: number) =>
+    api.delete(`/suppliers/${supplierId}/documents/${docId}`),
+  
+  // Vendor Portal Access & Login Management
+  get_portal_access: (id: number) => api.get<any>(`/suppliers/${id}/portal-access`),
+  create_portal_user: (id: number, data: any) => api.post<any>(`/suppliers/${id}/portal-access/create`, data),
+  toggle_portal_status: (id: number) => api.post<any>(`/suppliers/${id}/portal-access/toggle-status`),
+  reset_portal_password: (id: number, data: any) => api.post<any>(`/suppliers/${id}/portal-access/reset-password`, data),
+  update_portal_permissions: (id: number, permissions: any) => api.put<any>(`/suppliers/${id}/portal-access/permissions`, { permissions }),
+}
+
+export interface supplier_terms {
+  id: number;
+  supplier_id: number;
+  terms_text: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ledger_row {
+  date: string;
+  ref_no: string;
+  type: string;
+  description: string;
+  debit: number;
+  credit: number;
+  balance: number;
 }

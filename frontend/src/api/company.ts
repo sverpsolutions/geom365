@@ -36,6 +36,7 @@ export interface CompanySettings {
     bank_branch: string | null; upi_id: string | null
     authorized_signatory: string | null; signatory_designation: string | null
     invoice_terms: string | null; invoice_footer: string | null; fy_start_month: number; updated_at: string | null
+    primary_color?: string | null;
 }
 
 export interface company_doc {

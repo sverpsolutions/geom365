@@ -11,17 +11,6 @@ const TYPE_COLOR: Record<string, string> = {
   U: 'bg-gray-100 text-gray-600',
 }
 
-function PageHeader({ title, subtitle, action }: { title: string; subtitle: string; action?: React.ReactNode }) {
-  return (
-    <div className="flex justify-between items-center mb-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">{title}</h1>
-        <p className="text-sm text-gray-500">{subtitle}</p>
-      </div>
-      <div className="flex gap-2">{action}</div>
-    </div>
-  )
-}
 
 export default function supplier_list_page() {
   const [result, set_result] = useState<paginated<supplier_list_item> | null>(null)

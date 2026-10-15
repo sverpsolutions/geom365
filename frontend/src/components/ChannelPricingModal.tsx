@@ -21,7 +21,7 @@ const ChannelPricingModal = ({ product_id, product_name, base_cost, onClose }: P
     setLoading(true);
     try {
       const res = await channels_api.get_product_prices(product_id);
-      setPrices(res.data);
+      setPrices(res.data.prices || []);
     } catch (err) {
       console.error("Failed to fetch channel prices", err);
     } finally {
@@ -38,7 +38,21 @@ const ChannelPricingModal = ({ product_id, product_name, base_cost, onClose }: P
   const handleSave = async () => {
     setSaving(true);
     try {
-      await channels_api.update_product_prices(product_id, prices);
+      for (const p of prices) {
+        if (p.partner_id) {
+          await channels_api.upsert_product_price(product_id, {
+            partner_id: p.partner_id,
+            mrp: p.mrp,
+            base_cost: p.base_cost,
+            margin_percent: p.margin_percent,
+            partner_commission: p.partner_commission,
+            selling_price: p.selling_price,
+            final_settlement_rate: p.final_settlement_rate,
+            minimum_profit: p.minimum_profit,
+            is_active: p.is_active,
+          });
+        }
+      }
       alert("Channel prices updated successfully!");
       onClose();
     } catch (err) {
@@ -88,23 +102,23 @@ const ChannelPricingModal = ({ product_id, product_name, base_cost, onClose }: P
                       <input 
                         type="number" step="0.01" 
                         className="w-20 bg-slate-100 border-none rounded p-1.5 text-right font-bold text-indigo-600"
-                        value={p.partner_commission}
-                        onChange={e => updatePrice(idx, 'partner_commission', e.target.value)}
+                        value={p.partner_commission ?? 0}
+                        onChange={e => updatePrice(idx, 'partner_commission', parseFloat(e.target.value) || 0)}
                       /> %
                     </td>
                     <td className="px-4 py-4 text-right">
                       <input 
                         type="number" step="0.01" 
                         className="w-24 bg-slate-100 border-none rounded p-1.5 text-right font-black text-green-700"
-                        value={p.selling_price}
-                        onChange={e => updatePrice(idx, 'selling_price', e.target.value)}
+                        value={p.selling_price ?? 0}
+                        onChange={e => updatePrice(idx, 'selling_price', parseFloat(e.target.value) || 0)}
                       />
                     </td>
                     <td className="px-4 py-4 text-right font-mono font-bold text-slate-600">
-                      ₹{parseFloat(p.final_settlement_rate).toFixed(2)}
+                      ₹{(Number(p.final_settlement_rate) || 0).toFixed(2)}
                     </td>
-                    <td className={`px-4 py-4 text-right font-mono font-bold ${parseFloat(p.minimum_profit) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                      ₹{parseFloat(p.minimum_profit).toFixed(2)}
+                    <td className={`px-4 py-4 text-right font-mono font-bold ${(Number(p.minimum_profit) || 0) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      ₹{(Number(p.minimum_profit) || 0).toFixed(2)}
                     </td>
                     <td className="px-4 py-4 text-center">
                       <input 

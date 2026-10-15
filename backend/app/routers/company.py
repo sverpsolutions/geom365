@@ -62,7 +62,7 @@ async def _save_file(file: UploadFile, folder: str, allowed: dict, max_mb: int) 
 async def _row(db: AsyncSession) -> CompanySetting:
     settings = (await db.execute(select(CompanySetting).order_by(CompanySetting.id))).scalars().first()
     if not settings:
-        settings = CompanySetting(key_name='general', brand_name="Modern Bazaar HO", logo_path="/logo.jpg")
+        settings = CompanySetting(key_name='general', brand_name="geom365", legal_name="Geomett Box Private Limited", logo_path="/geom365_logo.png")
         db.add(settings)
         await db.commit()
         await db.refresh(settings)

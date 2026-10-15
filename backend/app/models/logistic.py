@@ -52,6 +52,22 @@ class logistic_transfer_item(base):
     def item_code(self) -> str | None:
         return self.product.item_code if self.product else None
 
+    @property
+    def barcode(self) -> str | None:
+        return self.product.barcode if self.product else None
+
+    @property
+    def hsn_code(self) -> str | None:
+        return self.product.hsn_code if self.product else None
+
+    @property
+    def unit(self) -> str | None:
+        return self.product.unit if self.product else None
+
+    @property
+    def mrp(self) -> Decimal | None:
+        return self.product.mrp if self.product else None
+
 class logistic_box(base):
     __tablename__ = "logistic_boxes"
 

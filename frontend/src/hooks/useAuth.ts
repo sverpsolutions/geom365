@@ -15,7 +15,11 @@ export function useAuth() {
     try {
       const res = await auth_api.login(payload)
       set_auth(res.data.access_token, res.data.user)
-      navigate('/', { replace: true })
+      if (res.data.user?.role === 'vendor' || (res.data.user as any)?.supplier_id) {
+        navigate('/vendor-portal', { replace: true })
+      } else {
+        navigate('/', { replace: true })
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })
         ?.response?.data?.detail ?? 'login failed'

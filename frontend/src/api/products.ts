@@ -17,6 +17,7 @@ export interface product_list_item {
   inner_pack_qty?: number
   outer_carton_qty?: number
   total_pcs_in_carton?: number
+  thumbnail_img?: string | null
 }
 
 export interface product_detail extends product_list_item {
@@ -54,6 +55,11 @@ export interface product_detail extends product_list_item {
   expiry_date: string | null
   ref_item_code: string | null
   thumbnail_img: string | null
+  img_front?: string | null
+  img_back?: string | null
+  img_top?: string | null
+  img_side?: string | null
+  code?: string | null
   allow_neg_stock: boolean
   is_dual_unit: boolean
   is_consumable: boolean
@@ -61,6 +67,18 @@ export interface product_detail extends product_list_item {
   is_sellable: boolean
   is_raw_non_sellable: boolean
   is_batch_required: boolean
+  has_batch_tracking?: boolean
+  has_expiry_tracking?: boolean
+  mfg_date_required?: boolean
+  exp_date_required?: boolean
+  min_shelf_life_purchase_days?: number | null
+  min_shelf_life_sale_days?: number | null
+  near_expiry_alert_days?: number
+  allow_expired_sale?: boolean
+  allow_neg_batch_stock?: boolean
+  batch_wise_purchase_rate?: boolean
+  batch_wise_selling_price?: boolean
+  is_fefo_enabled?: boolean
   is_asset: boolean
   multiplier_to_base: string
   conversion_factor: string
@@ -87,13 +105,21 @@ export interface product_search_item {
   item_code: string | null
   barcode: string | null
   unit: string
-  selling_price: string
-  mrp: string
+  purchase_price?: number | string
+  cost_price?: number | string
+  basic_cost?: number | string
+  selling_price: string | number
+  mrp: string | number
   barcode_crt?: string | null
-  gst_percent?: string
+  gst_percent?: string | number
   hsn_code?: string | null
-  stock_qty?: string | null  // only when searched with outlet_id
+  stock_qty?: string | number | null
+  has_batch_tracking?: boolean
+  has_expiry_tracking?: boolean
+  is_batch_required?: boolean
+  shelf_life_days?: number | null
 }
+
 
 export const products_api = {
   list: (params?: {

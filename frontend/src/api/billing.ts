@@ -155,6 +155,7 @@ export interface estimate_list_out {
   valid_until?: string
   total_amount: number
   status: string
+  converted_to?: number | null
   created_at: string
 }
 

@@ -1,8 +1,10 @@
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 
-# must match the users_role_check constraint in the database
-USER_ROLES = ("superadmin", "admin", "manager", "staff", "viewer")
+USER_ROLES = (
+    "superadmin", "admin", "manager", "staff", "viewer",
+    "category_manager", "area_sales_manager", "store_manager", "purchase_manager", "accounts_manager"
+)
 
 
 def _role(v: str | None) -> str | None:

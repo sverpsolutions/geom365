@@ -118,9 +118,9 @@ export default function PODetail() {
     is_igst = s_state.toLowerCase().trim() !== d_state.toLowerCase().trim()
   }
 
-  const tax_summary: Record<string, { taxable: number, tax: number }> = {}
-  let total_taxable = 0
-  let total_tax = 0
+  const tax_summary: Record<string, { taxable: number, tax: number }> = {};
+  let total_taxable = 0;
+  let total_tax = 0;
 
   (po.items || []).forEach(item => {
     const qty = Number(item.order_qty)
@@ -278,6 +278,13 @@ export default function PODetail() {
                 <i className="fas fa-times mr-1.5"></i> Reject
               </button>
             </>
+          )}
+          {(po.approval_status === 'approved' || po.status === 'approved' || po.status === 'partial') && po.status !== 'cancelled' && (
+            <button
+              onClick={() => navigate(`/purchases/grn?action=new&po_id=${po.id}`)}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors flex items-center">
+              <i className="fas fa-truck-loading mr-1.5"></i> Process Inward / GRN
+            </button>
           )}
           <button
             onClick={() => navigate('/purchases/po')}
@@ -466,7 +473,7 @@ export default function PODetail() {
                 <div className="mt-3">
                   <div className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Item Allocation</div>
                   <div className="space-y-1 max-h-32 overflow-y-auto pr-1 print:max-h-none print:overflow-visible">
-                    {dist.details.map(dtl => {
+                    {dist.details.map((dtl: any) => {
                       const item = (po.items || []).find(i => i.product_id === dtl.product_id);
                       return (
                         <div key={dtl.id} className="flex justify-between text-xs bg-white border border-slate-100 px-2 py-1 rounded">

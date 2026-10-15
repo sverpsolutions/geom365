@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -37,5 +37,9 @@ class multi_transfer_session_item(base):
     product_id: Mapped[int] = mapped_column(Integer, nullable=False)
     barcode: Mapped[str | None] = mapped_column(String(50))
     qty_per_branch: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=1)
+    batch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("product_batches.id", ondelete="SET NULL"))
+    batch_no: Mapped[str | None] = mapped_column(String(100))
+    mfg_date: Mapped[date | None] = mapped_column(Date)
+    expiry_date: Mapped[date | None] = mapped_column(Date)
 
     session: Mapped["multi_transfer_session"] = relationship(back_populates="items")

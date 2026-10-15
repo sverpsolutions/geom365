@@ -1,1021 +1,1013 @@
-import { matchesSearch } from '../../utils/search';
-import { useState, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
-  Building2, FileText, Users, Upload, ChevronRight, ChevronLeft,
-  CheckCircle2, X, Eye, AlertCircle, ThumbsUp, ThumbsDown,
-  Pause, MessageSquare, Camera, Phone, Mail, MapPin, Globe,
-  Briefcase, CreditCard, Shield, Info, ExternalLink, Search,
+  Building2, ShoppingCart, Truck, TrendingUp, Sparkles, User,
+  CheckCircle2, XCircle, AlertCircle, Clock, Search, Filter,
+  ArrowRight, Calendar, Package, FileText, Check, ChevronRight,
+  ExternalLink, Send, ShieldAlert, BarChart3, RefreshCw,
+  RotateCcw, CreditCard, Receipt, FileCheck, Printer, Download,
+  Wallet, Eye
 } from 'lucide-react'
+import { vendor_portal_api, type VendorDashboardData } from '../../api/vendorPortal'
+import toast from 'react-hot-toast'
+import Modal from '../../components/ui/Modal'
 
-// ─────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────
-type BusinessType = 'Proprietorship' | 'Partnership' | 'LLP' | 'Pvt Ltd' | 'Public Ltd' | 'Other'
-type NatureOfBusiness = 'Manufacturer' | 'Trader' | 'Distributor' | 'Service Provider' | 'Import-Export' | 'Other'
-type VendorStatus = 'Pending' | 'Approved' | 'Rejected' | 'On Hold'
-type IdProofType = 'Aadhar' | 'PAN' | 'Voter ID' | 'Passport' | 'Driving License'
-type Department = 'Accounts' | 'Finance' | 'Admin' | 'Other'
-type CommMethod = 'Email' | 'WhatsApp' | 'Phone' | 'All'
+type PortalTab =
+  | 'dashboard'
+  | 'pos'
+  | 'grns'
+  | 'prns'
+  | 'cheques'
+  | 'ledger'
+  | 'invoices'
+  | 'sales'
+  | 'item_requests'
+  | 'profile'
 
-interface UploadedFile {
-  name: string
-  size: number
-  preview: string
-  fileType: string
-}
-
-interface Step1 {
-  companyName: string; tradeName: string; businessType: BusinessType | ''
-  yearEstablished: string; natureOfBusiness: NatureOfBusiness | ''; website: string
-  address: string; city: string; state: string; pincode: string
-  primaryContact: string; altContact: string; email: string
-}
-interface Step2 {
-  gstNumber: string; panNumber: string; tanNumber: string; cinNumber: string
-  msmeNumber: string; fssaiNumber: string; drugLicense: string; iecCode: string; tradeLicense: string
-}
-interface Step3 {
-  gstCert: UploadedFile | null; panCard: UploadedFile | null; tanCert: UploadedFile | null
-  cinCert: UploadedFile | null; msmeCert: UploadedFile | null; cancelledCheque: UploadedFile | null
-  bankProof: UploadedFile | null; letterhead: UploadedFile | null; gstReturn: UploadedFile | null
-}
-interface PersonA {
-  name: string; designation: string; mobile: string; email: string
-  idType: IdProofType | ''; idNumber: string
-  idProof: UploadedFile | null; photo: UploadedFile | null; isPrimaryContact: boolean
-}
-interface PersonB {
-  name: string; designation: string; mobile: string; email: string
-  department: Department | ''; commMethod: CommMethod | ''
-  visitingCard: UploadedFile | null; note: string
-}
-interface Step4 { personA: PersonA; personB: PersonB; decl1: boolean; decl2: boolean }
-
-interface VendorSubmission {
-  refNo: string; companyName: string; businessType: string
-  gstNo: string; submittedOn: string; status: VendorStatus
-  step1: Step1; step2: Step2; adminNote?: string
-}
-
-// ─────────────────────────────────────────────────────────────
-// Mock Data
-// ─────────────────────────────────────────────────────────────
-const makeStep1 = (partial: Partial<Step1>): Step1 => ({
-  companyName: '', tradeName: '', businessType: '', yearEstablished: '',
-  natureOfBusiness: '', website: '', address: '', city: '', state: '',
-  pincode: '', primaryContact: '', altContact: '', email: '', ...partial,
-})
-const makeStep2 = (partial: Partial<Step2>): Step2 => ({
-  gstNumber: '', panNumber: '', tanNumber: '', cinNumber: '',
-  msmeNumber: '', fssaiNumber: '', drugLicense: '', iecCode: '', tradeLicense: '', ...partial,
-})
-
-const MOCK_VENDORS: VendorSubmission[] = [
-  {
-    refNo: 'VND-20260401-0001', companyName: 'Raj Traders Pvt Ltd',
-    businessType: 'Pvt Ltd', gstNo: '27AABCR1234H1Z5',
-    submittedOn: '01 Apr 2026, 10:30 AM', status: 'Pending',
-    step1: makeStep1({ companyName: 'Raj Traders Pvt Ltd', tradeName: 'Raj Traders', businessType: 'Pvt Ltd', yearEstablished: '2015', natureOfBusiness: 'Trader', website: 'www.rajtraders.com', address: '42, Nehru Market, Sector 18', city: 'Gurugram', state: 'Haryana', pincode: '122001', primaryContact: '9876543210', altContact: '9876543211', email: 'accounts@rajtraders.com' }),
-    step2: makeStep2({ gstNumber: '27AABCR1234H1Z5', panNumber: 'AABCR1234H', tanNumber: 'DELR12345G', cinNumber: 'U51909HR2015PTC123456', msmeNumber: 'UDYAM-HR-01-1234567', tradeLicense: 'TL/2015/GGN/4567' }),
-  },
-  {
-    refNo: 'VND-20260415-0002', companyName: 'Sri Foods & Beverages',
-    businessType: 'Partnership', gstNo: '29AABCS5678K1Z2',
-    submittedOn: '15 Apr 2026, 02:15 PM', status: 'Approved',
-    step1: makeStep1({ companyName: 'Sri Foods & Beverages', tradeName: 'Sri Foods', businessType: 'Partnership', yearEstablished: '2009', natureOfBusiness: 'Manufacturer', address: 'Plot No 7, Industrial Area Phase 2', city: 'Bengaluru', state: 'Karnataka', pincode: '560058', primaryContact: '9845123456', email: 'info@srifoods.com' }),
-    step2: makeStep2({ gstNumber: '29AABCS5678K1Z2', panNumber: 'AABCS5678K', msmeNumber: 'UDYAM-KA-05-9876543', fssaiNumber: 'FSSAI-KA-2024-123456' }),
-  },
-  {
-    refNo: 'VND-20260422-0003', companyName: 'Metro Pharmaceuticals Pvt Ltd',
-    businessType: 'Pvt Ltd', gstNo: '06AABCM9012P1Z8',
-    submittedOn: '22 Apr 2026, 11:00 AM', status: 'Rejected',
-    adminNote: 'GST certificate is expired. Please resubmit with valid documents dated within 3 months.',
-    step1: makeStep1({ companyName: 'Metro Pharmaceuticals Pvt Ltd', tradeName: 'Metro Pharma', businessType: 'Pvt Ltd', yearEstablished: '2018', natureOfBusiness: 'Distributor', website: 'www.metropharma.in', address: 'Unit 12, Pharma Park, Sector 5', city: 'New Delhi', state: 'Delhi', pincode: '110064', primaryContact: '9811234567', altContact: '9811234568', email: 'compliance@metropharma.in' }),
-    step2: makeStep2({ gstNumber: '06AABCM9012P1Z8', panNumber: 'AABCM9012P', tanNumber: 'DELM34567H', cinNumber: 'U24234DL2018PTC789012', drugLicense: 'DL/2018/DL/7890123', iecCode: '0518012345' }),
-  },
-  {
-    refNo: 'VND-20260501-0004', companyName: 'Global Imports LLP',
-    businessType: 'LLP', gstNo: '07AABCG3456L1Z3',
-    submittedOn: '01 May 2026, 04:45 PM', status: 'On Hold',
-    adminNote: 'Awaiting IEC code verification from DGFT portal. Contact vendor for updated certificate.',
-    step1: makeStep1({ companyName: 'Global Imports LLP', tradeName: 'Global Imports', businessType: 'LLP', yearEstablished: '2021', natureOfBusiness: 'Import-Export', website: 'www.globalimports.co.in', address: 'Office 304, Trade Tower, Connaught Place', city: 'New Delhi', state: 'Delhi', pincode: '110001', primaryContact: '9899876543', altContact: '9899876544', email: 'ops@globalimports.co.in' }),
-    step2: makeStep2({ gstNumber: '07AABCG3456L1Z3', panNumber: 'AABCG3456L', cinNumber: 'AAH-1234', iecCode: '0721098765' }),
-  },
-]
-
-// ─────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────
-const INDIAN_STATES = [
-  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
-  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
-  'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
-  'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
-  'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
-  'Delhi', 'Jammu & Kashmir', 'Ladakh', 'Chandigarh', 'Puducherry',
-]
-
-const STATUS_META: Record<VendorStatus, { cls: string; dot: string }> = {
-  Pending:   { cls: 'bg-amber-50 text-amber-700 border-amber-200',  dot: 'bg-amber-400' },
-  Approved:  { cls: 'bg-green-50 text-green-700 border-green-200',  dot: 'bg-green-500' },
-  Rejected:  { cls: 'bg-red-50 text-red-700 border-red-200',        dot: 'bg-red-500' },
-  'On Hold': { cls: 'bg-blue-50 text-blue-700 border-blue-200',     dot: 'bg-blue-500' },
-}
-
-// ─────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────
-function generateRefNo() {
-  const d = new Date()
-  const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
-  return `VND-${date}-${String(Math.floor(Math.random() * 9000) + 1000)}`
-}
-function fmtSize(b: number) {
-  if (b < 1024) return `${b} B`
-  if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`
-  return `${(b / 1048576).toFixed(1)} MB`
-}
-function validGST(v: string) { return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(v) }
-function validPAN(v: string) { return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(v) }
-function validTAN(v: string) { return /^[A-Z]{4}[0-9]{5}[A-Z]{1}$/.test(v) }
-function validPhone(v: string) { return /^\d{10}$/.test(v) }
-function validEmail(v: string) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) }
-
-// ─────────────────────────────────────────────────────────────
-// Small UI primitives
-// ─────────────────────────────────────────────────────────────
-const ic = 'w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all'
-const iec = 'w-full px-3.5 py-2.5 bg-red-50 border border-red-300 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-400/25 focus:border-red-400 transition-all'
-const sc = ic + ' appearance-none cursor-pointer'
-
-function Lbl({ text, req }: { text: string; req?: boolean }) {
-  return <label className="block text-sm font-semibold text-slate-700 mb-1.5">{text}{req && <span className="text-red-500 ml-0.5">*</span>}</label>
-}
-function Err({ msg }: { msg?: string }) {
-  if (!msg) return null
-  return <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1"><AlertCircle size={11} />{msg}</p>
-}
-function Hint({ text }: { text: string }) {
-  return <p className="text-xs text-slate-400 mb-1.5">{text}</p>
-}
-
-function SectionDivider({ title, icon }: { title: string; icon: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 py-2">
-      <div className="w-6 h-6 bg-indigo-100 text-indigo-600 rounded-md flex items-center justify-center">{icon}</div>
-      <span className="text-xs font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">{title}</span>
-      <div className="flex-1 h-px bg-slate-100" />
-    </div>
-  )
-}
-
-function StatusBadge({ status }: { status: VendorStatus }) {
-  const m = STATUS_META[status]
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-full border ${m.cls}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${m.dot}`} />
-      {status}
-    </span>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────
-// FileUpload component
-// ─────────────────────────────────────────────────────────────
-function FileUpload({
-  label, req, hint, value, onChange, accept = 'application/pdf,image/*', maxMB = 2, circular = false,
-}: {
-  label: string; req?: boolean; hint?: string
-  value: UploadedFile | null; onChange: (f: UploadedFile | null) => void
-  accept?: string; maxMB?: number; circular?: boolean
-}) {
-  const ref = useRef<HTMLInputElement>(null)
-  const [drag, setDrag] = useState(false)
-
-  const process = useCallback((file: File) => {
-    if (file.size > maxMB * 1048576) { alert(`Max file size is ${maxMB}MB`); return }
-    const reader = new FileReader()
-    reader.onload = e => onChange({ name: file.name, size: file.size, preview: e.target?.result as string, fileType: file.type })
-    reader.readAsDataURL(file)
-  }, [maxMB, onChange])
-
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); setDrag(false)
-    if (e.dataTransfer.files[0]) process(e.dataTransfer.files[0])
-  }, [process])
-
-  const isImg = value?.fileType?.startsWith('image/')
-
-  return (
-    <div>
-      <Lbl text={label} req={req} />
-      {hint && <Hint text={hint} />}
-      {!value ? (
-        <div
-          className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${drag ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'}`}
-          onClick={() => ref.current?.click()}
-          onDragOver={e => { e.preventDefault(); setDrag(true) }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={onDrop}
-        >
-          {circular
-            ? <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2 text-slate-400"><Camera size={24} /></div>
-            : <Upload className="mx-auto mb-2 text-slate-400" size={24} />
-          }
-          <p className="text-xs font-semibold text-slate-500">Click to browse or drag file here</p>
-          <p className="text-[11px] text-slate-400 mt-1">PDF / JPG / PNG · Max {maxMB}MB</p>
-          <input ref={ref} type="file" className="hidden" accept={accept}
-            onChange={e => { if (e.target.files?.[0]) process(e.target.files[0]); e.target.value = '' }} />
-        </div>
-      ) : (
-        <div className={`flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-200 rounded-xl ${circular ? 'flex-col text-center' : ''}`}>
-          {circular && isImg
-            ? <img src={value.preview} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-indigo-300" />
-            : isImg
-              ? <img src={value.preview} alt="" className="w-12 h-12 rounded-lg object-cover border border-indigo-200 shrink-0" />
-              : <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0"><FileText className="text-indigo-600" size={20} /></div>
-          }
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-slate-700 truncate">{value.name}</p>
-            <p className="text-[11px] text-slate-400">{fmtSize(value.size)}</p>
-          </div>
-          <button onClick={() => onChange(null)} className="p-1.5 hover:bg-red-100 text-slate-400 hover:text-red-500 rounded-lg transition-colors shrink-0 ml-auto">
-            <X size={14} />
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────
-// Progress Bar
-// ─────────────────────────────────────────────────────────────
-function ProgressBar({ step }: { step: number }) {
-  const steps = [
-    { n: 1, label: 'Company Info', icon: <Building2 size={13} /> },
-    { n: 2, label: 'Compliance',   icon: <Shield size={13} /> },
-    { n: 3, label: 'Documents',    icon: <FileText size={13} /> },
-    { n: 4, label: 'Contacts',     icon: <Users size={13} /> },
-  ]
-  return (
-    <div className="mb-8">
-      <div className="flex items-start">
-        {steps.map((s, i) => (
-          <div key={s.n} className="flex items-center flex-1">
-            <div className="flex flex-col items-center gap-1.5 flex-1">
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all
-                ${step > s.n ? 'bg-indigo-600 text-white' : step === s.n ? 'bg-indigo-600 text-white ring-4 ring-indigo-100' : 'bg-white border-2 border-slate-200 text-slate-400'}`}>
-                {step > s.n ? <CheckCircle2 size={16} /> : s.icon}
-              </div>
-              <span className={`text-[10px] font-bold hidden sm:block text-center leading-tight
-                ${step === s.n ? 'text-indigo-600' : step > s.n ? 'text-slate-500' : 'text-slate-300'}`}>{s.label}</span>
-            </div>
-            {i < 3 && (
-              <div className={`h-0.5 flex-1 -mt-4 mx-1 transition-all ${step > s.n ? 'bg-indigo-600' : 'bg-slate-200'}`} />
-            )}
-          </div>
-        ))}
-      </div>
-      <p className="text-center text-xs text-slate-400 font-medium mt-3">Step {step} of 4</p>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────
-// Main Component
-// ─────────────────────────────────────────────────────────────
 export default function VendorPortal() {
-  const [view, setView] = useState<'form' | 'admin'>('form')
-  const [step, setStep] = useState(1)
-  const [submitted, setSubmitted] = useState(false)
-  const [refNo, setRefNo] = useState('')
-  const [submittedAt, setSubmittedAt] = useState('')
-  const [errs, setErrs] = useState<Record<string, string>>({})
+  const [activeTab, setActiveTab] = useState<PortalTab>('dashboard')
+  const [dashboardData, setDashboardData] = useState<VendorDashboardData | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  // Form state
-  const [s1, setS1] = useState<Step1>({ companyName: '', tradeName: '', businessType: '', yearEstablished: '', natureOfBusiness: '', website: '', address: '', city: '', state: '', pincode: '', primaryContact: '', altContact: '', email: '' })
-  const [s2, setS2] = useState<Step2>({ gstNumber: '', panNumber: '', tanNumber: '', cinNumber: '', msmeNumber: '', fssaiNumber: '', drugLicense: '', iecCode: '', tradeLicense: '' })
-  const [s3, setS3] = useState<Step3>({ gstCert: null, panCard: null, tanCert: null, cinCert: null, msmeCert: null, cancelledCheque: null, bankProof: null, letterhead: null, gstReturn: null })
-  const [s4, setS4] = useState<Step4>({
-    personA: { name: '', designation: '', mobile: '', email: '', idType: '', idNumber: '', idProof: null, photo: null, isPrimaryContact: false },
-    personB: { name: '', designation: '', mobile: '', email: '', department: '', commMethod: '', visitingCard: null, note: '' },
-    decl1: false, decl2: false,
+  // POs state
+  const [pos, setPos] = useState<any[]>([])
+  const [poFilter, setPoFilter] = useState('')
+  const [selectedPo, setSelectedPo] = useState<any>(null)
+  const [poDetailModal, setPoDetailModal] = useState(false)
+  const [ackModal, setAckModal] = useState(false)
+  const [ackExpectedDate, setAckExpectedDate] = useState('')
+  const [ackRemarks, setAckRemarks] = useState('')
+  const [savingAck, setSavingAck] = useState(false)
+
+  // GRNs state
+  const [grns, setGrns] = useState<any[]>([])
+  const [grnFilter, setGrnFilter] = useState('')
+  const [selectedGrn, setSelectedGrn] = useState<any>(null)
+  const [grnDetailModal, setGrnDetailModal] = useState(false)
+
+  // PRNs state
+  const [prns, setPrns] = useState<any[]>([])
+  const [prnFilter, setPrnFilter] = useState('')
+  const [selectedPrn, setSelectedPrn] = useState<any>(null)
+  const [prnDetailModal, setPrnDetailModal] = useState(false)
+  const [prnAckModal, setPrnAckModal] = useState(false)
+  const [prnAckRemarks, setPrnAckRemarks] = useState('')
+  const [savingPrnAck, setSavingPrnAck] = useState(false)
+
+  // Cheques state
+  const [cheques, setCheques] = useState<any[]>([])
+  const [chequeStatusFilter, setChequeStatusFilter] = useState<string>('all')
+
+  // Payments & Ledger state
+  const [ledgerData, setLedgerData] = useState<any>(null)
+  const [ledgerLoading, setLedgerLoading] = useState(false)
+  const [payments, setPayments] = useState<any[]>([])
+  const [ledgerSubTab, setLedgerSubTab] = useState<'statement' | 'payments'>('statement')
+
+  // Invoices state
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [invoiceFilter, setInvoiceFilter] = useState('')
+
+  // Sales state
+  const [salesData, setSalesData] = useState<any>(null)
+  const [salesDisabled, setSalesDisabled] = useState(false)
+  const [salesLoading, setSalesLoading] = useState(false)
+
+  // Item Requests state
+  const [itemRequests, setItemRequests] = useState<any[]>([])
+  const [newItemModal, setNewItemModal] = useState(false)
+  const [newItemForm, setNewItemForm] = useState({
+    product_name: '',
+    brand_name: '',
+    category_name: '',
+    barcode: '',
+    vendor_item_code: '',
+    unit: 'PCS',
+    pack_size: '',
+    purchase_rate: '',
+    mrp: '',
+    proposed_selling_price: '',
+    gst_percent: '18',
+    hsn_code: '',
+    moq: '1',
+    lead_time_days: '7',
+    country_of_origin: 'India',
+    description: '',
+    vendor_remarks: '',
+  })
+  const [savingItemReq, setSavingItemReq] = useState(false)
+
+  // Profile update request modal
+  const [profileData, setProfileData] = useState<any>(null)
+  const [profileModal, setProfileModal] = useState(false)
+  const [profileChanges, setProfileChanges] = useState({
+    contact_name: '',
+    phone: '',
+    email: '',
+    address: '',
+    bank_name: '',
+    account_no: '',
+    ifsc_code: '',
+    branch: '',
+  })
+  const [savingProfileReq, setSavingProfileReq] = useState(false)
+
+  // Load initial dashboard
+  const fetchDashboard = async () => {
+    try {
+      setLoading(true)
+      const res = await vendor_portal_api.get_dashboard()
+      setDashboardData(res.data)
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to load vendor portal')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchDashboard()
+  }, [])
+
+  // Lazy tab data loaders
+  useEffect(() => {
+    if (activeTab === 'pos') {
+      vendor_portal_api.list_purchase_orders().then((r) => setPos(r.data.items || []))
+    } else if (activeTab === 'grns') {
+      vendor_portal_api.list_grns().then((r) => setGrns(r.data.items || []))
+    } else if (activeTab === 'prns') {
+      vendor_portal_api.list_prns().then((r) => setPrns(r.data.items || []))
+    } else if (activeTab === 'cheques') {
+      vendor_portal_api.list_cheques().then((r) => setCheques(r.data || []))
+    } else if (activeTab === 'ledger') {
+      setLedgerLoading(true)
+      Promise.all([
+        vendor_portal_api.get_ledger(),
+        vendor_portal_api.list_payments()
+      ])
+        .then(([lRes, pRes]) => {
+          setLedgerData(lRes.data)
+          setPayments(pRes.data || [])
+        })
+        .catch((err) => {
+          toast.error(err.response?.data?.detail || 'Failed to load ledger')
+        })
+        .finally(() => setLedgerLoading(false))
+    } else if (activeTab === 'invoices') {
+      vendor_portal_api.list_invoices().then((r) => setInvoices(r.data || []))
+    } else if (activeTab === 'sales') {
+      setSalesLoading(true)
+      vendor_portal_api.get_item_sales()
+        .then((r) => {
+          setSalesData(r.data)
+          setSalesDisabled(false)
+        })
+        .catch((err) => {
+          if (err.response?.status === 403) {
+            setSalesDisabled(true)
+          } else {
+            toast.error('Failed to load item sales')
+          }
+        })
+        .finally(() => setSalesLoading(false))
+    } else if (activeTab === 'item_requests') {
+      vendor_portal_api.list_item_requests().then((r) => setItemRequests(r.data || []))
+    } else if (activeTab === 'profile') {
+      vendor_portal_api.get_profile().then((r) => {
+        setProfileData(r.data)
+        setProfileChanges({
+          contact_name: r.data.contact_name || '',
+          phone: r.data.phone || '',
+          email: r.data.email || '',
+          address: r.data.address || '',
+          bank_name: r.data.financial?.bank_name || '',
+          account_no: r.data.financial?.account_no || '',
+          ifsc_code: r.data.financial?.ifsc_code || '',
+          branch: r.data.financial?.branch || '',
+        })
+      })
+    }
+  }, [activeTab])
+
+  // Acknowledge PO
+  const handleAcknowledgePo = async () => {
+    if (!selectedPo) return
+    setSavingAck(true)
+    try {
+      await vendor_portal_api.acknowledge_purchase_order(selectedPo.id, {
+        vendor_expected_delivery: ackExpectedDate || undefined,
+        vendor_delivery_remarks: ackRemarks || undefined,
+      })
+      toast.success(`PO #${selectedPo.po_no} acknowledged successfully`)
+      setAckModal(false)
+      const res = await vendor_portal_api.list_purchase_orders()
+      setPos(res.data.items || [])
+    } catch (err: any) {
+      toast.error('Failed to acknowledge PO')
+    } finally {
+      setSavingAck(false)
+    }
+  }
+
+  // Acknowledge PRN
+  const handleAcknowledgePrn = async () => {
+    if (!selectedPrn) return
+    setSavingPrnAck(true)
+    try {
+      await vendor_portal_api.acknowledge_prn(selectedPrn.id, {
+        vendor_remarks: prnAckRemarks || undefined,
+      })
+      toast.success(`PRN #${selectedPrn.return_no} acknowledged successfully`)
+      setPrnAckModal(false)
+      const res = await vendor_portal_api.list_prns()
+      setPrns(res.data.items || [])
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to acknowledge PRN')
+    } finally {
+      setSavingPrnAck(false)
+    }
+  }
+
+  // Submit New Item Request
+  const handleSubmitNewItem = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newItemForm.product_name) {
+      toast.error('Please enter product name')
+      return
+    }
+    setSavingItemReq(true)
+    try {
+      await vendor_portal_api.submit_item_request({
+        product_name: newItemForm.product_name,
+        brand_name: newItemForm.brand_name || undefined,
+        category_name: newItemForm.category_name || undefined,
+        barcode: newItemForm.barcode || undefined,
+        vendor_item_code: newItemForm.vendor_item_code || undefined,
+        unit: newItemForm.unit,
+        pack_size: newItemForm.pack_size || undefined,
+        purchase_rate: Number(newItemForm.purchase_rate) || 0,
+        mrp: Number(newItemForm.mrp) || 0,
+        proposed_selling_price: Number(newItemForm.proposed_selling_price) || Number(newItemForm.mrp) || 0,
+        gst_percent: Number(newItemForm.gst_percent) || 0,
+        hsn_code: newItemForm.hsn_code || undefined,
+        moq: Number(newItemForm.moq) || 1,
+        lead_time_days: Number(newItemForm.lead_time_days) || 7,
+        country_of_origin: newItemForm.country_of_origin || 'India',
+        description: newItemForm.description || undefined,
+        vendor_remarks: newItemForm.vendor_remarks || undefined,
+      })
+      toast.success('New item proposal submitted for review!')
+      setNewItemModal(false)
+      const res = await vendor_portal_api.list_item_requests()
+      setItemRequests(res.data || [])
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to submit proposal')
+    } finally {
+      setSavingItemReq(false)
+    }
+  }
+
+  // Submit Profile Changes
+  const handleSubmitProfileChanges = async () => {
+    setSavingProfileReq(true)
+    try {
+      const changes: Record<string, any> = {}
+      if (profileChanges.contact_name !== profileData?.contact_name) {
+        changes.contact_name = { old: profileData?.contact_name, new: profileChanges.contact_name }
+      }
+      if (profileChanges.phone !== profileData?.phone) {
+        changes.phone = { old: profileData?.phone, new: profileChanges.phone }
+      }
+      if (profileChanges.email !== profileData?.email) {
+        changes.email = { old: profileData?.email, new: profileChanges.email }
+      }
+      if (profileChanges.address !== profileData?.address) {
+        changes.address = { old: profileData?.address, new: profileChanges.address }
+      }
+      if (profileChanges.bank_name !== profileData?.financial?.bank_name) {
+        changes.bank_name = { old: profileData?.financial?.bank_name, new: profileChanges.bank_name }
+      }
+      if (profileChanges.account_no !== profileData?.financial?.account_no) {
+        changes.account_no = { old: profileData?.financial?.account_no, new: profileChanges.account_no }
+      }
+      if (profileChanges.ifsc_code !== profileData?.financial?.ifsc_code) {
+        changes.ifsc_code = { old: profileData?.financial?.ifsc_code, new: profileChanges.ifsc_code }
+      }
+      if (profileChanges.branch !== profileData?.financial?.branch) {
+        changes.branch = { old: profileData?.financial?.branch, new: profileChanges.branch }
+      }
+
+      if (Object.keys(changes).length === 0) {
+        toast.error('No changes detected to submit')
+        setSavingProfileReq(false)
+        return
+      }
+
+      await vendor_portal_api.submit_profile_update_request(changes)
+      toast.success('Profile changes submitted for company approval')
+      setProfileModal(false)
+      const r = await vendor_portal_api.get_profile()
+      setProfileData(r.data)
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to submit profile update')
+    } finally {
+      setSavingProfileReq(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+        <RefreshCw className="w-8 h-8 text-blue-600 animate-spin" />
+        <p className="text-sm text-slate-500 font-medium">Connecting to Vendor Portal…</p>
+      </div>
+    )
+  }
+
+  const supplier = dashboardData?.supplier
+  const kpis = dashboardData?.kpis
+  const perms = supplier?.portal_permissions || {}
+
+  // Filter navigation items according to portal permissions
+  const allNavItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: Building2, show: true },
+    { id: 'pos', label: 'Purchase Orders', icon: ShoppingCart, show: perms.view_orders !== false },
+    { id: 'grns', label: 'GRN Receipts', icon: Truck, show: perms.view_grn !== false },
+    { id: 'prns', label: 'PRN Returns', icon: RotateCcw, show: perms.view_prn !== false },
+    { id: 'cheques', label: 'Cheques', icon: CreditCard, show: perms.view_cheques !== false },
+    { id: 'ledger', label: 'Payments & Ledger', icon: Receipt, show: perms.view_ledger !== false },
+    { id: 'invoices', label: 'Invoices', icon: FileCheck, show: perms.view_invoices !== false },
+    { id: 'sales', label: 'Item Sales', icon: TrendingUp, show: perms.view_sales === true || supplier?.portal_sales_enabled },
+    { id: 'item_requests', label: 'Propose Items', icon: Sparkles, show: perms.propose_items !== false },
+    { id: 'profile', label: 'My Profile', icon: User, show: true },
+  ]
+  const portalNav = allNavItems.filter((i) => i.show)
+
+  // Filtered lists
+  const filteredPos = pos.filter((p) => {
+    if (!poFilter) return true
+    return (
+      p.po_no?.toLowerCase().includes(poFilter.toLowerCase()) ||
+      p.status?.toLowerCase().includes(poFilter.toLowerCase())
+    )
   })
 
-  // Admin state
-  const [vendors, setVendors] = useState<VendorSubmission[]>(MOCK_VENDORS)
-  const [selected, setSelected] = useState<VendorSubmission | null>(null)
-  const [actionModal, setActionModal] = useState<{ type: 'reject' | 'hold' | 'info' | null; note: string }>({ type: null, note: '' })
-  const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<VendorStatus | 'All'>('All')
-
-  const showCIN = ['LLP', 'Pvt Ltd', 'Public Ltd'].includes(s1.businessType)
-
-  // ── Validation ────────────────────────────────────────────
-  function v1() {
-    const e: Record<string, string> = {}
-    if (!s1.companyName.trim()) e.companyName = 'Company name is required'
-    if (!s1.businessType) e.businessType = 'Select business type'
-    if (!s1.yearEstablished) e.yearEstablished = 'Year of establishment is required'
-    if (!s1.natureOfBusiness) e.natureOfBusiness = 'Select nature of business'
-    if (!s1.address.trim()) e.address = 'Business address is required'
-    if (!s1.city.trim()) e.city = 'City is required'
-    if (!s1.state) e.state = 'Select state'
-    if (!s1.pincode.trim() || !/^\d{6}$/.test(s1.pincode)) e.pincode = '6-digit PIN code required'
-    if (!validPhone(s1.primaryContact)) e.primaryContact = 'Valid 10-digit mobile required'
-    if (!validEmail(s1.email)) e.email = 'Valid email address required'
-    setErrs(e); return Object.keys(e).length === 0
-  }
-  function v2() {
-    const e: Record<string, string> = {}
-    if (!s2.gstNumber.trim()) e.gstNumber = 'GST number is required'
-    else if (!validGST(s2.gstNumber)) e.gstNumber = 'Invalid GSTIN (e.g. 27AABCR1234H1Z5)'
-    if (!s2.panNumber.trim()) e.panNumber = 'PAN number is required'
-    else if (!validPAN(s2.panNumber)) e.panNumber = 'Invalid PAN (e.g. AABCR1234H)'
-    if (s2.tanNumber && !validTAN(s2.tanNumber)) e.tanNumber = 'Invalid TAN (e.g. DELR12345G)'
-    setErrs(e); return Object.keys(e).length === 0
-  }
-  function v3() {
-    const e: Record<string, string> = {}
-    if (!s3.gstCert) e.gstCert = 'GST Certificate is required'
-    if (!s3.panCard) e.panCard = 'PAN Card copy is required'
-    if (!s3.cancelledCheque) e.cancelledCheque = 'Cancelled cheque is required'
-    if (!s3.bankProof) e.bankProof = 'Bank account proof is required'
-    setErrs(e); return Object.keys(e).length === 0
-  }
-  function v4() {
-    const e: Record<string, string> = {}
-    if (!s4.personA.name.trim()) e.pAName = 'Name is required'
-    if (!s4.personA.designation.trim()) e.pADesig = 'Designation is required'
-    if (!validPhone(s4.personA.mobile)) e.pAMobile = 'Valid 10-digit mobile required'
-    if (!s4.personA.idType) e.pAIdType = 'Select ID proof type'
-    if (!s4.personA.idNumber.trim()) e.pAIdNo = 'ID number is required'
-    if (!s4.personA.photo) e.pAPhoto = 'Photo / selfie is required'
-    if (!s4.personB.name.trim()) e.pBName = 'Name is required'
-    if (!s4.personB.designation.trim()) e.pBDesig = 'Designation is required'
-    if (!validPhone(s4.personB.mobile)) e.pBMobile = 'Valid 10-digit mobile required'
-    if (!validEmail(s4.personB.email)) e.pBEmail = 'Valid email required'
-    if (!s4.decl1) e.decl1 = 'Please confirm accuracy of information'
-    if (!s4.decl2) e.decl2 = 'Please agree to Terms & Conditions'
-    setErrs(e); return Object.keys(e).length === 0
-  }
-
-  function handleNext() {
-    const ok = step === 1 ? v1() : step === 2 ? v2() : v3()
-    if (ok) { setErrs({}); setStep(s => s + 1) }
-  }
-
-  function handleSubmit() {
-    if (!v4()) return
-    const ref = generateRefNo()
-    const now = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
-    setVendors(prev => [{ refNo: ref, companyName: s1.companyName, businessType: s1.businessType, gstNo: s2.gstNumber, submittedOn: now, status: 'Pending', step1: s1, step2: s2 }, ...prev])
-    setRefNo(ref); setSubmittedAt(now); setSubmitted(true)
-  }
-
-  function doAction(status: VendorStatus, note?: string) {
-    if (!selected) return
-    setVendors(prev => prev.map(v => v.refNo === selected.refNo ? { ...v, status, adminNote: note ?? v.adminNote } : v))
-    setSelected(prev => prev ? { ...prev, status, adminNote: note ?? prev.adminNote } : null)
-    setActionModal({ type: null, note: '' })
-  }
-
-  const filtered = vendors.filter(v => {
-    const matchQ = matchesSearch(search, v.companyName, v.refNo, v.gstNo)
-    const matchS = filterStatus === 'All' || v.status === filterStatus
-    return matchQ && matchS
+  const filteredGrns = grns.filter((g) => {
+    if (!grnFilter) return true
+    return (
+      g.purchase_no?.toLowerCase().includes(grnFilter.toLowerCase()) ||
+      g.invoice_no?.toLowerCase().includes(grnFilter.toLowerCase())
+    )
   })
 
-  // ── Render ────────────────────────────────────────────────
+  const filteredPrns = prns.filter((r) => {
+    if (!prnFilter) return true
+    return (
+      r.return_no?.toLowerCase().includes(prnFilter.toLowerCase()) ||
+      r.reference_no?.toLowerCase().includes(prnFilter.toLowerCase()) ||
+      r.reason?.toLowerCase().includes(prnFilter.toLowerCase())
+    )
+  })
+
+  const filteredCheques = cheques.filter((c) => {
+    if (chequeStatusFilter === 'all') return true
+    return c.status?.toLowerCase() === chequeStatusFilter.toLowerCase()
+  })
+
+  const filteredInvoices = invoices.filter((inv) => {
+    if (!invoiceFilter) return true
+    return (
+      inv.invoice_no?.toLowerCase().includes(invoiceFilter.toLowerCase()) ||
+      inv.purchase_no?.toLowerCase().includes(invoiceFilter.toLowerCase())
+    )
+  })
+
   return (
-    <div className="min-h-screen bg-slate-100" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-
-      {/* ── Top Nav ── */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          {/* Logo */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-200">
-              <Building2 className="text-white" size={18} />
-            </div>
-            <div className="leading-tight">
-              <p className="font-black text-slate-800 text-sm">Modern Bazaar</p>
-              <p className="text-[11px] text-slate-400 font-medium">Vendor Portal</p>
-            </div>
-          </div>
-
-          {/* Toggle */}
-          <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
-            {(['form', 'admin'] as const).map(v => (
-              <button key={v} onClick={() => setView(v)}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${view === v ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                {v === 'form' ? 'Vendor Registration' : 'Admin Panel'}
-              </button>
-            ))}
-          </div>
-
-          <p className="text-xs text-slate-400 hidden sm:block font-medium">
-            {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-          </p>
-        </div>
-      </header>
-
-      {/* ════════════════════════════════════════════════
-          PUBLIC FORM
-      ════════════════════════════════════════════════ */}
-      {view === 'form' && (
-        <div className="max-w-3xl mx-auto px-4 py-10">
-          {!submitted ? (
-            <>
-              {/* Page heading */}
-              <div className="text-center mb-8">
-                <span className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-4">
-                  <Shield size={11} /> Secure Vendor Onboarding
+    <div className="space-y-6 pb-12 max-w-7xl mx-auto">
+      {/* Top Welcome Card */}
+      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-900 rounded-2xl p-6 text-white shadow-xl print:hidden">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="space-y-1">
+            <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-500/20 text-blue-300 border border-blue-400/30">
+              Modern Bazaar Partner Portal
+            </span>
+            <h1 className="text-2xl font-black tracking-tight">{supplier?.name}</h1>
+            <p className="text-xs text-blue-200/80 flex items-center gap-3 flex-wrap">
+              <span>Code: <strong className="text-white">{supplier?.supplier_code || 'MB-VND'}</strong></span>
+              {supplier?.gst_number && <span>• GSTIN: <strong className="text-white">{supplier.gst_number}</strong></span>}
+              <span>• Type: {supplier?.supplier_type}</span>
+              {kpis?.outstanding_balance !== undefined && (
+                <span className="bg-white/10 px-2 py-0.5 rounded text-[11px] font-bold text-emerald-300">
+                  Balance: ₹{Number(kpis.outstanding_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
-                <h1 className="text-3xl font-black text-slate-800 mb-2">Supplier Registration</h1>
-                <p className="text-slate-500 text-sm max-w-sm mx-auto">Join the Modern Bazaar vendor network. All information is kept confidential.</p>
-              </div>
+              )}
+            </p>
+          </div>
 
-              <ProgressBar step={step} />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setNewItemModal(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-blue-500 hover:bg-blue-400 text-white transition-all shadow-lg shadow-blue-500/30"
+            >
+              <Sparkles className="w-4 h-4" />
+              Propose New Item
+            </button>
+            <button
+              onClick={() => setActiveTab('profile')}
+              className="px-4 py-2.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all"
+            >
+              Update Profile
+            </button>
+          </div>
+        </div>
+      </div>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
-                <div className="p-6 sm:p-8 space-y-7">
+      {/* Main Navigation Tabs */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-1.5 flex gap-1 overflow-x-auto print:hidden">
+        {portalNav.map((t) => {
+          const Icon = t.icon
+          const isActive = activeTab === t.id
+          return (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id as PortalTab)}
+              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
+                isActive
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
 
-                  {/* ──────────────────── STEP 1 ──────────────────── */}
-                  {step === 1 && (
-                    <div className="space-y-6">
-                      <div className="pb-1">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                          <Building2 className="text-indigo-600" size={20} /> Company Basic Information
-                        </h2>
-                        <p className="text-sm text-slate-400 mt-1">Legal entity details, address and contact information</p>
-                      </div>
+      {/* ── TAB: DASHBOARD ──────────────────────────────────────────────────── */}
+      {activeTab === 'dashboard' && (
+        <div className="space-y-6">
+          {/* Primary KPI Cards Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div
+              onClick={() => setActiveTab('pos')}
+              className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-blue-400 cursor-pointer transition-all"
+            >
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Orders</span>
+              <p className="text-2xl font-black text-slate-800 mt-1">{kpis?.total_pos || 0}</p>
+              <span className="text-[10px] text-blue-600 font-bold mt-1 block">
+                {kpis?.open_pos || 0} Open / In-Progress →
+              </span>
+            </div>
 
-                      <SectionDivider title="Entity Details" icon={<Briefcase size={12} />} />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                        <div className="sm:col-span-2">
-                          <Lbl text="Company / Firm Name" req />
-                          <input className={errs.companyName ? iec : ic} value={s1.companyName} placeholder="e.g. ABC Trading Private Limited"
-                            onChange={e => setS1({ ...s1, companyName: e.target.value })} />
-                          <Err msg={errs.companyName} />
-                        </div>
-                        <div>
-                          <Lbl text="Trade Name / DBA" />
-                          <Hint text="Also known as / Doing Business As" />
-                          <input className={ic} value={s1.tradeName} placeholder="Trade name if different"
-                            onChange={e => setS1({ ...s1, tradeName: e.target.value })} />
-                        </div>
-                        <div>
-                          <Lbl text="Type of Business" req />
-                          <select className={errs.businessType ? iec : sc} value={s1.businessType}
-                            onChange={e => setS1({ ...s1, businessType: e.target.value as BusinessType })}>
-                            <option value="">Select Type</option>
-                            {['Proprietorship', 'Partnership', 'LLP', 'Pvt Ltd', 'Public Ltd', 'Other'].map(t => <option key={t}>{t}</option>)}
-                          </select>
-                          <Err msg={errs.businessType} />
-                        </div>
-                        <div>
-                          <Lbl text="Year of Establishment" req />
-                          <select className={errs.yearEstablished ? iec : sc} value={s1.yearEstablished}
-                            onChange={e => setS1({ ...s1, yearEstablished: e.target.value })}>
-                            <option value="">Select Year</option>
-                            {Array.from({ length: 75 }, (_, i) => new Date().getFullYear() - i).map(y => <option key={y}>{y}</option>)}
-                          </select>
-                          <Err msg={errs.yearEstablished} />
-                        </div>
-                        <div>
-                          <Lbl text="Nature of Business" req />
-                          <select className={errs.natureOfBusiness ? iec : sc} value={s1.natureOfBusiness}
-                            onChange={e => setS1({ ...s1, natureOfBusiness: e.target.value as NatureOfBusiness })}>
-                            <option value="">Select Nature</option>
-                            {['Manufacturer', 'Trader', 'Distributor', 'Service Provider', 'Import-Export', 'Other'].map(n => <option key={n}>{n}</option>)}
-                          </select>
-                          <Err msg={errs.natureOfBusiness} />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <Lbl text="Website URL" />
-                          <div className="relative">
-                            <Globe className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                            <input className={`${ic} pl-9`} value={s1.website} placeholder="https://www.yourcompany.com"
-                              onChange={e => setS1({ ...s1, website: e.target.value })} />
-                          </div>
-                        </div>
-                      </div>
+            <div
+              onClick={() => setActiveTab('grns')}
+              className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-emerald-400 cursor-pointer transition-all"
+            >
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Goods Received (GRN)</span>
+              <p className="text-2xl font-black text-emerald-600 mt-1">{kpis?.total_grns || 0}</p>
+              <span className="text-[10px] text-slate-400 mt-1 block">Inward Receipts →</span>
+            </div>
 
-                      <SectionDivider title="Registered Address" icon={<MapPin size={12} />} />
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                        <div className="sm:col-span-3">
-                          <Lbl text="Business Address" req />
-                          <textarea className={`${errs.address ? iec : ic} resize-none`} rows={3} value={s1.address}
-                            placeholder="Full street address, building, area"
-                            onChange={e => setS1({ ...s1, address: e.target.value })} />
-                          <Err msg={errs.address} />
-                        </div>
-                        <div>
-                          <Lbl text="City" req />
-                          <input className={errs.city ? iec : ic} value={s1.city} placeholder="City"
-                            onChange={e => setS1({ ...s1, city: e.target.value })} />
-                          <Err msg={errs.city} />
-                        </div>
-                        <div>
-                          <Lbl text="State" req />
-                          <select className={errs.state ? iec : sc} value={s1.state}
-                            onChange={e => setS1({ ...s1, state: e.target.value })}>
-                            <option value="">Select State</option>
-                            {INDIAN_STATES.map(s => <option key={s}>{s}</option>)}
-                          </select>
-                          <Err msg={errs.state} />
-                        </div>
-                        <div>
-                          <Lbl text="PIN Code" req />
-                          <input className={errs.pincode ? iec : ic} value={s1.pincode} placeholder="6-digit PIN" maxLength={6}
-                            onChange={e => setS1({ ...s1, pincode: e.target.value.replace(/\D/g, '') })} />
-                          <Err msg={errs.pincode} />
-                        </div>
-                      </div>
+            <div
+              onClick={() => setActiveTab('prns')}
+              className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-rose-400 cursor-pointer transition-all"
+            >
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Purchase Returns (PRN)</span>
+              <p className="text-2xl font-black text-rose-600 mt-1">{kpis?.total_prns || 0}</p>
+              <span className="text-[10px] text-slate-400 mt-1 block">Returns & Replacements →</span>
+            </div>
 
-                      <SectionDivider title="Contact Information" icon={<Phone size={12} />} />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                        <div>
-                          <Lbl text="Primary Contact Number" req />
-                          <div className="relative">
-                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                            <input className={`${errs.primaryContact ? iec : ic} pl-9`} value={s1.primaryContact}
-                              placeholder="10-digit mobile" maxLength={10}
-                              onChange={e => setS1({ ...s1, primaryContact: e.target.value.replace(/\D/g, '') })} />
-                          </div>
-                          <Err msg={errs.primaryContact} />
-                        </div>
-                        <div>
-                          <Lbl text="Alternate Contact Number" />
-                          <div className="relative">
-                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                            <input className={`${ic} pl-9`} value={s1.altContact} placeholder="Optional"
-                              onChange={e => setS1({ ...s1, altContact: e.target.value.replace(/\D/g, '') })} />
-                          </div>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <Lbl text="Official Email ID" req />
-                          <Hint text="All future communications will be sent to this email" />
-                          <div className="relative">
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                            <input type="email" className={`${errs.email ? iec : ic} pl-9`} value={s1.email}
-                              placeholder="contact@yourcompany.com"
-                              onChange={e => setS1({ ...s1, email: e.target.value })} />
-                          </div>
-                          <Err msg={errs.email} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ──────────────────── STEP 2 ──────────────────── */}
-                  {step === 2 && (
-                    <div className="space-y-6">
-                      <div className="pb-1">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                          <Shield className="text-indigo-600" size={20} /> Statutory & Compliance Details
-                        </h2>
-                        <p className="text-sm text-slate-400 mt-1">Legal registration numbers and government identifiers</p>
-                      </div>
-
-                      <SectionDivider title="Primary Tax Identifiers" icon={<CreditCard size={12} />} />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                        <div className="sm:col-span-2">
-                          <Lbl text="GST Number (GSTIN)" req />
-                          <Hint text="15-character GST Identification Number" />
-                          <input className={`${errs.gstNumber ? iec : ic} font-mono uppercase`} value={s2.gstNumber}
-                            placeholder="e.g. 27AABCR1234H1Z5" maxLength={15}
-                            onChange={e => setS2({ ...s2, gstNumber: e.target.value.toUpperCase() })} />
-                          <Err msg={errs.gstNumber} />
-                        </div>
-                        <div>
-                          <Lbl text="PAN Number" req />
-                          <Hint text="10-character PAN" />
-                          <input className={`${errs.panNumber ? iec : ic} font-mono uppercase`} value={s2.panNumber}
-                            placeholder="e.g. AABCR1234H" maxLength={10}
-                            onChange={e => setS2({ ...s2, panNumber: e.target.value.toUpperCase() })} />
-                          <Err msg={errs.panNumber} />
-                        </div>
-                        <div>
-                          <Lbl text="TAN Number" />
-                          <Hint text="10-character TAN (if applicable)" />
-                          <input className={`${errs.tanNumber ? iec : ic} font-mono uppercase`} value={s2.tanNumber}
-                            placeholder="e.g. DELR12345G" maxLength={10}
-                            onChange={e => setS2({ ...s2, tanNumber: e.target.value.toUpperCase() })} />
-                          <Err msg={errs.tanNumber} />
-                        </div>
-                        {showCIN && (
-                          <div className="sm:col-span-2">
-                            <Lbl text="CIN Number" />
-                            <Hint text="Company Identification Number (Pvt Ltd / Public Ltd / LLP)" />
-                            <input className={`${ic} font-mono uppercase`} value={s2.cinNumber}
-                              placeholder="e.g. U51909MH2015PTC123456"
-                              onChange={e => setS2({ ...s2, cinNumber: e.target.value.toUpperCase() })} />
-                          </div>
-                        )}
-                      </div>
-
-                      <SectionDivider title="Optional Registrations" icon={<FileText size={12} />} />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                        <div>
-                          <Lbl text="MSME Registration Number" />
-                          <Hint text="Udyam Registration Number" />
-                          <input className={ic} value={s2.msmeNumber} placeholder="UDYAM-XX-XX-XXXXXXX"
-                            onChange={e => setS2({ ...s2, msmeNumber: e.target.value.toUpperCase() })} />
-                        </div>
-                        <div>
-                          <Lbl text="FSSAI License Number" />
-                          <Hint text="For food & beverage vendors" />
-                          <input className={`${ic} font-mono`} value={s2.fssaiNumber} placeholder="14-digit FSSAI number"
-                            onChange={e => setS2({ ...s2, fssaiNumber: e.target.value })} />
-                        </div>
-                        <div>
-                          <Lbl text="Drug License Number" />
-                          <Hint text="For pharmaceutical vendors" />
-                          <input className={ic} value={s2.drugLicense} placeholder="State drug license number"
-                            onChange={e => setS2({ ...s2, drugLicense: e.target.value })} />
-                        </div>
-                        <div>
-                          <Lbl text="IEC Code" />
-                          <Hint text="Import Export Code (10 digits)" />
-                          <input className={`${ic} font-mono`} value={s2.iecCode} placeholder="10-digit IEC"
-                            onChange={e => setS2({ ...s2, iecCode: e.target.value })} />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <Lbl text="Trade License Number" />
-                          <Hint text="Municipal / local body trade license" />
-                          <input className={ic} value={s2.tradeLicense} placeholder="Trade license number"
-                            onChange={e => setS2({ ...s2, tradeLicense: e.target.value })} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ──────────────────── STEP 3 ──────────────────── */}
-                  {step === 3 && (
-                    <div className="space-y-6">
-                      <div className="pb-1">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                          <FileText className="text-indigo-600" size={20} /> Document Upload
-                        </h2>
-                        <p className="text-sm text-slate-400 mt-1">Upload clear, legible copies of all required documents</p>
-                      </div>
-
-                      <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
-                        <Info className="text-amber-600 shrink-0 mt-0.5" size={15} />
-                        <p className="text-xs text-amber-700"><span className="font-bold">Upload Guidelines: </span>PDF / JPG / PNG · Max 2 MB per file · Documents must be clear, valid, and not expired</p>
-                      </div>
-
-                      <SectionDivider title="Required Documents" icon={<Shield size={12} />} />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <div>
-                          <FileUpload label="GST Registration Certificate" req value={s3.gstCert} onChange={f => setS3({ ...s3, gstCert: f })} />
-                          <Err msg={errs.gstCert} />
-                        </div>
-                        <div>
-                          <FileUpload label="PAN Card Copy" req value={s3.panCard} onChange={f => setS3({ ...s3, panCard: f })} />
-                          <Err msg={errs.panCard} />
-                        </div>
-                        <div>
-                          <FileUpload label="Cancelled Cheque" req hint="For bank account verification" value={s3.cancelledCheque} onChange={f => setS3({ ...s3, cancelledCheque: f })} />
-                          <Err msg={errs.cancelledCheque} />
-                        </div>
-                        <div>
-                          <FileUpload label="Bank Account Proof / Passbook" req hint="First page with account details" value={s3.bankProof} onChange={f => setS3({ ...s3, bankProof: f })} />
-                          <Err msg={errs.bankProof} />
-                        </div>
-                      </div>
-
-                      <SectionDivider title="Optional Documents" icon={<FileText size={12} />} />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <FileUpload label="TAN Certificate" value={s3.tanCert} onChange={f => setS3({ ...s3, tanCert: f })} />
-                        {showCIN && (
-                          <FileUpload label="CIN / Incorporation Certificate" value={s3.cinCert} onChange={f => setS3({ ...s3, cinCert: f })} />
-                        )}
-                        <FileUpload label="MSME Certificate" hint="Udyam Certificate" value={s3.msmeCert} onChange={f => setS3({ ...s3, msmeCert: f })} />
-                        <FileUpload label="Company Letterhead Sample" value={s3.letterhead} onChange={f => setS3({ ...s3, letterhead: f })} />
-                        <div className="sm:col-span-2">
-                          <FileUpload label="GST Return (Last Filed 3B or R1)" hint="PDF of most recent GST return filing"
-                            accept="application/pdf" value={s3.gstReturn} onChange={f => setS3({ ...s3, gstReturn: f })} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ──────────────────── STEP 4 ──────────────────── */}
-                  {step === 4 && (
-                    <div className="space-y-6">
-                      <div className="pb-1">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                          <Users className="text-indigo-600" size={20} /> Authorised Persons Details
-                        </h2>
-                        <p className="text-sm text-slate-400 mt-1">Two authorised contacts required for different business functions</p>
-                      </div>
-
-                      {/* Card A */}
-                      <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                        <div className="bg-indigo-600 px-5 py-4 flex items-start gap-3">
-                          <div className="w-7 h-7 bg-white/20 text-white rounded-lg flex items-center justify-center font-black text-sm shrink-0">A</div>
-                          <div>
-                            <h3 className="font-bold text-white text-sm">Cheque Collection / Payment Pickup Person</h3>
-                            <p className="text-indigo-200 text-xs mt-0.5">Person authorised to physically collect cheques or payments from our office</p>
-                          </div>
-                        </div>
-                        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-5 bg-white">
-                          <div>
-                            <Lbl text="Full Name" req />
-                            <input className={errs.pAName ? iec : ic} value={s4.personA.name} placeholder="Full legal name"
-                              onChange={e => setS4({ ...s4, personA: { ...s4.personA, name: e.target.value } })} />
-                            <Err msg={errs.pAName} />
-                          </div>
-                          <div>
-                            <Lbl text="Designation" req />
-                            <input className={errs.pADesig ? iec : ic} value={s4.personA.designation} placeholder="e.g. Director, Manager"
-                              onChange={e => setS4({ ...s4, personA: { ...s4.personA, designation: e.target.value } })} />
-                            <Err msg={errs.pADesig} />
-                          </div>
-                          <div>
-                            <Lbl text="Mobile Number" req />
-                            <input className={errs.pAMobile ? iec : ic} value={s4.personA.mobile} placeholder="10-digit mobile" maxLength={10}
-                              onChange={e => setS4({ ...s4, personA: { ...s4.personA, mobile: e.target.value.replace(/\D/g, '') } })} />
-                            <Err msg={errs.pAMobile} />
-                          </div>
-                          <div>
-                            <Lbl text="Email ID" />
-                            <input type="email" className={ic} value={s4.personA.email} placeholder="person@company.com"
-                              onChange={e => setS4({ ...s4, personA: { ...s4.personA, email: e.target.value } })} />
-                          </div>
-                          <div>
-                            <Lbl text="ID Proof Type" req />
-                            <select className={errs.pAIdType ? iec : sc} value={s4.personA.idType}
-                              onChange={e => setS4({ ...s4, personA: { ...s4.personA, idType: e.target.value as IdProofType } })}>
-                              <option value="">Select ID Type</option>
-                              {['Aadhar', 'PAN', 'Voter ID', 'Passport', 'Driving License'].map(t => <option key={t}>{t}</option>)}
-                            </select>
-                            <Err msg={errs.pAIdType} />
-                          </div>
-                          <div>
-                            <Lbl text="ID Proof Number" req />
-                            <input className={`${errs.pAIdNo ? iec : ic} font-mono uppercase`} value={s4.personA.idNumber} placeholder="ID document number"
-                              onChange={e => setS4({ ...s4, personA: { ...s4.personA, idNumber: e.target.value.toUpperCase() } })} />
-                            <Err msg={errs.pAIdNo} />
-                          </div>
-                          <div>
-                            <FileUpload label="Upload ID Proof" value={s4.personA.idProof}
-                              onChange={f => setS4({ ...s4, personA: { ...s4.personA, idProof: f } })} />
-                          </div>
-                          <div>
-                            <FileUpload label="Selfie / Photo" req hint="Clear face photo (JPG/PNG, max 1MB)"
-                              accept="image/*" maxMB={1} circular value={s4.personA.photo}
-                              onChange={f => setS4({ ...s4, personA: { ...s4.personA, photo: f } })} />
-                            <Err msg={errs.pAPhoto} />
-                          </div>
-                          <div className="sm:col-span-2">
-                            <label className={`flex items-center gap-3 cursor-pointer p-3.5 rounded-xl border transition-colors ${s4.personA.isPrimaryContact ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-200 hover:border-slate-300'}`}>
-                              <button type="button" onClick={() => setS4({ ...s4, personA: { ...s4.personA, isPrimaryContact: !s4.personA.isPrimaryContact } })}
-                                className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${s4.personA.isPrimaryContact ? 'bg-indigo-600' : 'bg-slate-300'}`}>
-                                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${s4.personA.isPrimaryContact ? 'left-4' : 'left-0.5'}`} />
-                              </button>
-                              <span className="text-sm text-slate-700 font-medium">This person is also the primary contact</span>
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Card B */}
-                      <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                        <div className="bg-blue-600 px-5 py-4 flex items-start gap-3">
-                          <div className="w-7 h-7 bg-white/20 text-white rounded-lg flex items-center justify-center font-black text-sm shrink-0">B</div>
-                          <div>
-                            <h3 className="font-bold text-white text-sm">Accounts / Ledger Communication Person</h3>
-                            <p className="text-blue-200 text-xs mt-0.5">Person handling invoice queries, ledger reconciliation, and payment follow-ups</p>
-                          </div>
-                        </div>
-                        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-5 bg-white">
-                          <div>
-                            <Lbl text="Full Name" req />
-                            <input className={errs.pBName ? iec : ic} value={s4.personB.name} placeholder="Full name"
-                              onChange={e => setS4({ ...s4, personB: { ...s4.personB, name: e.target.value } })} />
-                            <Err msg={errs.pBName} />
-                          </div>
-                          <div>
-                            <Lbl text="Designation" req />
-                            <input className={errs.pBDesig ? iec : ic} value={s4.personB.designation} placeholder="e.g. Accounts Manager"
-                              onChange={e => setS4({ ...s4, personB: { ...s4.personB, designation: e.target.value } })} />
-                            <Err msg={errs.pBDesig} />
-                          </div>
-                          <div>
-                            <Lbl text="Mobile Number" req />
-                            <input className={errs.pBMobile ? iec : ic} value={s4.personB.mobile} placeholder="10-digit mobile" maxLength={10}
-                              onChange={e => setS4({ ...s4, personB: { ...s4.personB, mobile: e.target.value.replace(/\D/g, '') } })} />
-                            <Err msg={errs.pBMobile} />
-                          </div>
-                          <div>
-                            <Lbl text="Email ID" req />
-                            <input type="email" className={errs.pBEmail ? iec : ic} value={s4.personB.email} placeholder="accounts@company.com"
-                              onChange={e => setS4({ ...s4, personB: { ...s4.personB, email: e.target.value } })} />
-                            <Err msg={errs.pBEmail} />
-                          </div>
-                          <div>
-                            <Lbl text="Department" />
-                            <select className={sc} value={s4.personB.department}
-                              onChange={e => setS4({ ...s4, personB: { ...s4.personB, department: e.target.value as Department } })}>
-                              <option value="">Select Department</option>
-                              {['Accounts', 'Finance', 'Admin', 'Other'].map(d => <option key={d}>{d}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <Lbl text="Preferred Communication" />
-                            <select className={sc} value={s4.personB.commMethod}
-                              onChange={e => setS4({ ...s4, personB: { ...s4.personB, commMethod: e.target.value as CommMethod } })}>
-                              <option value="">Select Method</option>
-                              {['Email', 'WhatsApp', 'Phone', 'All'].map(m => <option key={m}>{m}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <FileUpload label="Visiting Card or ID" hint="Optional" value={s4.personB.visitingCard}
-                              onChange={f => setS4({ ...s4, personB: { ...s4.personB, visitingCard: f } })} />
-                          </div>
-                          <div className="sm:col-span-2">
-                            <Lbl text="Note / Remark" />
-                            <Hint text="Special instructions for the accounts team" />
-                            <textarea className={`${ic} resize-none`} rows={3} value={s4.personB.note}
-                              placeholder="Payment terms preference, special instructions, etc."
-                              onChange={e => setS4({ ...s4, personB: { ...s4.personB, note: e.target.value } })} />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Declaration */}
-                      <SectionDivider title="Declaration & Submission" icon={<Shield size={12} />} />
-                      <div className="space-y-3">
-                        {[
-                          { key: 'decl1', checked: s4.decl1, err: errs.decl1, onChange: (v: boolean) => setS4({ ...s4, decl1: v }), text: 'I confirm that all information provided in this form is accurate, complete, and up-to-date. I take full responsibility for the authenticity of submitted documents.' },
-                          { key: 'decl2', checked: s4.decl2, err: errs.decl2, onChange: (v: boolean) => setS4({ ...s4, decl2: v }), text: 'I agree to the Terms & Conditions and Privacy Policy of Modern Bazaar Vendor Portal.' },
-                        ].map(d => (
-                          <div key={d.key}>
-                            <label className={`flex items-start gap-3 cursor-pointer p-4 rounded-xl border transition-colors ${d.checked ? 'bg-indigo-50 border-indigo-200' : d.err ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
-                              <input type="checkbox" checked={d.checked} onChange={e => d.onChange(e.target.checked)}
-                                className="mt-0.5 w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 shrink-0" />
-                              <span className="text-sm text-slate-700">{d.text}</span>
-                            </label>
-                            <Err msg={d.err} />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Navigation */}
-                  <div className="flex gap-3 pt-5 border-t border-slate-100">
-                    {step > 1 && (
-                      <button onClick={() => { setErrs({}); setStep(s => s - 1) }}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition-colors">
-                        <ChevronLeft size={16} /> Previous
-                      </button>
-                    )}
-                    <div className="flex-1" />
-                    {step < 4 ? (
-                      <button onClick={handleNext}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm transition-colors shadow-sm shadow-indigo-200">
-                        Next <ChevronRight size={16} />
-                      </button>
-                    ) : (
-                      <button onClick={handleSubmit}
-                        className="flex items-center gap-2 px-7 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition-colors shadow-md shadow-indigo-200">
-                        <CheckCircle2 size={16} /> Submit Application
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-center text-slate-400 text-xs mt-5">
-                Need help? Email <span className="text-indigo-600 font-semibold">procurement@modernbazaar.com</span>
+            <div
+              onClick={() => setActiveTab('ledger')}
+              className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-400 cursor-pointer transition-all"
+            >
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Outstanding Balance</span>
+              <p className="text-2xl font-black text-slate-900 mt-1">
+                ₹{Number(kpis?.outstanding_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </p>
-            </>
-          ) : (
-            /* ── Success Screen ── */
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="h-1.5 bg-gradient-to-r from-indigo-600 via-blue-500 to-indigo-600" />
-              <div className="p-10 text-center">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
-                  <CheckCircle2 className="text-green-600" size={40} />
-                </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-2">Submission Received!</h2>
-                <p className="text-slate-500 text-sm mb-8 max-w-sm mx-auto">
-                  Thank you for registering with Modern Bazaar. Our team will review your application within <strong>2–3 business days</strong>.
-                </p>
+              <span className="text-[10px] text-emerald-600 font-bold mt-1 block">View Ledger & Statements →</span>
+            </div>
+          </div>
 
-                <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 mb-8 max-w-xs mx-auto">
-                  <p className="text-[11px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Application Reference Number</p>
-                  <p className="text-2xl font-black text-indigo-700 font-mono tracking-wider">{refNo}</p>
-                  <p className="text-xs text-slate-400 mt-2">Submitted: {submittedAt}</p>
+          {/* Secondary KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div
+              onClick={() => setActiveTab('cheques')}
+              className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-amber-400 cursor-pointer transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Cheques Issued</span>
+                  <p className="text-xl font-black text-slate-900 mt-1">{kpis?.total_cheques || 0}</p>
                 </div>
+                <CreditCard className="w-6 h-6 text-amber-500 opacity-80" />
+              </div>
+            </div>
 
-                <div className="grid grid-cols-3 gap-3 max-w-sm mx-auto mb-8">
-                  {[
-                    { n: '✓', label: 'Received', desc: 'Form submitted', done: true },
-                    { n: '2', label: 'Under Review', desc: '2–3 business days', done: false },
-                    { n: '3', label: 'Code Issued', desc: 'Email notification', done: false },
-                  ].map(item => (
-                    <div key={item.n} className={`p-3 rounded-xl border text-center ${item.done ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200'}`}>
-                      <div className={`w-6 h-6 rounded-full mx-auto mb-1.5 flex items-center justify-center text-xs font-bold ${item.done ? 'bg-green-500 text-white' : 'bg-slate-200 text-slate-500'}`}>{item.n}</div>
-                      <p className="text-[11px] font-bold text-slate-700">{item.label}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{item.desc}</p>
-                    </div>
-                  ))}
+            <div
+              onClick={() => setActiveTab('ledger')}
+              className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-blue-400 cursor-pointer transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Payments (DR)</span>
+                  <p className="text-xl font-black text-slate-900 mt-1">
+                    ₹{Number(kpis?.total_payments || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                  </p>
                 </div>
+                <Wallet className="w-6 h-6 text-emerald-500 opacity-80" />
+              </div>
+            </div>
 
-                <button onClick={() => { setSubmitted(false); setStep(1) }}
-                  className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition-colors">
-                  Register Another Vendor
+            <div
+              onClick={() => setActiveTab('item_requests')}
+              className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:border-blue-400 cursor-pointer transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Pending Proposals</span>
+                  <p className="text-xl font-black text-slate-900 mt-1">{kpis?.pending_item_requests || 0} items</p>
+                </div>
+                <Sparkles className="w-6 h-6 text-blue-500 opacity-80" />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Active Catalog</span>
+                  <p className="text-xl font-black text-slate-900 mt-1">{kpis?.supplied_items_count || 0} items</p>
+                </div>
+                <Package className="w-6 h-6 text-indigo-500 opacity-80" />
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Orders, GRNs, PRNs, and Cheques Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Recent Orders */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Recent Purchase Orders</h3>
+                <button onClick={() => setActiveTab('pos')} className="text-xs text-blue-600 font-bold hover:underline">
+                  View All →
                 </button>
               </div>
+              <div className="divide-y divide-slate-100 text-xs">
+                {(!dashboardData?.recent_pos || dashboardData.recent_pos.length === 0) ? (
+                  <p className="p-6 text-center text-slate-400">No recent orders</p>
+                ) : (
+                  dashboardData.recent_pos.map((p) => (
+                    <div key={p.id} className="p-4 hover:bg-slate-50 flex items-center justify-between">
+                      <div>
+                        <span className="font-mono font-bold text-blue-600">{p.po_no}</span>
+                        <p className="text-slate-400 text-[10px] mt-0.5">{p.po_date} • {p.items_count} items</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-black text-slate-900 block">₹{Number(p.total_amount || 0).toFixed(2)}</span>
+                        <span className="text-[10px] font-bold uppercase text-slate-500">{p.status}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          )}
+
+            {/* Recent GRNs */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Recent Goods Received (GRN)</h3>
+                <button onClick={() => setActiveTab('grns')} className="text-xs text-blue-600 font-bold hover:underline">
+                  View All →
+                </button>
+              </div>
+              <div className="divide-y divide-slate-100 text-xs">
+                {(!dashboardData?.recent_grns || dashboardData.recent_grns.length === 0) ? (
+                  <p className="p-6 text-center text-slate-400">No recent GRNs</p>
+                ) : (
+                  dashboardData.recent_grns.map((g) => (
+                    <div key={g.id} className="p-4 hover:bg-slate-50 flex items-center justify-between">
+                      <div>
+                        <span className="font-mono font-bold text-slate-800">{g.purchase_no}</span>
+                        <p className="text-slate-400 text-[10px] mt-0.5">Inv: {g.invoice_no || '—'} • {g.invoice_date}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-black text-slate-900 block">₹{Number(g.total_amount || 0).toFixed(2)}</span>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                          POSTED
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Recent PRNs (Returns) */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Recent Purchase Returns (PRN)</h3>
+                <button onClick={() => setActiveTab('prns')} className="text-xs text-rose-600 font-bold hover:underline">
+                  View All →
+                </button>
+              </div>
+              <div className="divide-y divide-slate-100 text-xs">
+                {(!dashboardData?.recent_prns || dashboardData.recent_prns.length === 0) ? (
+                  <p className="p-6 text-center text-slate-400">No purchase returns recorded</p>
+                ) : (
+                  dashboardData.recent_prns.map((r) => (
+                    <div key={r.id} className="p-4 hover:bg-slate-50 flex items-center justify-between">
+                      <div>
+                        <span className="font-mono font-bold text-rose-600">{r.return_no}</span>
+                        <p className="text-slate-400 text-[10px] mt-0.5">{r.return_date} • {r.reason || 'Return'}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-black text-slate-900 block">₹{Number(r.total_amount || 0).toFixed(2)}</span>
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                          r.vendor_ack ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {r.vendor_ack ? 'ACKNOWLEDGED' : 'PENDING ACK'}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Recent Cheques */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Recent Cheques Issued</h3>
+                <button onClick={() => setActiveTab('cheques')} className="text-xs text-blue-600 font-bold hover:underline">
+                  View All →
+                </button>
+              </div>
+              <div className="divide-y divide-slate-100 text-xs">
+                {(!dashboardData?.recent_cheques || dashboardData.recent_cheques.length === 0) ? (
+                  <p className="p-6 text-center text-slate-400">No cheques issued recently</p>
+                ) : (
+                  dashboardData.recent_cheques.map((c) => (
+                    <div key={c.id} className="p-4 hover:bg-slate-50 flex items-center justify-between">
+                      <div>
+                        <span className="font-mono font-bold text-slate-900">Cheque {c.cheque_no}</span>
+                        <p className="text-slate-400 text-[10px] mt-0.5">{c.bank_name || 'Bank'} • {c.cheque_date}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-black text-slate-900 block">₹{Number(c.amount || 0).toFixed(2)}</span>
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                          c.status === 'cleared'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : c.status === 'bounced'
+                            ? 'bg-rose-100 text-rose-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {c.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════
-          ADMIN PANEL
-      ════════════════════════════════════════════════ */}
-      {view === 'admin' && (
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          {/* Header row */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      {/* ── TAB: PURCHASE ORDERS ─────────────────────────────────────────────── */}
+      {activeTab === 'pos' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-4">
             <div>
-              <h2 className="text-2xl font-black text-slate-800">Vendor Applications</h2>
-              <p className="text-slate-400 text-sm">Review and manage all vendor registration submissions</p>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Approved Purchase Orders</h3>
+              <p className="text-xs text-slate-500">Official POs dispatched by Modern Bazaar purchasing department</p>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {(['All', 'Pending', 'Approved', 'Rejected', 'On Hold'] as const).map(s => {
-                const cnt = s === 'All' ? vendors.length : vendors.filter(v => v.status === s).length
-                return (
-                  <button key={s} onClick={() => setFilterStatus(s)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${filterStatus === s ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}`}>
-                    {s} <span className={`ml-1 ${filterStatus === s ? 'opacity-75' : 'text-slate-400'}`}>({cnt})</span>
-                  </button>
-                )
-              })}
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search PO # or status…"
+                  value={poFilter}
+                  onChange={(e) => setPoFilter(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <span className="text-xs text-slate-400 font-bold">{filteredPos.length} Orders</span>
             </div>
           </div>
 
-          {/* Search bar */}
-          <div className="relative mb-4">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-            <input className={`${ic} pl-10 bg-white`} value={search} placeholder="Search by company, ref no, or GST number…"
-              onChange={e => setSearch(e.target.value)} />
-          </div>
-
-          {/* Table */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200">
-                    {['Ref No', 'Company Name', 'Business Type', 'GST Number', 'Submitted On', 'Status', ''].map(h => (
-                      <th key={h} className={`px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider ${['Business Type', 'GST Number'].includes(h) ? 'hidden md:table-cell' : h === 'Submitted On' ? 'hidden lg:table-cell' : ''}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-20 text-center">
-                        <Search className="mx-auto mb-3 text-slate-300" size={32} />
-                        <p className="text-slate-400 font-semibold text-sm">No applications found</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-600 uppercase font-bold text-left border-b border-slate-200">
+                <tr>
+                  <th className="px-6 py-3">PO Number</th>
+                  <th className="px-6 py-3">PO Date</th>
+                  <th className="px-6 py-3">Expected Date</th>
+                  <th className="px-6 py-3">Ordered / Received</th>
+                  <th className="px-6 py-3 text-right">PO Total</th>
+                  <th className="px-6 py-3 text-center">Your Ack</th>
+                  <th className="px-6 py-3 text-center">Order Status</th>
+                  <th className="px-6 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filteredPos.length === 0 ? (
+                  <tr><td colSpan={8} className="text-center py-8 text-slate-400">No purchase orders found</td></tr>
+                ) : (
+                  filteredPos.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50/50">
+                      <td className="px-6 py-3 font-mono font-bold text-blue-600">{p.po_no}</td>
+                      <td className="px-6 py-3 text-slate-600">{p.po_date}</td>
+                      <td className="px-6 py-3 text-slate-600">{p.expected_date || '—'}</td>
+                      <td className="px-6 py-3 text-slate-700">
+                        <span className="font-bold text-slate-900">{p.total_received_qty}</span> / {p.total_ordered_qty} units
                       </td>
-                    </tr>
-                  ) : filtered.map(v => (
-                    <tr key={v.refNo} onClick={() => setSelected(v)}
-                      className="hover:bg-indigo-50/40 cursor-pointer transition-colors group">
-                      <td className="px-5 py-4">
-                        <span className="text-xs font-mono font-bold text-indigo-600">{v.refNo}</span>
+                      <td className="px-6 py-3 text-right font-bold text-slate-900">₹{Number(p.total_amount || 0).toFixed(2)}</td>
+                      <td className="px-6 py-3 text-center">
+                        {p.vendor_ack ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            ACKNOWLEDGED
+                          </span>
+                        ) : perms.acknowledge_orders !== false ? (
+                          <button
+                            onClick={() => {
+                              setSelectedPo(p)
+                              setAckExpectedDate(p.expected_date || '')
+                              setAckRemarks('')
+                              setAckModal(true)
+                            }}
+                            className="px-2.5 py-1 bg-amber-500 text-white rounded text-[10px] font-bold hover:bg-amber-600"
+                          >
+                            Acknowledge
+                          </button>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">—</span>
+                        )}
                       </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-indigo-100 text-indigo-700 rounded-lg flex items-center justify-center font-bold text-sm shrink-0">
-                            {v.companyName.charAt(0)}
-                          </div>
-                          <span className="font-semibold text-slate-800 text-sm">{v.companyName}</span>
-                        </div>
+                      <td className="px-6 py-3 text-center">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700">
+                          {p.status}
+                        </span>
                       </td>
-                      <td className="px-5 py-4 text-sm text-slate-500 hidden md:table-cell">{v.businessType}</td>
-                      <td className="px-5 py-4 hidden md:table-cell">
-                        <span className="text-xs font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">{v.gstNo}</span>
-                      </td>
-                      <td className="px-5 py-4 text-xs text-slate-400 hidden lg:table-cell">{v.submittedOn}</td>
-                      <td className="px-5 py-4"><StatusBadge status={v.status} /></td>
-                      <td className="px-5 py-4">
-                        <button className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold transition-all hover:bg-indigo-100">
-                          <Eye size={13} /> View
+                      <td className="px-6 py-3 text-right">
+                        <button
+                          onClick={() => {
+                            setSelectedPo(p)
+                            setPoDetailModal(true)
+                          }}
+                          className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-bold"
+                        >
+                          View Items
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: GRN RECEIPTS ────────────────────────────────────────────────── */}
+      {activeTab === 'grns' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Goods Received Notes (GRN)</h3>
+              <p className="text-xs text-slate-500">Official posted inventory receipts verified at Modern Bazaar receiving docks</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search GRN # or invoice…"
+                  value={grnFilter}
+                  onChange={(e) => setGrnFilter(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <span className="text-xs text-slate-400 font-bold">{filteredGrns.length} Receipts</span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-600 uppercase font-bold text-left border-b border-slate-200">
+                <tr>
+                  <th className="px-6 py-3">GRN Number</th>
+                  <th className="px-6 py-3">Invoice # / Date</th>
+                  <th className="px-6 py-3">Total Qty Received</th>
+                  <th className="px-6 py-3 text-right">Taxable Value</th>
+                  <th className="px-6 py-3 text-right">Total Amount</th>
+                  <th className="px-6 py-3 text-center">Receipt Status</th>
+                  <th className="px-6 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filteredGrns.length === 0 ? (
+                  <tr><td colSpan={7} className="text-center py-8 text-slate-400">No GRN receipts found</td></tr>
+                ) : (
+                  filteredGrns.map((g) => (
+                    <tr key={g.id} className="hover:bg-slate-50/50">
+                      <td className="px-6 py-3 font-mono font-bold text-slate-900">{g.purchase_no}</td>
+                      <td className="px-6 py-3 text-slate-700">
+                        {g.invoice_no || '—'} <span className="text-slate-400">({g.invoice_date})</span>
+                      </td>
+                      <td className="px-6 py-3 text-slate-800 font-bold">{g.total_qty} units</td>
+                      <td className="px-6 py-3 text-right font-mono">₹{Number(g.taxable_amount || 0).toFixed(2)}</td>
+                      <td className="px-6 py-3 text-right font-mono font-bold text-slate-900">₹{Number(g.total_amount || 0).toFixed(2)}</td>
+                      <td className="px-6 py-3 text-center">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800">
+                          {g.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-3 text-right">
+                        <button
+                          onClick={() => {
+                            setSelectedGrn(g)
+                            setGrnDetailModal(true)
+                          }}
+                          className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold"
+                        >
+                          View Items & Batches
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: PRN RETURNS (NEW!) ─────────────────────────────────────────── */}
+      {activeTab === 'prns' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Purchase Return Notes (PRN)</h3>
+              <p className="text-xs text-slate-500">Official goods returned to supplier due to expiry, damages, or discrepancies</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search PRN # or reason…"
+                  value={prnFilter}
+                  onChange={(e) => setPrnFilter(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <span className="text-xs text-slate-400 font-bold">{filteredPrns.length} PRNs</span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-600 uppercase font-bold text-left border-b border-slate-200">
+                <tr>
+                  <th className="px-6 py-3">PRN Number</th>
+                  <th className="px-6 py-3">Return Date</th>
+                  <th className="px-6 py-3">Ref Invoice #</th>
+                  <th className="px-6 py-3">Return Reason</th>
+                  <th className="px-6 py-3 text-right">Items Returned</th>
+                  <th className="px-6 py-3 text-right">Debit Amount</th>
+                  <th className="px-6 py-3 text-center">Your Ack</th>
+                  <th className="px-6 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filteredPrns.length === 0 ? (
+                  <tr><td colSpan={8} className="text-center py-8 text-slate-400">No purchase returns recorded</td></tr>
+                ) : (
+                  filteredPrns.map((r) => (
+                    <tr key={r.id} className="hover:bg-slate-50/50">
+                      <td className="px-6 py-3 font-mono font-bold text-rose-600">{r.return_no}</td>
+                      <td className="px-6 py-3 text-slate-600">{r.return_date}</td>
+                      <td className="px-6 py-3 text-slate-600 font-mono">{r.reference_no || '—'}</td>
+                      <td className="px-6 py-3 text-slate-700">{r.reason || 'Inventory Return'}</td>
+                      <td className="px-6 py-3 text-right font-bold text-slate-800">{r.total_qty || r.items?.length || 0} units</td>
+                      <td className="px-6 py-3 text-right font-mono font-bold text-rose-700">₹{Number(r.total_amount || 0).toFixed(2)}</td>
+                      <td className="px-6 py-3 text-center">
+                        {r.vendor_ack ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            ACKNOWLEDGED
+                          </span>
+                        ) : perms.acknowledge_prn !== false ? (
+                          <button
+                            onClick={() => {
+                              setSelectedPrn(r)
+                              setPrnAckRemarks('')
+                              setPrnAckModal(true)
+                            }}
+                            className="px-2.5 py-1 bg-amber-500 text-white rounded text-[10px] font-bold hover:bg-amber-600"
+                          >
+                            Acknowledge
+                          </button>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-3 text-right">
+                        <button
+                          onClick={() => {
+                            setSelectedPrn(r)
+                            setPrnDetailModal(true)
+                          }}
+                          className="px-3 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg font-bold"
+                        >
+                          View Return Items
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: CHEQUES (NEW!) ──────────────────────────────────────────────── */}
+      {activeTab === 'cheques' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Cheque Management</h3>
+              <p className="text-xs text-slate-500">Track cheques issued by Modern Bazaar finance department for your payments</p>
+            </div>
+            {/* Status Filter Tabs */}
+            <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
+              {['all', 'issued', 'cleared', 'bounced'].map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setChequeStatusFilter(st)}
+                  className={`px-3 py-1 rounded text-xs font-bold uppercase transition-all ${
+                    chequeStatusFilter === st
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Bank cheque numbers are masked (e.g. ****1234) for financial confidentiality and fraud protection.</span>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-slate-600 uppercase font-bold text-left border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-3">Cheque Number</th>
+                    <th className="px-6 py-3">Cheque Date</th>
+                    <th className="px-6 py-3">Bank Name & Branch</th>
+                    <th className="px-6 py-3 text-right">Amount (₹)</th>
+                    <th className="px-6 py-3 text-center">Clearing Status</th>
+                    <th className="px-6 py-3">Clearing Date</th>
+                    <th className="px-6 py-3">Remarks / Voucher</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {filteredCheques.length === 0 ? (
+                    <tr><td colSpan={7} className="text-center py-8 text-slate-400">No cheques found matching filter</td></tr>
+                  ) : (
+                    filteredCheques.map((c) => (
+                      <tr key={c.id} className="hover:bg-slate-50/50">
+                        <td className="px-6 py-3 font-mono font-bold text-slate-900">{c.cheque_no}</td>
+                        <td className="px-6 py-3 text-slate-600">{c.cheque_date}</td>
+                        <td className="px-6 py-3 text-slate-800">
+                          {c.bank_name || 'Bank'} {c.branch && <span className="text-slate-400">({c.branch})</span>}
+                        </td>
+                        <td className="px-6 py-3 text-right font-mono font-bold text-slate-900">
+                          ₹{Number(c.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-6 py-3 text-center">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            c.status === 'cleared'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : c.status === 'bounced'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {c.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3 text-slate-600">{c.clearing_date || '—'}</td>
+                        <td className="px-6 py-3 text-slate-500 font-mono text-[11px]">{c.remarks || c.voucher_no || '—'}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1023,202 +1015,856 @@ export default function VendorPortal() {
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════
-          VENDOR DETAIL MODAL
-      ════════════════════════════════════════════════ */}
-      {selected && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm"
-          onClick={e => { if (e.target === e.currentTarget) setSelected(null) }}>
-          <div className="bg-white w-full sm:max-w-3xl rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[92vh] sm:max-h-[88vh] flex flex-col overflow-hidden">
+      {/* ── TAB: PAYMENTS & LEDGER (NEW!) ───────────────────────────────────── */}
+      {activeTab === 'ledger' && (
+        <div className="space-y-6">
+          {/* Summary Balance Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Opening Balance</span>
+              <p className="text-2xl font-black text-slate-800 mt-1">
+                ₹{Number(ledgerData?.opening_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </p>
+              <span className="text-[10px] text-slate-400 mt-1 block">Account Start</span>
+            </div>
 
-            {/* Modal header */}
-            <div className="px-6 py-5 border-b border-slate-100 shrink-0 flex items-start justify-between bg-slate-50">
-              <div>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <StatusBadge status={selected.status} />
-                  <span className="text-xs font-mono text-slate-400">{selected.refNo}</span>
-                </div>
-                <h3 className="text-lg font-black text-slate-800">{selected.companyName}</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Submitted: {selected.submittedOn}</p>
-              </div>
-              <button onClick={() => setSelected(null)} className="p-2 hover:bg-slate-200 rounded-xl text-slate-400 transition-colors">
-                <X size={20} />
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Invoiced (CR)</span>
+              <p className="text-2xl font-black text-blue-600 mt-1">
+                ₹{Number(ledgerData?.total_purchases || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </p>
+              <span className="text-[10px] text-blue-500 mt-1 block">GRN Receipts</span>
+            </div>
+
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Paid & Returns (DR)</span>
+              <p className="text-2xl font-black text-emerald-600 mt-1">
+                ₹{Number((ledgerData?.total_payments || 0) + (ledgerData?.total_returns || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </p>
+              <span className="text-[10px] text-slate-400 mt-1 block">Payments + PRNs</span>
+            </div>
+
+            <div className="bg-slate-900 text-white p-5 rounded-xl shadow-md">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Net Outstanding Balance</span>
+              <p className="text-2xl font-black text-emerald-400 mt-1">
+                ₹{Number(ledgerData?.closing_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </p>
+              <span className="text-[10px] text-slate-400 mt-1 block">Payable by Modern Bazaar</span>
+            </div>
+          </div>
+
+          {/* Sub Navigation & Print Button */}
+          <div className="flex justify-between items-center flex-wrap gap-4 print:hidden">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setLedgerSubTab('statement')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                  ledgerSubTab === 'statement'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                Running Account Statement
+              </button>
+              <button
+                onClick={() => setLedgerSubTab('payments')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                  ledgerSubTab === 'payments'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                Payment Vouchers ({payments.length})
               </button>
             </div>
 
-            {/* Modal body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold shadow-xs"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Print Statement
+            </button>
+          </div>
 
-              {/* Admin note */}
-              {selected.adminNote && (
-                <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <Info className="text-amber-600 shrink-0 mt-0.5" size={15} />
-                  <div>
-                    <p className="text-xs font-bold text-amber-700 mb-1">Admin Note</p>
-                    <p className="text-sm text-amber-800">{selected.adminNote}</p>
-                  </div>
-                </div>
-              )}
+          {ledgerLoading ? (
+            <div className="p-12 text-center text-slate-400">Loading ledger statement…</div>
+          ) : ledgerSubTab === 'statement' ? (
+            /* Running Statement Table */
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-700">Chronological Ledger Statement</span>
+                <span className="text-xs text-slate-400 font-mono">Statement as of {new Date().toLocaleDateString('en-IN')}</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-left">
+                    <tr>
+                      <th className="px-5 py-3">Date</th>
+                      <th className="px-5 py-3">Type</th>
+                      <th className="px-5 py-3">Ref / Doc #</th>
+                      <th className="px-5 py-3">Particulars</th>
+                      <th className="px-5 py-3 text-right">Debit (₹)</th>
+                      <th className="px-5 py-3 text-right">Credit (₹)</th>
+                      <th className="px-5 py-3 text-right">Balance (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {/* Opening balance row */}
+                    <tr className="bg-slate-50/50 font-bold">
+                      <td className="px-5 py-3 text-slate-500">—</td>
+                      <td className="px-5 py-3 text-slate-500 uppercase text-[10px]">OPENING</td>
+                      <td className="px-5 py-3 font-mono text-slate-500">—</td>
+                      <td className="px-5 py-3 text-slate-800">Opening Balance Brought Forward</td>
+                      <td className="px-5 py-3 text-right font-mono text-slate-400">—</td>
+                      <td className="px-5 py-3 text-right font-mono text-slate-400">—</td>
+                      <td className="px-5 py-3 text-right font-mono text-slate-900 font-black">
+                        ₹{Number(ledgerData?.opening_balance || 0).toFixed(2)}
+                      </td>
+                    </tr>
 
-              {/* Company info */}
-              <section>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Building2 size={13} /> Company Information</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {[
-                    ['Company Name', selected.step1.companyName],
-                    ['Trade Name', selected.step1.tradeName || '—'],
-                    ['Business Type', selected.step1.businessType],
-                    ['Nature', selected.step1.natureOfBusiness],
-                    ['Est. Year', selected.step1.yearEstablished],
-                    ['Website', selected.step1.website || '—'],
-                  ].map(([l, v]) => (
-                    <div key={l} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{l}</p>
-                      <p className="text-sm font-semibold text-slate-700 break-words">{v}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              {/* Address & contact */}
-              <section>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2"><MapPin size={13} /> Address & Contact</p>
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Full Address</p>
-                    <p className="text-sm text-slate-700">{selected.step1.address}, {selected.step1.city}, {selected.step1.state} — {selected.step1.pincode}</p>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Primary Contact</p>
-                      <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"><Phone size={12} className="text-slate-400" />{selected.step1.primaryContact}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Email</p>
-                      <p className="text-sm font-semibold text-indigo-600 flex items-center gap-1.5"><Mail size={12} />{selected.step1.email}</p>
-                    </div>
-                    {selected.step1.website && (
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Website</p>
-                        <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"><Globe size={12} className="text-slate-400" />{selected.step1.website}</p>
-                      </div>
+                    {(!ledgerData?.transactions || ledgerData.transactions.length === 0) ? (
+                      <tr><td colSpan={7} className="text-center py-6 text-slate-400">No transactions recorded</td></tr>
+                    ) : (
+                      ledgerData.transactions.map((tx: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="px-5 py-3 text-slate-600">{tx.date}</td>
+                          <td className="px-5 py-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              tx.type === 'PURCHASE'
+                                ? 'bg-blue-100 text-blue-800'
+                                : tx.type === 'RETURN'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              {tx.type}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 font-mono font-bold text-slate-800">{tx.ref_no}</td>
+                          <td className="px-5 py-3 text-slate-700">{tx.particulars}</td>
+                          <td className="px-5 py-3 text-right font-mono text-rose-600 font-bold">
+                            {tx.debit > 0 ? `₹${Number(tx.debit).toFixed(2)}` : '—'}
+                          </td>
+                          <td className="px-5 py-3 text-right font-mono text-blue-600 font-bold">
+                            {tx.credit > 0 ? `₹${Number(tx.credit).toFixed(2)}` : '—'}
+                          </td>
+                          <td className="px-5 py-3 text-right font-mono font-black text-slate-900">
+                            ₹{Number(tx.balance).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))
                     )}
-                  </div>
-                </div>
-              </section>
-
-              {/* Compliance */}
-              <section>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Shield size={13} /> Compliance & Registrations</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {[
-                    ['GSTIN', selected.step2.gstNumber],
-                    ['PAN', selected.step2.panNumber],
-                    ['TAN', selected.step2.tanNumber],
-                    ['CIN', selected.step2.cinNumber],
-                    ['MSME', selected.step2.msmeNumber],
-                    ['FSSAI', selected.step2.fssaiNumber],
-                    ['Drug License', selected.step2.drugLicense],
-                    ['IEC Code', selected.step2.iecCode],
-                    ['Trade License', selected.step2.tradeLicense],
-                  ].map(([l, v]) => (
-                    <div key={l} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{l}</p>
-                      <p className={`text-xs font-semibold break-all ${v ? 'text-slate-800 font-mono' : 'text-slate-300'}`}>{v || '—'}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              {/* Documents */}
-              <section>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2"><FileText size={13} /> Documents</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {['GST Certificate', 'PAN Card', 'Cancelled Cheque', 'Bank Proof', 'TAN Certificate', 'Company Letterhead', 'GST Return (3B/R1)'].map(doc => (
-                    <button key={doc} className="border border-dashed border-slate-200 rounded-xl p-3.5 flex items-center gap-2.5 hover:bg-slate-50 hover:border-indigo-300 transition-colors text-left group">
-                      <div className="w-9 h-9 bg-slate-100 group-hover:bg-indigo-100 rounded-lg flex items-center justify-center shrink-0 transition-colors">
-                        <FileText className="text-slate-400 group-hover:text-indigo-600 transition-colors" size={16} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-600 leading-tight truncate">{doc}</p>
-                        <p className="text-[10px] text-indigo-500 mt-0.5 flex items-center gap-0.5"><ExternalLink size={9} /> View</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            </div>
-
-            {/* Actions footer */}
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
-              <div className="flex flex-wrap gap-2.5">
-                <button onClick={() => doAction('Approved')} disabled={selected.status === 'Approved'}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-xs transition-colors">
-                  <ThumbsUp size={14} /> Approve
-                </button>
-                <button onClick={() => setActionModal({ type: 'reject', note: '' })} disabled={selected.status === 'Rejected'}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-xs transition-colors">
-                  <ThumbsDown size={14} /> Reject
-                </button>
-                <button onClick={() => setActionModal({ type: 'hold', note: '' })} disabled={selected.status === 'On Hold'}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-xs transition-colors">
-                  <Pause size={14} /> Put On Hold
-                </button>
-                <button onClick={() => setActionModal({ type: 'info', note: '' })}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs transition-colors">
-                  <MessageSquare size={14} /> Request More Info
-                </button>
+                  </tbody>
+                </table>
               </div>
             </div>
+          ) : (
+            /* Payments Vouchers Table */
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-600 uppercase font-bold text-left border-b border-slate-200">
+                    <tr>
+                      <th className="px-6 py-3">Payment Date</th>
+                      <th className="px-6 py-3">Voucher #</th>
+                      <th className="px-6 py-3">Payment Mode</th>
+                      <th className="px-6 py-3">Reference / Cheque #</th>
+                      <th className="px-6 py-3">Bank Name</th>
+                      <th className="px-6 py-3 text-right">Amount (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {payments.length === 0 ? (
+                      <tr><td colSpan={6} className="text-center py-8 text-slate-400">No payment records found</td></tr>
+                    ) : (
+                      payments.map((p) => (
+                        <tr key={p.id} className="hover:bg-slate-50/50">
+                          <td className="px-6 py-3 text-slate-600">{p.payment_date}</td>
+                          <td className="px-6 py-3 font-mono font-bold text-slate-800">{p.payment_no || `PAY-${p.id}`}</td>
+                          <td className="px-6 py-3">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-800">
+                              {p.payment_mode || 'BANK'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 font-mono text-slate-600">{p.reference_no || '—'}</td>
+                          <td className="px-6 py-3 text-slate-700">{p.bank_name || '—'}</td>
+                          <td className="px-6 py-3 text-right font-mono font-bold text-emerald-700 text-sm">
+                            ₹{Number(p.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB: INVOICES (NEW!) ─────────────────────────────────────────────── */}
+      {activeTab === 'invoices' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Purchase Invoices & Bills</h3>
+              <p className="text-xs text-slate-500">Verified vendor invoices processed by Modern Bazaar accounts</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search invoice or GRN #…"
+                  value={invoiceFilter}
+                  onChange={(e) => setInvoiceFilter(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <span className="text-xs text-slate-400 font-bold">{filteredInvoices.length} Bills</span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-600 uppercase font-bold text-left border-b border-slate-200">
+                <tr>
+                  <th className="px-6 py-3">Invoice Number</th>
+                  <th className="px-6 py-3">Invoice Date</th>
+                  <th className="px-6 py-3">Modern Bazaar GRN #</th>
+                  <th className="px-6 py-3">Modern Bazaar Store/Unit</th>
+                  <th className="px-6 py-3 text-right">Taxable Amount</th>
+                  <th className="px-6 py-3 text-right">Tax (GST)</th>
+                  <th className="px-6 py-3 text-right">Net Bill Amount</th>
+                  <th className="px-6 py-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filteredInvoices.length === 0 ? (
+                  <tr><td colSpan={8} className="text-center py-8 text-slate-400">No invoices found</td></tr>
+                ) : (
+                  filteredInvoices.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-slate-50/50">
+                      <td className="px-6 py-3 font-mono font-bold text-slate-900">{inv.invoice_no}</td>
+                      <td className="px-6 py-3 text-slate-600">{inv.invoice_date}</td>
+                      <td className="px-6 py-3 font-mono text-blue-600 font-bold">{inv.purchase_no}</td>
+                      <td className="px-6 py-3 text-slate-700">{inv.unit_name || 'Modern Bazaar Store'}</td>
+                      <td className="px-6 py-3 text-right font-mono">₹{Number(inv.taxable_amount || 0).toFixed(2)}</td>
+                      <td className="px-6 py-3 text-right font-mono text-slate-500">₹{Number(inv.tax_amount || 0).toFixed(2)}</td>
+                      <td className="px-6 py-3 text-right font-mono font-bold text-slate-900">₹{Number(inv.total_amount || 0).toFixed(2)}</td>
+                      <td className="px-6 py-3 text-center">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800">
+                          {inv.status || 'VERIFIED'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════
-          ACTION REASON MODAL
-      ════════════════════════════════════════════════ */}
-      {actionModal.type && selected && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className={`h-1.5 ${actionModal.type === 'reject' ? 'bg-red-500' : actionModal.type === 'hold' ? 'bg-amber-500' : 'bg-blue-500'}`} />
-            <div className="p-6">
-              <h4 className="font-bold text-slate-800 text-base mb-1">
-                {actionModal.type === 'reject' ? '❌ Reject Application' : actionModal.type === 'hold' ? '⏸ Put On Hold' : '💬 Request More Information'}
-              </h4>
-              <p className="text-sm text-slate-500 mb-4">
-                {actionModal.type === 'reject'
-                  ? 'Provide a reason for rejection. This will be communicated to the vendor.'
-                  : actionModal.type === 'hold'
-                    ? 'Specify what is pending before this application can proceed.'
-                    : 'Describe what additional information or documents are needed.'}
+      {/* ── TAB: ITEM SALES REPORT ───────────────────────────────────────────── */}
+      {activeTab === 'sales' && (
+        <div className="space-y-6">
+          {salesDisabled ? (
+            <div className="p-8 bg-amber-50 border border-amber-200 rounded-2xl text-center max-w-xl mx-auto space-y-3">
+              <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto" />
+              <h3 className="text-base font-black text-amber-900">Item Sales Reports Not Enabled</h3>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                Item sales reporting is controlled by the purchasing department and is not currently activated for your vendor account.
+                Please contact the Modern Bazaar procurement team to request access to sell-through reports.
               </p>
-              <textarea
-                className={`${ic} resize-none mb-5`} rows={4}
-                placeholder="Enter your note here…"
-                value={actionModal.note}
-                onChange={e => setActionModal({ ...actionModal, note: e.target.value })}
-                autoFocus
-              />
-              <div className="flex gap-3">
-                <button onClick={() => setActionModal({ type: null, note: '' })}
-                  className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition-colors">
-                  Cancel
-                </button>
-                <button
-                  disabled={!actionModal.note.trim()}
-                  onClick={() => {
-                    const map: Record<string, VendorStatus> = { reject: 'Rejected', hold: 'On Hold', info: 'On Hold' }
-                    doAction(map[actionModal.type!], actionModal.note)
-                  }}
-                  className={`flex-1 px-4 py-2.5 font-semibold rounded-xl text-sm text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed
-                    ${actionModal.type === 'reject' ? 'bg-red-600 hover:bg-red-700' : actionModal.type === 'hold' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                  Confirm
-                </button>
+            </div>
+          ) : salesLoading ? (
+            <div className="p-12 text-center text-slate-400 font-medium">Loading sales data…</div>
+          ) : salesData ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {salesData.summary?.total_qty !== null && (
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Units Sold</span>
+                    <p className="text-2xl font-black text-slate-900 mt-2">{salesData.summary?.total_qty || 0}</p>
+                  </div>
+                )}
+                {salesData.summary?.total_value !== null && (
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Sales Value</span>
+                    <p className="text-2xl font-black text-blue-600 mt-2">
+                      ₹{Number(salesData.summary?.total_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                )}
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Products Count</span>
+                  <p className="text-2xl font-black text-slate-800 mt-2">{salesData.summary?.product_count || 0}</p>
+                </div>
               </div>
+
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-600 uppercase font-bold text-left border-b border-slate-200">
+                    <tr>
+                      <th className="px-6 py-3">Product Name</th>
+                      <th className="px-6 py-3">Item Code</th>
+                      <th className="px-6 py-3">Barcode</th>
+                      <th className="px-6 py-3">Brand</th>
+                      <th className="px-6 py-3 text-right">MRP</th>
+                      {salesData.permissions?.view_stock_position && <th className="px-6 py-3 text-right">Available Stock</th>}
+                      {salesData.permissions?.view_sales_quantity && <th className="px-6 py-3 text-right">Sales Qty</th>}
+                      {salesData.permissions?.view_sales_value && <th className="px-6 py-3 text-right">Sales Value</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {salesData.products?.length === 0 ? (
+                      <tr><td colSpan={8} className="text-center py-8 text-slate-400">No sales transactions found for your items</td></tr>
+                    ) : (
+                      salesData.products?.map((p: any) => (
+                        <tr key={p.product_id} className="hover:bg-slate-50/50">
+                          <td className="px-6 py-3 font-bold text-slate-900">{p.product_name}</td>
+                          <td className="px-6 py-3 font-mono text-slate-500">{p.item_code || '—'}</td>
+                          <td className="px-6 py-3 font-mono text-slate-500">{p.barcode || '—'}</td>
+                          <td className="px-6 py-3 text-slate-600">{p.brand || '—'}</td>
+                          <td className="px-6 py-3 text-right font-mono">₹{Number(p.mrp || 0).toFixed(2)}</td>
+                          {salesData.permissions?.view_stock_position && (
+                            <td className="px-6 py-3 text-right font-mono text-slate-700">{p.current_stock ?? '—'}</td>
+                          )}
+                          {salesData.permissions?.view_sales_quantity && (
+                            <td className="px-6 py-3 text-right font-bold text-blue-600">{p.sales_qty ?? '—'}</td>
+                          )}
+                          {salesData.permissions?.view_sales_value && (
+                            <td className="px-6 py-3 text-right font-bold text-slate-900">₹{Number(p.sales_value || 0).toFixed(2)}</td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* ── TAB: NEW ITEM PROPOSALS ──────────────────────────────────────────── */}
+      {activeTab === 'item_requests' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex-wrap gap-4">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Product Proposals</h3>
+              <p className="text-xs text-slate-500">Propose new products for listing in Modern Bazaar stores</p>
+            </div>
+            <button
+              onClick={() => setNewItemModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 shadow-sm"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Propose New Item
+            </button>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-slate-600 uppercase font-bold text-left border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-3">Proposal #</th>
+                    <th className="px-6 py-3">Product Name</th>
+                    <th className="px-6 py-3">Brand / Unit</th>
+                    <th className="px-6 py-3 font-mono">Barcode</th>
+                    <th className="px-6 py-3 text-right">Purchase Rate</th>
+                    <th className="px-6 py-3 text-right">MRP</th>
+                    <th className="px-6 py-3 text-center">Status</th>
+                    <th className="px-6 py-3">Reviewer Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {itemRequests.length === 0 ? (
+                    <tr><td colSpan={8} className="text-center py-8 text-slate-400">No proposals submitted yet</td></tr>
+                  ) : (
+                    itemRequests.map((it) => (
+                      <tr key={it.id} className="hover:bg-slate-50/50">
+                        <td className="px-6 py-3 font-mono font-bold text-blue-600">{it.request_no}</td>
+                        <td className="px-6 py-3 font-bold text-slate-900">{it.product_name}</td>
+                        <td className="px-6 py-3 text-slate-600">{it.brand_name || 'Generic'} • {it.unit}</td>
+                        <td className="px-6 py-3 font-mono text-slate-500">{it.barcode || '—'}</td>
+                        <td className="px-6 py-3 text-right font-mono">₹{Number(it.purchase_rate || 0).toFixed(2)}</td>
+                        <td className="px-6 py-3 text-right font-mono font-bold text-slate-900">₹{Number(it.mrp || 0).toFixed(2)}</td>
+                        <td className="px-6 py-3 text-center">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            it.status === 'approved'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : it.status === 'rejected'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {it.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3 text-slate-500 text-[11px]">{it.review_notes || '—'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── TAB: MY PROFILE ─────────────────────────────────────────────────── */}
+      {activeTab === 'profile' && profileData && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Company & Account Details</h3>
+              <p className="text-xs text-slate-500">Live verified information in Modern Bazaar Supplier Master</p>
+            </div>
+            {perms.update_profile !== false && (
+              <button
+                onClick={() => setProfileModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700"
+              >
+                Request Changes to Profile
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-3 text-xs">
+              <h4 className="font-bold text-slate-900 border-b border-slate-100 pb-2 uppercase text-[10px] text-slate-400">
+                Contact & Address
+              </h4>
+              <p><span className="text-slate-400">Contact Person:</span> <strong className="text-slate-800">{profileData.contact_name || '—'}</strong></p>
+              <p><span className="text-slate-400">Phone:</span> <strong className="text-slate-800">{profileData.phone}</strong></p>
+              <p><span className="text-slate-400">Email:</span> <strong className="text-slate-800">{profileData.email || '—'}</strong></p>
+              <p><span className="text-slate-400">Address:</span> <span className="text-slate-700">{profileData.address || '—'}, {profileData.city}, {profileData.state}</span></p>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-3 text-xs">
+              <h4 className="font-bold text-slate-900 border-b border-slate-100 pb-2 uppercase text-[10px] text-slate-400">
+                Banking & Tax Details
+              </h4>
+              <p><span className="text-slate-400">GSTIN:</span> <strong className="font-mono text-slate-800">{profileData.gst_number || '—'}</strong></p>
+              <p><span className="text-slate-400">PAN:</span> <strong className="font-mono text-slate-800">{profileData.pan_number || '—'}</strong></p>
+              <p><span className="text-slate-400">Bank Name:</span> <strong className="text-slate-800">{profileData.financial?.bank_name || '—'}</strong></p>
+              <p><span className="text-slate-400">Account No:</span> <strong className="font-mono text-slate-800">{profileData.financial?.account_no || '—'}</strong></p>
+              <p><span className="text-slate-400">IFSC Code:</span> <strong className="font-mono text-slate-800">{profileData.financial?.ifsc_code || '—'}</strong></p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: PO DETAIL & ITEMS ────────────────────────────────────────── */}
+      <Modal open={poDetailModal} onClose={() => setPoDetailModal(false)} title={`PO Items — ${selectedPo?.po_no}`}>
+        <div className="p-6 space-y-4 text-xs">
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-3 gap-2">
+            <div><span className="text-slate-400">PO Date:</span> <strong className="text-slate-800">{selectedPo?.po_date}</strong></div>
+            <div><span className="text-slate-400">Expected Date:</span> <strong className="text-slate-800">{selectedPo?.expected_date || '—'}</strong></div>
+            <div><span className="text-slate-400">PO Total:</span> <strong className="text-slate-900">₹{Number(selectedPo?.total_amount || 0).toFixed(2)}</strong></div>
+          </div>
+
+          <table className="w-full text-xs">
+            <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-left">
+              <tr>
+                <th className="p-2.5">Item Name</th>
+                <th className="p-2.5 font-mono">Barcode</th>
+                <th className="p-2.5 text-right">Ordered</th>
+                <th className="p-2.5 text-right">Received</th>
+                <th className="p-2.5 text-right">Rate</th>
+                <th className="p-2.5 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {selectedPo?.items?.map((it: any) => (
+                <tr key={it.id}>
+                  <td className="p-2.5 font-bold text-slate-900">{it.product_name}</td>
+                  <td className="p-2.5 font-mono text-slate-500">{it.barcode || '—'}</td>
+                  <td className="p-2.5 text-right">{it.order_qty}</td>
+                  <td className="p-2.5 text-right text-emerald-600 font-bold">{it.received_qty}</td>
+                  <td className="p-2.5 text-right font-mono">₹{Number(it.rate || 0).toFixed(2)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-slate-900">₹{Number(it.total || 0).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Modal>
+
+      {/* ── MODAL: ACKNOWLEDGE PO ────────────────────────────────────────────── */}
+      <Modal open={ackModal} onClose={() => setAckModal(false)} title={`Acknowledge PO #${selectedPo?.po_no}`}>
+        <div className="p-6 space-y-4 text-xs">
+          <p className="text-slate-600">
+            Confirm that you have received this purchase order and specify your promised dispatch/delivery date.
+          </p>
+
+          <div>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Expected Delivery Date</label>
+            <input
+              type="date"
+              value={ackExpectedDate}
+              onChange={(e) => setAckExpectedDate(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Delivery Remarks / Transporter</label>
+            <textarea
+              value={ackRemarks}
+              onChange={(e) => setAckRemarks(e.target.value)}
+              placeholder="e.g. Dispatched via Express Logistics, tracking no #12345…"
+              className="w-full border border-slate-200 rounded-lg p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={3}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+            <button onClick={() => setAckModal(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 font-bold">
+              Cancel
+            </button>
+            <button
+              onClick={handleAcknowledgePo}
+              disabled={savingAck}
+              className="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50"
+            >
+              {savingAck ? 'Confirming…' : 'Confirm Acknowledgement'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── MODAL: PRN DETAIL & ITEMS ────────────────────────────────────────── */}
+      <Modal open={prnDetailModal} onClose={() => setPrnDetailModal(false)} title={`PRN Items — ${selectedPrn?.return_no}`}>
+        <div className="p-6 space-y-4 text-xs">
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-3 gap-2">
+            <div><span className="text-slate-400">Return Date:</span> <strong className="text-slate-800">{selectedPrn?.return_date}</strong></div>
+            <div><span className="text-slate-400">Reason:</span> <strong className="text-rose-600">{selectedPrn?.reason || 'Inventory Return'}</strong></div>
+            <div><span className="text-slate-400">Total Debit:</span> <strong className="text-slate-900">₹{Number(selectedPrn?.total_amount || 0).toFixed(2)}</strong></div>
+          </div>
+
+          {selectedPrn?.vendor_remarks && (
+            <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg text-xs text-blue-900">
+              <span className="font-bold">Your Acknowledgement Remarks:</span> {selectedPrn.vendor_remarks}
+            </div>
+          )}
+
+          <table className="w-full text-xs">
+            <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-left">
+              <tr>
+                <th className="p-2.5">Product Name</th>
+                <th className="p-2.5">Batch #</th>
+                <th className="p-2.5 text-right">Return Qty</th>
+                <th className="p-2.5 text-right">Rate</th>
+                <th className="p-2.5 text-right">Total Debit</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {(!selectedPrn?.items || selectedPrn.items.length === 0) ? (
+                <tr><td colSpan={5} className="text-center py-4 text-slate-400">No itemized lines available for this return</td></tr>
+              ) : (
+                selectedPrn.items.map((it: any) => (
+                  <tr key={it.id}>
+                    <td className="p-2.5 font-bold text-slate-900">{it.product_name}</td>
+                    <td className="p-2.5 font-mono text-slate-600">{it.batch_no || '—'}</td>
+                    <td className="p-2.5 text-right font-bold text-rose-600">{it.qty_returned || it.qty}</td>
+                    <td className="p-2.5 text-right font-mono">₹{Number(it.rate || it.price || 0).toFixed(2)}</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-slate-900">₹{Number(it.total || 0).toFixed(2)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+
+          {!selectedPrn?.vendor_ack && perms.acknowledge_prn !== false && (
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => {
+                  setPrnDetailModal(false)
+                  setPrnAckRemarks('')
+                  setPrnAckModal(true)
+                }}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold"
+              >
+                Acknowledge This PRN
+              </button>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* ── MODAL: ACKNOWLEDGE PRN ──────────────────────────────────────────── */}
+      <Modal open={prnAckModal} onClose={() => setPrnAckModal(false)} title={`Acknowledge PRN #${selectedPrn?.return_no}`}>
+        <div className="p-6 space-y-4 text-xs">
+          <p className="text-slate-600">
+            Confirm that your company acknowledges this Purchase Return Note. You can provide replacement dispatch details or credit note reference number.
+          </p>
+
+          <div>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Acknowledgement Remarks / Credit Note Ref</label>
+            <textarea
+              value={prnAckRemarks}
+              onChange={(e) => setPrnAckRemarks(e.target.value)}
+              placeholder="e.g. Credit Note CN-8821 issued, replacement items dispatched on 16/10…"
+              className="w-full border border-slate-200 rounded-lg p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={3}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+            <button onClick={() => setPrnAckModal(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 font-bold">
+              Cancel
+            </button>
+            <button
+              onClick={handleAcknowledgePrn}
+              disabled={savingPrnAck}
+              className="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50"
+            >
+              {savingPrnAck ? 'Confirming…' : 'Confirm Acknowledgement'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── MODAL: PROPOSE NEW ITEM ─────────────────────────────────────────── */}
+      <Modal open={newItemModal} onClose={() => setNewItemModal(false)} title="Propose New Item to Modern Bazaar">
+        <form onSubmit={handleSubmitNewItem} className="p-6 space-y-4 text-xs max-h-[80vh] overflow-y-auto">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Product Name *</label>
+              <input
+                type="text"
+                required
+                value={newItemForm.product_name}
+                onChange={(e) => setNewItemForm({ ...newItemForm, product_name: e.target.value })}
+                placeholder="e.g. Organic Almond Butter 250g"
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Brand Name</label>
+              <input
+                type="text"
+                value={newItemForm.brand_name}
+                onChange={(e) => setNewItemForm({ ...newItemForm, brand_name: e.target.value })}
+                placeholder="e.g. Nature Best"
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Barcode / EAN</label>
+              <input
+                type="text"
+                value={newItemForm.barcode}
+                onChange={(e) => setNewItemForm({ ...newItemForm, barcode: e.target.value })}
+                placeholder="e.g. 8901234567890"
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Category</label>
+              <input
+                type="text"
+                value={newItemForm.category_name}
+                onChange={(e) => setNewItemForm({ ...newItemForm, category_name: e.target.value })}
+                placeholder="e.g. Gourmet Spreads"
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Purchase Rate (₹) *</label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={newItemForm.purchase_rate}
+                onChange={(e) => setNewItemForm({ ...newItemForm, purchase_rate: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">MRP (₹) *</label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={newItemForm.mrp}
+                onChange={(e) => setNewItemForm({ ...newItemForm, mrp: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs font-bold"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">GST %</label>
+              <select
+                value={newItemForm.gst_percent}
+                onChange={(e) => setNewItemForm({ ...newItemForm, gst_percent: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs bg-white"
+              >
+                <option value="0">0%</option>
+                <option value="5">5%</option>
+                <option value="12">12%</option>
+                <option value="18">18%</option>
+                <option value="28">28%</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">HSN Code</label>
+              <input
+                type="text"
+                value={newItemForm.hsn_code}
+                onChange={(e) => setNewItemForm({ ...newItemForm, hsn_code: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Description / Key Selling Points</label>
+            <textarea
+              value={newItemForm.description}
+              onChange={(e) => setNewItemForm({ ...newItemForm, description: e.target.value })}
+              className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              rows={2}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+            <button type="button" onClick={() => setNewItemModal(false)} className="px-4 py-2 border border-slate-200 rounded-lg font-bold text-slate-600">
+              Cancel
+            </button>
+            <button type="submit" disabled={savingItemReq} className="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50">
+              {savingItemReq ? 'Submitting…' : 'Submit Proposal'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ── MODAL: REQUEST PROFILE CHANGES ──────────────────────────────────── */}
+      <Modal open={profileModal} onClose={() => setProfileModal(false)} title="Request Profile Changes">
+        <div className="p-6 space-y-4 text-xs max-h-[80vh] overflow-y-auto">
+          <p className="text-slate-500">
+            Changes to contact, address, or banking information are routed to the purchasing compliance desk for verification before updating.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Contact Person</label>
+              <input
+                type="text"
+                value={profileChanges.contact_name}
+                onChange={(e) => setProfileChanges({ ...profileChanges, contact_name: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Phone</label>
+              <input
+                type="text"
+                value={profileChanges.phone}
+                onChange={(e) => setProfileChanges({ ...profileChanges, phone: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Email</label>
+              <input
+                type="email"
+                value={profileChanges.email}
+                onChange={(e) => setProfileChanges({ ...profileChanges, email: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Bank Name</label>
+              <input
+                type="text"
+                value={profileChanges.bank_name}
+                onChange={(e) => setProfileChanges({ ...profileChanges, bank_name: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Account Number</label>
+              <input
+                type="text"
+                value={profileChanges.account_no}
+                onChange={(e) => setProfileChanges({ ...profileChanges, account_no: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">IFSC Code</label>
+              <input
+                type="text"
+                value={profileChanges.ifsc_code}
+                onChange={(e) => setProfileChanges({ ...profileChanges, ifsc_code: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg p-2 text-xs font-mono"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Office Address</label>
+            <textarea
+              value={profileChanges.address}
+              onChange={(e) => setProfileChanges({ ...profileChanges, address: e.target.value })}
+              className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+              rows={2}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+            <button onClick={() => setProfileModal(false)} className="px-4 py-2 border border-slate-200 rounded-lg font-bold text-slate-600">
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmitProfileChanges}
+              disabled={savingProfileReq}
+              className="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50"
+            >
+              {savingProfileReq ? 'Submitting…' : 'Submit Change Request'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── MODAL: GRN DETAIL ──────────────────────────────────────────────── */}
+      <Modal open={grnDetailModal} onClose={() => setGrnDetailModal(false)} title={`GRN Items — ${selectedGrn?.purchase_no}`}>
+        <div className="p-6 space-y-4 text-xs">
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-3 gap-2">
+            <div><span className="text-slate-400">Invoice:</span> <strong className="text-slate-800">{selectedGrn?.invoice_no || '—'}</strong></div>
+            <div><span className="text-slate-400">Date:</span> <strong className="text-slate-800">{selectedGrn?.invoice_date}</strong></div>
+            <div><span className="text-slate-400">Total:</span> <strong className="text-slate-900">₹{Number(selectedGrn?.total_amount || 0).toFixed(2)}</strong></div>
+          </div>
+
+          <table className="w-full text-xs">
+            <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-left">
+              <tr>
+                <th className="p-2.5">Item Name</th>
+                <th className="p-2.5">Batch #</th>
+                <th className="p-2.5">Expiry</th>
+                <th className="p-2.5 text-right">Qty Received</th>
+                <th className="p-2.5 text-right">Rate</th>
+                <th className="p-2.5 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {selectedGrn?.items?.map((it: any) => (
+                <tr key={it.id}>
+                  <td className="p-2.5 font-bold text-slate-900">{it.product_name}</td>
+                  <td className="p-2.5 font-mono text-slate-600">{it.batch_no || '—'}</td>
+                  <td className="p-2.5 text-slate-500">{it.expiry_date || '—'}</td>
+                  <td className="p-2.5 text-right font-bold text-emerald-600">{it.qty_received}</td>
+                  <td className="p-2.5 text-right font-mono">₹{Number(it.price || 0).toFixed(2)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-slate-900">₹{Number(it.total || 0).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Modal>
     </div>
   )
 }

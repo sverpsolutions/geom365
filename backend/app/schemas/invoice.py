@@ -19,6 +19,9 @@ class invoice_item_in(BaseModel):
     gst_percent: Decimal = Decimal("0.00")
     hsn_code: Optional[str] = None
     challan_item_id: Optional[int] = None
+    batch_no: Optional[str] = None
+    batch_id: Optional[int] = None
+    expiry_date: Optional[date] = None
 
 
 class invoice_item_out(BaseModel):
@@ -44,6 +47,9 @@ class invoice_item_out(BaseModel):
     total: Decimal
     hsn_code: Optional[str]
     challan_item_id: Optional[int]
+    batch_no: Optional[str] = None
+    batch_id: Optional[int] = None
+    expiry_date: Optional[date] = None
 
     model_config = {"from_attributes": True}
 

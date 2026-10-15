@@ -15,7 +15,7 @@ interface form_state {
   barcode: string; description: string; rack_no: string
   low_stock_threshold: string; min_stock: string; reorder_level: string
   allow_neg_stock: boolean; is_consumable: boolean; is_raw_material: boolean
-  is_dual_unit: boolean; is_sellable: boolean
+  is_dual_unit: boolean; is_sellable: boolean; is_asset: boolean
 }
 
 const empty: form_state = {

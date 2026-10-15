@@ -15,6 +15,10 @@ class logistic_transfer_item_out(logistic_transfer_item_base):
     id: int
     name: Optional[str] = None
     item_code: Optional[str] = None
+    barcode: Optional[str] = None
+    hsn_code: Optional[str] = None
+    unit: Optional[str] = None
+    mrp: Optional[Decimal] = None
     class Config:
         from_attributes = True
 

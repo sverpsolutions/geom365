@@ -29,7 +29,7 @@ export function inrWords(n: number): string {
 
 export function printCreditNote(r: credit_note, s: Partial<CompanySettings>) {
   const inter = r.is_interstate
-  const logo = s.logo_path ? new URL(s.logo_path, window.location.origin).href : ''
+  const logo = s.logo_path ? new URL(s.logo_path, window.location.origin).href : `${window.location.origin}/geom365_logo.png`
   const refund = r.refund_method === 'adjust'
     ? (Number(r.adjusted_amount) >= Number(r.total_amount) ? 'Adjust Outstanding' : `Adjust ₹${money(r.adjusted_amount)} + Cash`)
     : 'Cash Refund'
@@ -133,10 +133,11 @@ body { font-family: Arial, sans-serif; font-size: 14px; color: #222; background:
   <div class="inv-header">
     ${logo ? `<div style="flex-shrink:0;"><img src="${esc(logo)}" alt="Logo" style="max-height:70px;max-width:150px;object-fit:contain;" onerror="this.remove()"></div>` : ''}
     <div style="flex-grow:1;">
-      <div class="company-name">${esc(s.brand_name)}</div>
+      <div class="company-name">${esc(s.brand_name || 'geom365')}</div>
+      <div style="font-weight: bold; font-size: 11px; margin-bottom: 2px;">${esc(s.legal_name || 'Geomett Box Private Limited')}</div>
       <div class="company-sub">
-        ${esc(s.ho_address)}<br>
-        ${s.ho_phone ? `Ph: ${esc(s.ho_phone)} &nbsp;|&nbsp; ` : ''}${s.gstin ? `GSTIN: <strong>${esc(s.gstin)}</strong>` : ''}
+        ${esc(s.ho_address || 'TR-311, 312, ALTF Mohan Cooperative Industrial Estate, South Delhi – 110076')}<br>
+        Ph: ${esc(s.ho_phone || '74003 39365 / 82934 14222')} &nbsp;|&nbsp; Email: ${esc(s.ho_email || 'care@geom365.com')}${s.gstin ? ` &nbsp;|&nbsp; GSTIN: <strong>${esc(s.gstin)}</strong>` : ''}
       </div>
     </div>
     <div class="inv-title">

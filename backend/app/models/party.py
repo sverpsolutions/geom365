@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import base
 
@@ -53,12 +53,17 @@ class supplier(base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     supplier_code: Mapped[str | None] = mapped_column(String(20))
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    trade_name: Mapped[str | None] = mapped_column(String(150))
     supplier_type: Mapped[str] = mapped_column(String(50), default="Manufacturer") # Manufacturer/Distributor etc
     company_type: Mapped[str | None] = mapped_column(String(50)) # Proprietorship/Partnership/Pvt Ltd/LLP
+    business_constitution: Mapped[str | None] = mapped_column(String(50))
     category: Mapped[str | None] = mapped_column(String(50)) # FMCG/Beverage/Grocery etc
     contact_name: Mapped[str | None] = mapped_column(String(100))
+    designation: Mapped[str | None] = mapped_column(String(100))
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    alt_phone: Mapped[str | None] = mapped_column(String(20))
     email: Mapped[str | None] = mapped_column(String(100))
+    alt_email: Mapped[str | None] = mapped_column(String(100))
     address: Mapped[str | None] = mapped_column(Text)
     city: Mapped[str | None] = mapped_column(String(50))
     state: Mapped[str] = mapped_column(String(50), default="Delhi")
@@ -68,7 +73,12 @@ class supplier(base):
     country: Mapped[str | None] = mapped_column(String(50))
     gst_number: Mapped[str | None] = mapped_column(String(20))
     pan_number: Mapped[str | None] = mapped_column(String(15))
+    tan_number: Mapped[str | None] = mapped_column(String(30))
     cin_number: Mapped[str | None] = mapped_column(String(30))
+    msme_number: Mapped[str | None] = mapped_column(String(50))
+    fssai_number: Mapped[str | None] = mapped_column(String(50))
+    product_categories: Mapped[str | None] = mapped_column(Text)
+    company_description: Mapped[str | None] = mapped_column(Text)
     opening_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0.00)
     credit_limit_days: Mapped[int] = mapped_column(Integer, default=0)
     website: Mapped[str | None] = mapped_column(String(100))
@@ -77,6 +87,10 @@ class supplier(base):
     # Status flow: pending → submitted → under_review → correction_pending → approved / rejected / hold
     registration_status: Mapped[str] = mapped_column(String(20), default="approved")
     onboarding_token: Mapped[str | None] = mapped_column(String(100), unique=True)
+    # Portal Sales Permission controls
+    portal_sales_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    portal_sales_config: Mapped[dict | None] = mapped_column(JSON)
+    portal_permissions: Mapped[dict | None] = mapped_column(JSON)
     # Approval tracking
     approved_by: Mapped[int | None] = mapped_column(Integer)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -106,6 +120,12 @@ class supplier(base):
     )
     challans: Mapped[list["supplier_challan"]] = relationship(
         "supplier_challan", back_populates="supplier_rel"
+    )
+    profile_requests: Mapped[list["vendor_profile_request"]] = relationship(
+        "vendor_profile_request", back_populates="supplier_rel", cascade="all, delete-orphan"
+    )
+    item_requests: Mapped[list["vendor_item_request"]] = relationship(
+        "vendor_item_request", back_populates="supplier_rel", cascade="all, delete-orphan"
     )
 
 class supplier_address(base):
@@ -280,3 +300,60 @@ class supplier_challan_item(base):
     tentative_rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0.00)
 
     challan_rel: Mapped["supplier_challan"] = relationship("supplier_challan", back_populates="items")
+
+
+class vendor_profile_request(base):
+    __tablename__ = "vendor_profile_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    supplier_id: Mapped[int] = mapped_column(Integer, ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False)
+    requested_by_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending")  # pending, approved, rejected
+    changes: Mapped[dict] = mapped_column(JSON, nullable=False)  # {field: {"old": ..., "new": ...}}
+    reviewed_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    supplier_rel: Mapped["supplier"] = relationship("supplier", back_populates="profile_requests")
+
+
+class vendor_item_request(base):
+    __tablename__ = "vendor_item_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    supplier_id: Mapped[int] = mapped_column(Integer, ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False)
+    product_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    brand_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    brand_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("brands.id", ondelete="SET NULL"), nullable=True)
+    category_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    category_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
+    manufacturer: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    vendor_item_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    barcode: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unit: Mapped[str] = mapped_column(String(20), default="PCS")
+    pack_size: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    purchase_rate: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    mrp: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    proposed_selling_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    gst_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
+    hsn_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    moq: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("1.00"))
+    lead_time_days: Mapped[int] = mapped_column(Integer, default=7)
+    country_of_origin: Mapped[str] = mapped_column(String(50), default="India")
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    brochure_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vendor_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="submitted")
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    supplier_rel: Mapped["supplier"] = relationship("supplier", back_populates="item_requests")
+

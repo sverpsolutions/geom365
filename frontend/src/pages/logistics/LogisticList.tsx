@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Plus, Search, Filter, MoreVertical, Truck, Package, 
-  Calendar, MapPin, ChevronRight, ArrowRight
+  Calendar, MapPin, ChevronRight, ArrowRight, Printer, FileText, Box, ShieldCheck
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { getLogisticTransfers } from '../../api/logistic';
+import { getLogisticTransfers, getLogisticTransfer } from '../../api/logistic';
 import { masters_api } from '../../api/masters';
 import { matchesSearch } from '../../utils/search';
+import { LogisticPrintModal } from '../../components/logistics/LogisticPrintModal';
 
 const LogisticList = () => {
   const navigate = useNavigate();
@@ -15,6 +16,25 @@ const LogisticList = () => {
   const [outlets, setOutlets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [selectedTransfer, setSelectedTransfer] = useState<any>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [printModalTab, setPrintModalTab] = useState<'challan' | 'labels' | 'gatepass'>('challan');
+  const [printLoading, setPrintLoading] = useState<number | null>(null);
+
+  const handleQuickPrint = async (e: React.MouseEvent, t: any, tab: 'challan' | 'labels' | 'gatepass') => {
+    e.stopPropagation();
+    setPrintLoading(t.id);
+    try {
+      const fullTransfer = await getLogisticTransfer(t.id);
+      setSelectedTransfer(fullTransfer);
+      setPrintModalTab(tab);
+      setPrintModalOpen(true);
+    } catch (err) {
+      toast.error('Failed to load transfer for printing');
+    } finally {
+      setPrintLoading(null);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -97,7 +117,7 @@ const LogisticList = () => {
                 <th>Priority</th>
                 <th>Items</th>
                 <th>Created</th>
-                <th className="w-20"></th>
+                <th className="text-right w-64">Documents & Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -118,7 +138,7 @@ const LogisticList = () => {
               ) : (
                 filtered.map(t => (
                   <tr key={t.id} className="group cursor-pointer hover:bg-slate-50/80" onClick={() => navigate(`/logistics/transfer/${t.id}`)}>
-                    <td className="font-black text-slate-800">{t.transfer_number}</td>
+                    <td className="font-black text-slate-800 font-mono">{t.transfer_number}</td>
                     <td>
                       <div className="flex items-center gap-2 text-[11px]">
                         <span className="font-bold">{getOutletName(t.source_location_id)}</span>
@@ -140,8 +160,50 @@ const LogisticList = () => {
                     <td className="text-slate-500 text-[11px]">
                       {new Date(t.created_at).toLocaleDateString()}
                     </td>
-                    <td className="text-right">
-                      <ChevronRight size={18} className="text-slate-300 group-hover:text-primary transition-colors" />
+                    <td className="text-right" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => handleQuickPrint(e, t, 'challan')}
+                          title="Print Delivery Challan & Dispatch Note"
+                          disabled={printLoading === t.id}
+                          className="px-2 py-1 rounded-lg border border-slate-200 hover:border-primary/50 text-slate-700 hover:text-primary hover:bg-primary/5 transition-all text-xs font-bold flex items-center gap-1 shadow-2xs"
+                        >
+                          <FileText size={13} className="text-primary" />
+                          <span className="text-[10px]">Challan</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleQuickPrint(e, t, 'labels')}
+                          title="Print Box & Shipping Labels"
+                          disabled={printLoading === t.id}
+                          className="px-2 py-1 rounded-lg border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-700 hover:bg-blue-50 transition-all text-xs font-bold flex items-center gap-1 shadow-2xs"
+                        >
+                          <Box size={13} className="text-blue-600" />
+                          <span className="text-[10px]">Labels</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleQuickPrint(e, t, 'gatepass')}
+                          title="Print Security Gate Pass"
+                          disabled={printLoading === t.id}
+                          className="px-2 py-1 rounded-lg border border-slate-200 hover:border-emerald-400 text-slate-700 hover:text-emerald-800 hover:bg-emerald-50 transition-all text-xs font-bold flex items-center gap-1 shadow-2xs"
+                        >
+                          <ShieldCheck size={13} className="text-emerald-600" />
+                          <span className="text-[10px]">Pass</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/logistics/transfer/${t.id}`)}
+                          title="Open Transfer Details / Wizard"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -150,6 +212,15 @@ const LogisticList = () => {
           </table>
         </div>
       </div>
+
+      {/* Quick Print Modal */}
+      <LogisticPrintModal
+        isOpen={printModalOpen}
+        onClose={() => setPrintModalOpen(false)}
+        transfer={selectedTransfer}
+        outlets={outlets}
+        defaultTab={printModalTab}
+      />
     </div>
   );
 };

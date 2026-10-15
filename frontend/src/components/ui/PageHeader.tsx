@@ -2,6 +2,7 @@ interface page_header_props {
   title: string
   subtitle?: string
   action?: React.ReactNode
+  icon?: string
 }
 
 export default function PageHeader({ title, subtitle, action }: page_header_props) {

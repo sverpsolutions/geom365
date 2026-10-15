@@ -29,6 +29,10 @@ class po_header(base):
     vendor_invoice_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
     vendor_invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     vendor_invoice_file: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vendor_ack: Mapped[bool] = mapped_column(Boolean, default=False)
+    vendor_ack_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    vendor_expected_delivery: Mapped[date | None] = mapped_column(Date, nullable=True)
+    vendor_delivery_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     terms: Mapped[str | None]   = mapped_column(Text, nullable=True)
     notes: Mapped[str | None]   = mapped_column(Text, nullable=True)
     created_by: Mapped[int]     = mapped_column(Integer, nullable=False)
@@ -168,7 +172,6 @@ class supplier_po_terms(base):
 # ── UNIT WISE PURCHASE (GRN) ──────────────────────────────────────────────────
 class purchase(base):
     __tablename__ = "unit_wise_purchases"
-    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int]              = mapped_column(Integer, primary_key=True)
     outlet_id: Mapped[int | None]= mapped_column(Integer, nullable=True)
@@ -176,6 +179,7 @@ class purchase(base):
     supplier_id: Mapped[int]     = mapped_column(Integer, ForeignKey("suppliers.id"), nullable=False)
     invoice_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
     invoice_date: Mapped[date]   = mapped_column(Date, nullable=False)
+    total_qty: Mapped[Decimal]   = mapped_column(Numeric(12, 3), default=Decimal("0.000"))
     subtotal: Mapped[Decimal]    = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     discount: Mapped[Decimal]    = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     taxable_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
@@ -186,6 +190,7 @@ class purchase(base):
     payment_mode: Mapped[str]    = mapped_column(String(20), default="credit")
     notes: Mapped[str | None]    = mapped_column(Text, nullable=True)
     status: Mapped[str]          = mapped_column(String(20), default="partial")
+    round_off: Mapped[Decimal]   = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     created_by: Mapped[int]      = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -197,24 +202,32 @@ class purchase(base):
 
 class purchase_item(base):
     __tablename__ = "unit_wise_purchase_items"
-    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int]           = mapped_column(Integer, primary_key=True)
     purchase_id: Mapped[int]  = mapped_column(Integer, ForeignKey("unit_wise_purchases.id"), nullable=False)
     product_id: Mapped[int]   = mapped_column(Integer, ForeignKey("products.id"), nullable=False)
     item_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     qty: Mapped[Decimal]      = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    free_qty: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("0.000"))
     pcs: Mapped[Decimal]      = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     unit: Mapped[str]         = mapped_column(String(20), default="PCS")
     price: Mapped[Decimal]    = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     disc_val: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     disc_type: Mapped[str]    = mapped_column(String(5), default="₹")
     basic_amt: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    basic_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=True)
+    discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=Decimal("0.00"), nullable=True)
+    discount_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=True)
     taxable_amt: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    taxable_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=True)
     gst_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
     gst_amount: Mapped[Decimal]  = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     total: Mapped[Decimal]       = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     hsn_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     challan_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    batch_no: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    batch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("product_batches.id", ondelete="SET NULL"), nullable=True)
+    mfg_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     purchase_rel: Mapped["purchase"] = relationship("purchase", back_populates="items")

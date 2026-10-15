@@ -50,9 +50,17 @@ Thumbs.db
 # Store server list with credentials
 outlets_data.csv
 
-# Client / competitor documents (confidential - repo is public)
-*Proposal*.pdf
-Geom365*.pdf
+# Backups and database dumps
+backups/
+*.sql
+*.dump
+backend/backend_code_review.json
+backend/database_audit_report.json
+backend/last_global_sync_slot.json
+
+# Internal superprompts and presentations
+superprompt/
+*.pdf
 
 # Competitor gap analysis (quotes a competitor proposal - repo is public)
 GEOM365_*.md

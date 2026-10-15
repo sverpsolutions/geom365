@@ -16,7 +16,7 @@ export interface receipt_extra {
 }
 
 export function printReceipt(inv: invoice_out, s: Partial<CompanySettings>, x: receipt_extra = {}) {
-  const logo = s.logo_path ? new URL(s.logo_path, window.location.origin).href : ''
+  const logo = s.logo_path ? new URL(s.logo_path, window.location.origin).href : `${window.location.origin}/geom365_logo.png`
   const totalQty = inv.items.reduce((a, it) => a + Number(it.qty), 0)
   const itemsTotal = inv.items.reduce((a, it) => a + Number(it.total), 0)
   const ratio = itemsTotal > 0 ? (Number(inv.total_amount) - Number(inv.round_off || 0)) / itemsTotal : 1  // spreads CD into lines (bills saved before CD moved into lines)
@@ -79,10 +79,11 @@ export function printReceipt(inv: invoice_out, s: Partial<CompanySettings>, x: r
   ${inv.status === 'paid' ? '<div class="stamp">PAID</div>' : inv.status === 'partial' ? '<div class="stamp">PARTIAL</div>' : ''}
   ${logo ? `<div style="text-align:center;margin-bottom:6px;"><img src="${esc(logo)}" style="max-height:48px;max-width:100%;object-fit:contain;" onerror="this.remove()"></div>` : ''}
   <div style="text-align:center;margin-bottom:6px;">
-    <div style="font-size:14px;font-weight:bold;text-transform:uppercase;">${esc(s.brand_name)}</div>
-    ${s.legal_name && s.legal_name.trim().toLowerCase() !== (s.brand_name || '').trim().toLowerCase() ? `<div style="font-size:9.5px;font-weight:bold;">${esc(s.legal_name)}</div>` : ''}
+    <div style="font-size:14px;font-weight:bold;text-transform:uppercase;">${esc(s.brand_name || 'geom365')}</div>
+    <div style="font-size:9.5px;font-weight:bold;">${esc(s.legal_name || 'Geomett Box Private Limited')}</div>
     <div style="font-size:9.5px;line-height:1.35;margin-top:2px;">
-      ${esc(s.ho_address)}<br>${s.ho_phone ? `Ph: ${esc(s.ho_phone)}` : ''}${s.gstin ? `<br>GSTIN: <strong>${esc(s.gstin)}</strong>` : ''}${s.fssai_no ? `<br>FSSAI Lic. No: <strong>${esc(s.fssai_no)}</strong>` : ''}
+      ${esc(s.ho_address || 'TR-311, 312, ALTF Mohan Cooperative Industrial Estate, South Delhi – 110076')}<br>
+      Ph: ${esc(s.ho_phone || '74003 39365 / 82934 14222')}${s.gstin ? `<br>GSTIN: <strong>${esc(s.gstin)}</strong>` : ''}${s.fssai_no ? `<br>FSSAI Lic. No: <strong>${esc(s.fssai_no)}</strong>` : ''}
     </div>
   </div>
   <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:4px 0;margin-bottom:6px;font-size:9.5px;">

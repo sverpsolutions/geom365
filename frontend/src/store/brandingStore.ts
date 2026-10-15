@@ -16,18 +16,18 @@ interface BrandingState {
 export const useBrandingStore = create<BrandingState>()(
     persist(
         (set) => ({
-            brand_name: 'MB_WMS',
-            logo_path: '/logo.jpg',
-            primary_color: '#0E5C63',
+            brand_name: 'geom365',
+            logo_path: '/geom365_logo.png',
+            primary_color: '#8c2785',
             settings: null,
             fetchSettings: async () => {
                 try {
                     const settings = await getCompanySettings();
                     set({ 
                         settings, 
-                        brand_name: settings.brand_name || 'MB_WMS',
-                        logo_path: settings.logo_path || '/logo.jpg',
-                        primary_color: settings.primary_color || '#0E5C63'
+                        brand_name: settings.brand_name || 'geom365',
+                        logo_path: settings.logo_path || '/geom365_logo.png',
+                        primary_color: settings.primary_color || '#8c2785'
                     });
                     if (settings.primary_color) {
                         document.documentElement.style.setProperty('--clr-primary', settings.primary_color);
@@ -39,9 +39,9 @@ export const useBrandingStore = create<BrandingState>()(
             updateSettings: (newSettings) => {
                 set({ 
                     settings: newSettings, 
-                    brand_name: newSettings.brand_name || 'MB_WMS',
-                    logo_path: newSettings.logo_path || '/logo.jpg',
-                    primary_color: newSettings.primary_color || '#0E5C63'
+                    brand_name: newSettings.brand_name || 'geom365',
+                    logo_path: newSettings.logo_path || '/geom365_logo.png',
+                    primary_color: newSettings.primary_color || '#8c2785'
                 });
             },
             setBrandName: (brand_name) => set({ brand_name }),

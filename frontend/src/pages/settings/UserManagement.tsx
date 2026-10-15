@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { masters_api } from '../../api/masters'
 import { users_api, USER_ROLES, type user_row } from '../../api/users'
+import { dashboardBuilderApi, type DashboardTemplate } from '../../api/dashboardBuilder'
 import { useAuthStore } from '../../store/authStore'
 import PageHeader from '../../components/ui/PageHeader'
 import Modal from '../../components/ui/Modal'
@@ -12,11 +13,16 @@ import StatusBadge from '../../components/ui/StatusBadge'
 
 const PER_PAGE = 50
 const ROLE_HELP: Record<string, string> = {
-  admin: 'Full access, verifies bank deposits, voids cash entries',
+  admin: 'Full administrative access across all stores and modules',
+  superadmin: 'Complete system control, template configuration, and unrestricted access',
   manager: 'Day open/close, approves expenses, safe handovers & deposits at their location',
+  category_manager: 'Assigned product categories: sales, margins, purchases, inventory, and expiry',
+  area_sales_manager: 'Assigned multi-store cluster: sales, targets, transfers, and store stock',
+  store_manager: 'Store-level cockpit: day operations, cashier shifts, local GRN & stock',
+  purchase_manager: 'Vendor PO approvals, price revisions, and incoming procurement',
+  accounts_manager: 'Vendor bills, cheque registers, bank reconciliations, and receivables',
   staff: 'Billing — must open their own shift at their location',
-  viewer: 'Read-only',
-  superadmin: 'Owner account',
+  viewer: 'Read-only access across authorized modules',
 }
 const errMsg = (e: any) => {
   const d = e?.response?.data?.detail
@@ -41,13 +47,64 @@ export default function UserManagement() {
   const [pwd, setPwd] = useState<{ u: user_row; p: string } | null>(null)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => { masters_api.get_outlets().then(r => setOutlets(r.data || [])).catch(() => {}) }, [])
+  // Data Scope & Assignments states
+  const [scopeUser, setScopeUser] = useState<user_row | null>(null)
+  const [allCategories, setAllCategories] = useState<{ id: number; name: string }[]>([])
+  const [allTemplates, setAllTemplates] = useState<DashboardTemplate[]>([])
+  const [assignedStoreIds, setAssignedStoreIds] = useState<number[]>([])
+  const [assignedCatIds, setAssignedCatIds] = useState<number[]>([])
+  const [assignedTemplateId, setAssignedTemplateId] = useState<number | null>(null)
+  const [storeSearch, setStoreSearch] = useState('')
+  const [catSearch, setCatSearch] = useState('')
+  const [savingScope, setSavingScope] = useState(false)
+  const [loadingScope, setLoadingScope] = useState(false)
+
+  useEffect(() => {
+    masters_api.get_outlets().then(r => setOutlets(r.data || [])).catch(() => {})
+    masters_api.get_item_categories().then(r => setAllCategories((r.data || []).map((c: any) => ({ id: c.id, name: c.name })))).catch(() => {})
+    dashboardBuilderApi.getTemplates().then(r => setAllTemplates(r || [])).catch(() => {})
+  }, [])
   const load = () => users_api.list({
     page: q.page, per_page: PER_PAGE, search: q.search || undefined, role: q.role || undefined,
     outlet_id: q.outlet === '' ? undefined : Number(q.outlet), status: q.status === '' ? undefined : q.status === 'true',
   }).then(r => { setRows(r.data.data); setTotal(r.data.total) }).catch(e => toast.error(errMsg(e)))
   useEffect(() => { load() }, [q])
   useEffect(() => { const h = setTimeout(() => setQ(x => x.search === search.trim() ? x : { ...x, search: search.trim(), page: 1 }), 300); return () => clearTimeout(h) }, [search])
+
+  const openScopeModal = async (u: user_row) => {
+    setScopeUser(u)
+    setLoadingScope(true)
+    setStoreSearch('')
+    setCatSearch('')
+    try {
+      const res = await dashboardBuilderApi.getUserAssignments(u.id)
+      setAssignedStoreIds(res.assigned_stores.map(s => s.outlet_id))
+      setAssignedCatIds(res.assigned_categories.map(c => c.category_id))
+      setAssignedTemplateId(res.user.default_dashboard_template_id ?? null)
+    } catch (e) {
+      toast.error('Failed to load user assignments')
+    } finally {
+      setLoadingScope(false)
+    }
+  }
+
+  const saveScope = async () => {
+    if (!scopeUser) return
+    setSavingScope(true)
+    try {
+      await dashboardBuilderApi.updateUserAssignments(scopeUser.id, {
+        outlet_ids: assignedStoreIds,
+        category_ids: assignedCatIds,
+        default_template_id: assignedTemplateId
+      })
+      toast.success(`Data scope updated for ${scopeUser.name}`)
+      setScopeUser(null)
+    } catch (e) {
+      toast.error(errMsg(e))
+    } finally {
+      setSavingScope(false)
+    }
+  }
 
   const save = async (ev: React.FormEvent) => {
     ev.preventDefault()
@@ -119,6 +176,8 @@ export default function UserManagement() {
                 {isAdmin && <td className="text-right whitespace-nowrap">
                   <button className="w-8 h-8 rounded-md text-text-secondary hover:bg-app-bg hover:text-primary" title="Edit" aria-label={`Edit ${u.name}`}
                     onClick={() => setForm({ id: u.id, name: u.name, username: u.username, email: u.email || '', role: u.role, outlet_id: String(u.outlet_id || 0), password: '', status: u.status })}><i className="fas fa-pen" /></button>
+                  <button className="w-8 h-8 rounded-md text-text-secondary hover:bg-app-bg hover:text-blue-600" title="Data Scope & Store/Category Assignments" aria-label={`Configure data scope of ${u.name}`}
+                    onClick={() => openScopeModal(u)}><i className="fas fa-shield-alt" /></button>
                   <button className="w-8 h-8 rounded-md text-text-secondary hover:bg-app-bg hover:text-primary" title="Reset password" aria-label={`Reset password of ${u.name}`}
                     onClick={() => setPwd({ u, p: '' })}><i className="fas fa-key" /></button>
                   {u.id !== me?.id && <button className={`w-8 h-8 rounded-md text-text-secondary hover:bg-app-bg ${u.status ? 'hover:text-red-600' : 'hover:text-green-600'}`}
@@ -182,6 +241,186 @@ export default function UserManagement() {
             <button className="btn btn-primary" disabled={busy || pwd.p.length < 6} onClick={resetPwd}>Reset Password</button>
           </div>
         </div>}
+      </Modal>
+
+      {/* Data Scope & Role Assignments Modal */}
+      <Modal
+        open={!!scopeUser}
+        onClose={() => setScopeUser(null)}
+        title={`Data Scope & Access Boundaries • ${scopeUser?.name ?? ''}`}
+        width="max-w-3xl"
+      >
+        {scopeUser && (
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 flex items-start gap-2.5 text-xs text-blue-900 dark:text-blue-200">
+              <i className="fas fa-shield-alt text-blue-600 mt-0.5" />
+              <div>
+                <strong>Role: {scopeUser.role.replace(/_/g, ' ').toUpperCase()}</strong>
+                <p className="m-0 mt-0.5 text-blue-800 dark:text-blue-300">
+                  Data isolation is strictly enforced at the backend database query layer. The user cannot view, filter, or query stores or product categories outside their assigned boundaries.
+                </p>
+              </div>
+            </div>
+
+            {loadingScope ? (
+              <div className="py-12 text-center text-xs text-text-muted">Loading user assignments…</div>
+            ) : (
+              <div className="space-y-4">
+                {/* 1. Default Landing Dashboard Template */}
+                <div>
+                  <label className="form-label text-xs font-semibold">Default Dashboard Template</label>
+                  <select
+                    className="form-input text-xs"
+                    value={assignedTemplateId ?? ''}
+                    onChange={e => setAssignedTemplateId(e.target.value ? Number(e.target.value) : null)}
+                  >
+                    <option value="">Role Default (Auto-assigned)</option>
+                    {allTemplates.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} {t.is_default ? '★ (Global Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="form-helper">Specifies which dashboard layout loads when this user logs in.</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border">
+                  {/* 2. Permitted Stores (e.g. 6 stores for ASM) */}
+                  <div className="border border-border rounded-xl p-3 bg-app-bg/50 flex flex-col h-[320px]">
+                    <div className="flex items-center justify-between pb-2 border-b border-border">
+                      <span className="text-xs font-semibold text-text-primary">
+                        Assigned Outlets ({assignedStoreIds.length})
+                      </span>
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <button
+                          type="button"
+                          className="text-primary hover:underline"
+                          onClick={() => setAssignedStoreIds(outlets.map(o => o.id))}
+                        >
+                          All
+                        </button>
+                        <span>·</span>
+                        <button
+                          type="button"
+                          className="text-text-muted hover:underline"
+                          onClick={() => setAssignedStoreIds([])}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <input
+                      className="form-input text-xs !py-1 my-2"
+                      placeholder="Filter stores…"
+                      value={storeSearch}
+                      onChange={e => setStoreSearch(e.target.value)}
+                    />
+
+                    <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 text-xs">
+                      {outlets
+                        .filter(o => !storeSearch || o.outlet_name.toLowerCase().includes(storeSearch.toLowerCase()))
+                        .map(o => {
+                          const checked = assignedStoreIds.includes(o.id)
+                          return (
+                            <label
+                              key={o.id}
+                              className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors ${
+                                checked ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-app-card text-text-secondary'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={e => {
+                                  if (e.target.checked) setAssignedStoreIds([...assignedStoreIds, o.id])
+                                  else setAssignedStoreIds(assignedStoreIds.filter(id => id !== o.id))
+                                }}
+                              />
+                              <span className="truncate">{o.outlet_name}</span>
+                            </label>
+                          )
+                        })}
+                    </div>
+                  </div>
+
+                  {/* 3. Permitted Product Categories (e.g. for Category Manager) */}
+                  <div className="border border-border rounded-xl p-3 bg-app-bg/50 flex flex-col h-[320px]">
+                    <div className="flex items-center justify-between pb-2 border-b border-border">
+                      <span className="text-xs font-semibold text-text-primary">
+                        Assigned Categories ({assignedCatIds.length})
+                      </span>
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <button
+                          type="button"
+                          className="text-primary hover:underline"
+                          onClick={() => setAssignedCatIds(allCategories.map(c => c.id))}
+                        >
+                          All
+                        </button>
+                        <span>·</span>
+                        <button
+                          type="button"
+                          className="text-text-muted hover:underline"
+                          onClick={() => setAssignedCatIds([])}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <input
+                      className="form-input text-xs !py-1 my-2"
+                      placeholder="Filter categories…"
+                      value={catSearch}
+                      onChange={e => setCatSearch(e.target.value)}
+                    />
+
+                    <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 text-xs">
+                      {allCategories
+                        .filter(c => !catSearch || c.name.toLowerCase().includes(catSearch.toLowerCase()))
+                        .map(c => {
+                          const checked = assignedCatIds.includes(c.id)
+                          return (
+                            <label
+                              key={c.id}
+                              className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors ${
+                                checked ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-app-card text-text-secondary'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={e => {
+                                  if (e.target.checked) setAssignedCatIds([...assignedCatIds, c.id])
+                                  else setAssignedCatIds(assignedCatIds.filter(id => id !== c.id))
+                                }}
+                              />
+                              <span className="truncate">{c.name}</span>
+                            </label>
+                          )
+                        })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
+                  <button type="button" className="btn btn-secondary text-xs" onClick={() => setScopeUser(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary text-xs"
+                    disabled={savingScope}
+                    onClick={saveScope}
+                  >
+                    <i className="fas fa-save mr-1" /> {savingScope ? 'Saving…' : 'Save Scope & Assignments'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   )

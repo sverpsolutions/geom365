@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 # ── PO ITEM SCHEMAS ──────────────────────────────────────────────────────────
@@ -288,7 +288,8 @@ class supplier_po_terms_out(BaseModel):
 class purchase_item_in(BaseModel):
     product_id: int
     item_code: str | None = None
-    qty: Decimal
+    qty: Decimal = Decimal("1")
+    free_qty: Decimal = Decimal("0")
     pcs: Decimal = Decimal("0")
     unit: str = "PCS"
     price: Decimal
@@ -296,18 +297,34 @@ class purchase_item_in(BaseModel):
     disc_type: str = "₹"
     gst_percent: Decimal = Decimal("0")
     hsn_code: str | None = None
+    mrp: Decimal | None = None
+    selling_price: Decimal | None = None
+    batch_no: str | None = None
+    supplier_batch_no: str | None = None
+    mfg_date: date | None = None
+    expiry_date: date | None = None
 
 
 class purchase_create(BaseModel):
     outlet_id: int | None = None
     supplier_id: int
-    invoice_no: str | None = None
+    invoice_no: str
     invoice_date: date
     discount: Decimal = Decimal("0")
+    round_off: Decimal = Decimal("0")
     paid_amount: Decimal = Decimal("0")
     payment_mode: str = "credit"
     notes: str | None = None
+    action: str = "update"  # draft | update
     items: list[purchase_item_in]
+
+    @field_validator("invoice_no")
+    @classmethod
+    def validate_invoice_no(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Vendor invoice number is mandatory. Blank invoice numbers are not allowed.")
+        return v.strip()
+
 
 
 class purchase_item_out(BaseModel):
@@ -325,6 +342,10 @@ class purchase_item_out(BaseModel):
     gst_amount: Decimal
     total: Decimal
     hsn_code: str | None = None
+    batch_no: str | None = None
+    batch_id: int | None = None
+    mfg_date: date | None = None
+    expiry_date: date | None = None
 
     class Config:
         from_attributes = True

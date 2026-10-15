@@ -16,7 +16,7 @@ from app.models.invoice import (
 )
 from app.models.product import product as product_model
 from app.models.outlet import outlet as outlet_model
-from app.services import shift_service
+from app.services import shift_service, batch_service
 from app.schemas.invoice import (
     invoice_create, payment_in,
     estimate_create, estimate_item_in, invoice_item_in,
@@ -163,6 +163,9 @@ async def _write_stock_ledger(
     outlet_id: Optional[int],
     notes: Optional[str],
     user_id: Optional[int],
+    batch_no: Optional[str] = None,
+    batch_id: Optional[int] = None,
+    expiry_date: Optional[date] = None,
 ):
     entry = stock_ledger(
         product_id=product_id,
@@ -173,6 +176,9 @@ async def _write_stock_ledger(
         outlet_id=outlet_id,
         notes=notes,
         created_by=user_id,
+        batch_no=batch_no,
+        batch_id=batch_id,
+        expiry_date=expiry_date,
     )
     db.add(entry)
 
@@ -199,8 +205,10 @@ async def create_invoice(
     # build item rows + collect computed dicts for totalling
     item_rows = []
     items_data = []
+    location_id = data.outlet_id or 1
+
     for item_in in data.items:
-        # Fetch product to check lifecycle status
+        # Fetch product to check lifecycle status and batch tracking flags
         prod_q = await db.execute(select(product_model).where(product_model.id == item_in.product_id))
         prod_obj = prod_q.scalar_one_or_none()
         
@@ -212,6 +220,38 @@ async def create_invoice(
             
         if prod_obj.is_expired:
             raise ValueError(f"Item '{prod_obj.name}' has expired and cannot be sold")
+
+        # Batch & FEFO Allocation
+        if prod_obj.has_batch_tracking or prod_obj.is_batch_required:
+            if item_in.batch_id:
+                # Specific batch selected
+                is_ok, reason = await batch_service.check_batch_sale_eligibility(
+                    db=db,
+                    batch_id=item_in.batch_id,
+                    location_id=location_id,
+                    qty_needed=item_in.qty,
+                    prod_override_allow_expired=prod_obj.allow_expired_sale,
+                )
+                if not is_ok:
+                    raise ValueError(f"Batch validation failed for '{prod_obj.name}': {reason}")
+            else:
+                # Auto FEFO allocation
+                allocs, unallocated = await batch_service.allocate_fefo_batches(
+                    db=db,
+                    product_id=prod_obj.id,
+                    location_id=location_id,
+                    required_qty=item_in.qty,
+                    allow_expired=prod_obj.allow_expired_sale,
+                )
+                if unallocated > Decimal("0") and not prod_obj.allow_neg_batch_stock:
+                    raise ValueError(
+                        f"Insufficient batch stock for '{prod_obj.name}'. Required: {item_in.qty}, Available in active batches: {item_in.qty - unallocated}"
+                    )
+                if allocs:
+                    item_in.batch_id = allocs[0]["batch_id"]
+                    item_in.batch_no = allocs[0]["batch_no"]
+                    if allocs[0].get("exp_date"):
+                        item_in.expiry_date = date.fromisoformat(allocs[0]["exp_date"])
 
         calc = _calc_item(item_in, data.is_interstate, data.cd_percent)
         row = invoice_item(
@@ -227,6 +267,9 @@ async def create_invoice(
             gst_percent=item_in.gst_percent,
             hsn_code=item_in.hsn_code,
             challan_item_id=item_in.challan_item_id,
+            batch_no=item_in.batch_no,
+            batch_id=item_in.batch_id,
+            expiry_date=item_in.expiry_date,
             **{k: v for k, v in calc.items() if not k.startswith("cd_")},
         )
         item_rows.append(row)
@@ -273,7 +316,7 @@ async def create_invoice(
     db.add(inv)
     await db.flush()  # get inv.id
 
-    # stock ledger — write FIRST, then update qty
+    # stock ledger — write FIRST, then update qty and batch stock
     for item_in in data.items:
         await _write_stock_ledger(
             db=db,
@@ -283,10 +326,24 @@ async def create_invoice(
             ref_id=inv.id,
             ref_type="invoice",
             outlet_id=data.outlet_id,
-            notes=f"Invoice {invoice_no}",
+            notes=f"Invoice {invoice_no}" + (f" (Batch: {item_in.batch_no})" if item_in.batch_no else ""),
             user_id=user_id,
+            batch_no=item_in.batch_no,
+            batch_id=item_in.batch_id,
+            expiry_date=item_in.expiry_date,
         )
         await _update_product_stock(db, item_in.product_id, -item_in.qty)
+
+        if item_in.batch_id:
+            await batch_service.record_batch_movement(
+                db=db,
+                batch_id=item_in.batch_id,
+                location_id=location_id,
+                qty_delta=-item_in.qty,
+                movement_type="sale",
+                product_id=item_in.product_id,
+                allow_negative=False,
+            )
 
     # record payment if paid_amount > 0
     parts = [(p.payment_mode, p.amount) for p in data.payments] or ([(data.payment_mode, paid)] if paid > Decimal("0") else [])
@@ -466,8 +523,22 @@ async def cancel_invoice(
             outlet_id=inv.outlet_id,
             notes=f"Cancel {inv.invoice_no}: {reason}",
             user_id=user_id,
+            batch_no=it.batch_no,
+            batch_id=it.batch_id,
+            expiry_date=it.expiry_date,
         )
         await _update_product_stock(db, it.product_id, it.qty)
+
+        if it.batch_id:
+            await batch_service.record_batch_movement(
+                db=db,
+                batch_id=it.batch_id,
+                location_id=inv.outlet_id or 1,
+                qty_delta=it.qty,
+                movement_type="sale_return",
+                product_id=it.product_id,
+                allow_negative=True,
+            )
 
     inv.status = "cancelled"
     await db.commit()

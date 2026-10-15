@@ -5,23 +5,23 @@
 @tailwind utilities;
 
 :root {
-  /* 🎨 COLOR TOKENS (ModernBazaar v2 — deep teal) */
+  /* 🎨 COLOR TOKENS (GEOM365 — Official Brand Plum & Violet) */
   --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
-  --color-primary:         #0E5C63;
-  --color-primary-hover:   #0A4B51;
-  --color-primary-light:   #E7F2F2;
-  --color-accent:          #14A3A8;
-  --color-accent-hover:    #1E8489;
-  --color-sidebar:         #0C1B24;
-  --color-sidebar-active:  #16303B;
+  --color-primary:         #8c2785;
+  --color-primary-hover:   #731f6d;
+  --color-primary-light:   #fcf4fb;
+  --color-accent:          #2c57a4;
+  --color-accent-hover:    #234685;
+  --color-sidebar:         #1c1322;
+  --color-sidebar-active:  #331c3e;
 
-  --color-bg-app:          #F5F6F8;
+  --color-bg-app:          #F8F9FB;
   --color-bg-card:         #FFFFFF;
   --color-bg-table-header: #F9FAFB;
-  --color-bg-section-bar:  #0C1B24;
-  --color-bg-row-alt:      #FBFCFD;
-  --color-bg-row-hover:    #F3FAFA;
+  --color-bg-section-bar:  #1c1322;
+  --color-bg-row-alt:      #FDFCFE;
+  --color-bg-row-hover:    #FAF3F9;
   --color-bg-input:        #FFFFFF;
   --color-bg-input-disabled: #F1F3F6;
 
@@ -29,7 +29,7 @@
   --color-text-secondary:  #475467;
   --color-text-muted:      #667085;
   --color-text-inverse:    #FFFFFF;
-  --color-text-link:       #0E5C63;
+  --color-text-link:       #8c2785;
   --color-text-label:      #344054;
 
   --color-border:          #E4E7EC;
@@ -511,30 +511,83 @@
 }
 
 @media print {
+  @page {
+    margin: 8mm 6mm;
+    size: auto;
+  }
+
   body, html, #root {
     margin: 0 !important;
     padding: 0 !important;
-    position: static !important;
-  }
-  body * {
-    visibility: hidden;
-  }
-  #printable-po, #printable-po * {
-    visibility: visible;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #101828 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  #printable-po {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-  }
-  .print\\:hidden, .print\\:hidden * {
+
+  /* Hide navigation, sidebars, headers, buttons and screen-only controls */
+  aside,
+  #app-sidebar,
+  header,
+  nav,
+  #tab-bar,
+  .tab-bar,
+  #sidebar-toggle-btn,
+  .print\:hidden,
+  .no-print {
     display: none !important;
     visibility: hidden !important;
   }
+
+  /* Reset layout flex/overflow containers so pages paginate naturally */
+  .h-screen,
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-x-auto,
+  main {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    background: #ffffff !important;
+  }
+
+  /* Preserve colors and borders */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Printable containers take full width cleanly */
+  #printable-po,
+  #grn-print-slip,
+  #printable-expiry-report,
+  .printable-report {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  /* Clean table printing */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  tr, .print-row {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
 }
-
-
-@media print { @page { margin: 0; } }

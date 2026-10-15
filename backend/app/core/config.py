@@ -17,14 +17,18 @@ class settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     # app
-    app_name: str = "ModernBazaarHO"
+    app_name: str = "GEOM365 ERP"
     app_version: str = "1.0.0"
-    debug: bool = True
-    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+    debug: bool = False
+    allowed_origins: str = "http://localhost:5173,http://localhost:3000,https://geom365.sverpsolutions.com,http://geom365.sverpsolutions.com"
 
     @property
     def origins_list(self) -> list[str]:
-        return [o.strip() for o in self.allowed_origins.split(",")]
+        origins = [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+        for extra in ["https://geom365.sverpsolutions.com", "http://geom365.sverpsolutions.com"]:
+            if extra not in origins:
+                origins.append(extra)
+        return origins
 
 
 @lru_cache

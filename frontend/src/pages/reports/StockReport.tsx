@@ -1,6 +1,7 @@
 import { matchesSearch } from '../../utils/search';
 import React, { useState, useEffect } from 'react';
 import api from '../../api/axios';
+import CompanyReportHeader from '../../components/common/CompanyReportHeader';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { 
@@ -234,7 +235,7 @@ const StockReport = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-100px)] bg-slate-50 -my-6 mr-3 ml-3 rounded-2xl overflow-hidden shadow-sm">
+    <div className="flex flex-col h-[calc(100vh-100px)] bg-slate-50 -my-6 mr-3 ml-3 rounded-2xl overflow-hidden shadow-sm print:h-auto print:overflow-visible print:m-0 print:rounded-none print:shadow-none print:bg-white printable-report">
       {/* Top Filter Bar */}
       <div className="bg-white border-b border-slate-200 p-4 space-y-4 no-print relative z-50">
         <div className="flex flex-wrap items-center gap-4">
@@ -344,14 +345,25 @@ const StockReport = () => {
       </div>
 
       {/* Report Content */}
-      <div className="flex-1 overflow-y-auto p-6 custom-scrollbar scroll-smooth print:p-0">
+      <div className="flex-1 overflow-y-auto p-6 custom-scrollbar scroll-smooth print:p-0 print:overflow-visible">
+        <CompanyReportHeader
+          title={activeTab === 'summary' ? 'STOCK VALUATION & INVENTORY SUMMARY' : 'STOCK LEDGER REPORT'}
+          subtitle={`Mode: ${activeTab === 'summary' ? `Summary grouped by ${groupBy.toUpperCase()}` : `Ledger from ${fromDate} to ${toDate}`}${search ? ` | Search: ${search}` : ''}`}
+          metaItems={[
+            { label: 'Total Qty', value: fmt(data?.dashboard?.total_qty) },
+            { label: 'Cost Value', value: cur(data?.dashboard?.total_value) },
+            { label: 'MRP Value', value: cur(data?.dashboard?.total_mrp_value) },
+            { label: 'Tax Value', value: cur(data?.dashboard?.total_tax_value) },
+          ]}
+          printOnly={true}
+        />
         {activeTab === 'summary' && <SummaryCards />}
         
         <div className="h-6"></div> 
 
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden print:border-none print:shadow-none">
-          <div className="overflow-x-auto min-h-[400px]">
-            <table className="w-full text-[11px] text-left">
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden print:border-none print:shadow-none print:rounded-none print:overflow-visible">
+          <div className="overflow-x-auto min-h-[400px] print:min-h-0 print:overflow-visible">
+            <table className="w-full text-[11px] text-left print:text-[9px]">
               <thead className="bg-[#1e293b] text-white uppercase tracking-tighter sticky top-0 z-20 print:bg-black">
                 {activeTab === 'summary' ? (
                   <tr>

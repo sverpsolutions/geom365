@@ -1,8 +1,10 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 
+const apiBase = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL.replace(/\/+$/, '')}/api/v1` : '/api/v1'
+
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: apiBase,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
 })
@@ -22,7 +24,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true
       try {
-        const res = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true })
+        const res = await axios.post(`${apiBase}/auth/refresh`, {}, { withCredentials: true })
         const new_token: string = res.data.access_token
         useAuthStore.getState().set_token(new_token)
         original.headers.Authorization = `Bearer ${new_token}`

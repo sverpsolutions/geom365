@@ -1,6 +1,9 @@
 import api from './axios'
 
-export const USER_ROLES = ['admin', 'manager', 'staff', 'viewer'] as const  // superadmin is set by a superadmin only
+export const USER_ROLES = [
+  'admin', 'manager', 'staff', 'viewer',
+  'category_manager', 'area_sales_manager', 'store_manager', 'purchase_manager', 'accounts_manager'
+] as const  // superadmin is set by a superadmin only
 
 export interface user_row {
   id: number; name: string; username: string; email: string | null; role: string

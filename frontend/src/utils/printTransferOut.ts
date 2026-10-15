@@ -11,7 +11,8 @@ export interface transfer_print {
   to: trf_location | null
   received_at?: string | null
   items: { id?: number; name: string; item_code?: string | null; barcode?: string | null; hsn_code?: string | null
-           qty: string; received_qty?: string | null; unit?: string | null; cost_price: string; mrp: string; total_val: string }[]
+           qty: string; received_qty?: string | null; unit?: string | null; cost_price: string; mrp: string; total_val: string
+           batch_no?: string | null; expiry_date?: string | null }[]
 }
 
 const esc = (v: unknown) =>
@@ -36,7 +37,10 @@ function page(t: transfer_print, s: Partial<CompanySettings>, logo: string) {
     tq += q; tmrp += q * Number(it.mrp); tval += Number(it.total_val)
     return `<tr>
       <td class="c">${i + 1}</td>
-      <td><strong>${esc(it.name)}</strong></td>
+      <td>
+        <strong>${esc(it.name)}</strong>
+        ${it.batch_no ? `<div style="font-size:9px;color:#0E5C63;font-weight:bold;margin-top:2px">Batch: ${esc(it.batch_no)}${it.expiry_date ? ` · Exp: ${esc(it.expiry_date)}` : ''}</div>` : ''}
+      </td>
       <td>${esc(it.item_code || '-')}</td>
       <td>${esc(it.barcode || '')}</td>
       <td class="c">${esc(it.hsn_code || '')}</td>
@@ -48,11 +52,14 @@ function page(t: transfer_print, s: Partial<CompanySettings>, logo: string) {
   }).join('')
   return `<section class="sheet">
   <div class="header">
-    <div>
+    <div style="display: flex; gap: 12px; align-items: center;">
       ${logo ? `<img src="${esc(logo)}" class="logo" alt="" onerror="this.remove()">` : ''}
-      <h2>${esc(s.brand_name)}</h2>
-      ${s.ho_address ? `<p>${esc(s.ho_address)}</p>` : ''}
-      ${s.gstin ? `<p><strong>GSTIN:</strong> ${esc(s.gstin)}</p>` : ''}
+      <div>
+        <h2>${esc(s.brand_name || 'geom365')}</h2>
+        <p style="font-weight: bold; margin-bottom: 2px;">${esc(s.legal_name || 'Geomett Box Private Limited')}</p>
+        <p>${esc(s.ho_address || 'TR-311, 312, ALTF Mohan Cooperative Industrial Estate, South Delhi – 110076')}</p>
+        <p>Ph: ${esc(s.ho_phone || '74003 39365 / 82934 14222')} &nbsp;|&nbsp; Email: ${esc(s.ho_email || 'care@geom365.com')}${s.gstin ? ` &nbsp;|&nbsp; <strong>GSTIN:</strong> ${esc(s.gstin)}` : ''}</p>
+      </div>
     </div>
     <div class="title">
       <h1>Stock Transfer Out</h1>
@@ -81,7 +88,7 @@ function page(t: transfer_print, s: Partial<CompanySettings>, logo: string) {
 
 export function printTransferOut(transfers: transfer_print[], s: Partial<CompanySettings>) {
   if (!transfers.length) return
-  const logo = s.logo_path ? new URL(s.logo_path, window.location.origin).href : ''
+  const logo = s.logo_path ? new URL(s.logo_path, window.location.origin).href : `${window.location.origin}/geom365_logo.png`
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <title>Stock Transfer Out - ${esc(transfers.map(t => t.transfer_no).join(', '))}</title>
 <style>

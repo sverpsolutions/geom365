@@ -167,7 +167,7 @@ export default function product_list_page() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <StatusBadge status={p.is_active ? 'ACTIVE' : 'INACTIVE'} />
+                    <StatusBadge active={p.is_active} />
                   </td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex justify-center gap-2">

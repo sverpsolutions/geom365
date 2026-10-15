@@ -1,7 +1,42 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import base
+
+class region(base):
+    __tablename__ = "regions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    manager_name: Mapped[str | None] = mapped_column(String(100))
+    contact_phone: Mapped[str | None] = mapped_column(String(20))
+    email: Mapped[str | None] = mapped_column(String(100))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    zones: Mapped[list["outlet_zone"]] = relationship("outlet_zone", back_populates="region_rel")
+    outlets: Mapped[list["outlet"]] = relationship("outlet", back_populates="region_rel")
+
+
+class outlet_zone(base):
+    __tablename__ = "outlet_zones"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    region_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("regions.id", ondelete="SET NULL"))
+    zone_code: Mapped[str | None] = mapped_column(String(20))
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    manager_name: Mapped[str | None] = mapped_column(String(100))
+    contact_phone: Mapped[str | None] = mapped_column(String(20))
+    email: Mapped[str | None] = mapped_column(String(100))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    region_rel: Mapped["region | None"] = relationship("region", back_populates="zones")
+    outlets: Mapped[list["outlet"]] = relationship("outlet", back_populates="zone_rel")
+
 
 class outlet(base):
     __tablename__ = "outlets"
@@ -9,6 +44,7 @@ class outlet(base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     unit_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     outlet_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(255))
     server_name: Mapped[str | None] = mapped_column(String(200))
     database_name: Mapped[str | None] = mapped_column(String(100))
     db_username: Mapped[str | None] = mapped_column(String(100))
@@ -16,6 +52,10 @@ class outlet(base):
     type: Mapped[str] = mapped_column(String(1), default="O") # H=Head Office, O=Outlet
     grp_code: Mapped[str | None] = mapped_column(String(20))
     
+    # Hierarchy
+    region_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("regions.id", ondelete="SET NULL"))
+    zone_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("outlet_zones.id", ondelete="SET NULL"))
+
     # Basic Details
     outlet_code: Mapped[str | None] = mapped_column(String(20))
     short_name: Mapped[str | None] = mapped_column(String(50))
@@ -47,7 +87,7 @@ class outlet(base):
     map_link: Mapped[str | None] = mapped_column(Text)
     
     # Operation Details
-    store_type: Mapped[str | None] = mapped_column(String(20)) # T1, T2, T3
+    store_type: Mapped[str | None] = mapped_column(String(50)) # Company Operated, Franchise
     store_category: Mapped[str | None] = mapped_column(String(50))
     store_size: Mapped[str | None] = mapped_column(String(50))
     opening_date: Mapped[datetime | None] = mapped_column(DateTime)
@@ -66,7 +106,7 @@ class outlet(base):
     shop_license: Mapped[str | None] = mapped_column(String(255))
     other_docs: Mapped[str | None] = mapped_column(String(255))
     
-    is_connected: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_connected: Mapped[bool] = mapped_column(Boolean, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     
     sync_required: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -77,3 +117,6 @@ class outlet(base):
     last_connected_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    region_rel: Mapped["region | None"] = relationship("region", back_populates="outlets")
+    zone_rel: Mapped["outlet_zone | None"] = relationship("outlet_zone", back_populates="outlets")

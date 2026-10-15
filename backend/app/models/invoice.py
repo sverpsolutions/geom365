@@ -78,6 +78,9 @@ class invoice_item(base):
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0.00)
     hsn_code: Mapped[str | None] = mapped_column(String(20))
     challan_item_id: Mapped[int | None] = mapped_column(Integer)
+    batch_no: Mapped[str | None] = mapped_column(String(100))
+    batch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("product_batches.id", ondelete="SET NULL"))
+    expiry_date: Mapped[date | None] = mapped_column(Date)
 
     invoice_rel: Mapped["invoice"] = relationship("invoice", back_populates="items")
 
@@ -126,6 +129,9 @@ class stock_ledger(base):
     ref_id: Mapped[int | None] = mapped_column(Integer)
     ref_type: Mapped[str | None] = mapped_column(String(30))
     outlet_id: Mapped[int | None] = mapped_column(Integer)
+    batch_no: Mapped[str | None] = mapped_column(String(100))
+    batch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("product_batches.id", ondelete="SET NULL"))
+    expiry_date: Mapped[date | None] = mapped_column(Date)
     notes: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

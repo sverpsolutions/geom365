@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, current_user_dep, require_role
 
-router = APIRouter(prefix="/stock-reports", tags=["stock-reports"])
+router = APIRouter(prefix="/stock-reports", tags=["stock-reports"], dependencies=[Depends(get_current_user)])
 
 def _fmt(v) -> float:
     try:

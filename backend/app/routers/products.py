@@ -28,6 +28,7 @@ router = APIRouter(prefix="/products", tags=["products"])
 # ── Fast product search (for QuickScan / autocomplete) ───────────────────────
 # Must be defined BEFORE /{product_id} to avoid route conflict.
 @router.get("/search")
+@router.get("/search_ajax")
 async def search_products(
     q: str = Query("", min_length=1),
     limit: int = Query(20, ge=1, le=100),
@@ -35,14 +36,17 @@ async def search_products(
     current_user: current_user_dep = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # outlet_stock only holds non-zero rows, so no row means 0 at that outlet
-    stock_col = (
-        func.coalesce(
+    # If outlet_id is provided, try outlet_stock, falling back to product_model.stock_qty; otherwise use product stock
+    if outlet_id:
+        stock_col = func.coalesce(
             select(outlet_stock.stock_qty)
             .where(outlet_stock.outlet_id == outlet_id, outlet_stock.product_id == product_model.id)
-            .limit(1).scalar_subquery(), 0)
-        if outlet_id else sa_null()
-    ).label("stock_qty")
+            .limit(1).scalar_subquery(),
+            product_model.stock_qty,
+            0
+        ).label("stock_qty")
+    else:
+        stock_col = func.coalesce(product_model.stock_qty, 0).label("stock_qty")
 
     # Search by barcode in product_barcodes table to get matching product IDs
     barcode_sub = (
@@ -59,11 +63,18 @@ async def search_products(
             product_model.barcode,
             product_model.barcode_crt,
             product_model.unit,
+            product_model.purchase_price,
+            product_model.cost_price,
+            product_model.basic_cost,
             product_model.selling_price,
             product_model.mrp,
             product_model.gst_percent,
             product_model.hsn_code,
             stock_col,
+            product_model.has_batch_tracking,
+            product_model.has_expiry_tracking,
+            product_model.is_batch_required,
+            product_model.shelf_life_days,
         )
         .where(product_model.is_active == True)
         .where(
@@ -79,17 +90,25 @@ async def search_products(
             "id": r.id,
             "name": r.name,
             "item_code": r.item_code,
-            "barcode": r.barcode,
+            "barcode": r.barcode or r.barcode_crt or "",
             "barcode_crt": r.barcode_crt,
-            "unit": r.unit,
-            "hsn_code": r.hsn_code,
-            "selling_price": str(r.selling_price),
-            "mrp": str(r.mrp),
-            "gst_percent": str(r.gst_percent),
-            "stock_qty": None if r.stock_qty is None else str(r.stock_qty),
+            "unit": r.unit or "PCS",
+            "hsn_code": r.hsn_code or "",
+            "purchase_price": float(r.purchase_price or 0),
+            "cost_price": float(r.cost_price or 0),
+            "basic_cost": float(r.basic_cost or r.purchase_price or 0),
+            "selling_price": float(r.selling_price or 0),
+            "mrp": float(r.mrp or 0),
+            "gst_percent": float(r.gst_percent or 0),
+            "stock_qty": float(r.stock_qty or 0),
+            "has_batch_tracking": bool(r.has_batch_tracking or r.is_batch_required),
+            "has_expiry_tracking": bool(r.has_expiry_tracking),
+            "is_batch_required": bool(r.is_batch_required),
+            "shelf_life_days": int(r.shelf_life_days) if r.shelf_life_days else None,
         }
         for r in rows
     ]
+
 
 
 @router.get("", response_model=paginated_response[product_list_out])
@@ -388,7 +407,8 @@ async def update_outlet_pricing_route(
 @router.get("/{product_id}/activity")
 async def get_product_activity(
     product_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: current_user_dep = Depends(get_current_user)
 ):
     # Get last 7 days
     today = date.today()

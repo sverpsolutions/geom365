@@ -247,7 +247,7 @@ export default function POGuestDetail() {
               {(po.distributions || []).map(dist => (
                 <div key={dist.id} className="border border-slate-300 rounded-lg p-3">
                   <div className="font-bold text-sm mb-2">{dist.outlet_name}</div>
-                  {dist.details.map(dtl => {
+                  {dist.details.map((dtl: any) => {
                     const item = (po.items || []).find(i => i.product_id === dtl.product_id);
                     return (
                       <div key={dtl.id} className="flex justify-between text-xs py-1 border-b border-slate-100 last:border-0">
@@ -382,7 +382,7 @@ export default function POGuestDetail() {
                       </div>
                       <div className="p-5">
                         <div className="space-y-3">
-                          {dist.details.map(dtl => {
+                          {dist.details.map((dtl: any) => {
                             const item = (po.items || []).find(i => i.product_id === dtl.product_id);
                             return (
                               <div key={dtl.id} className="flex justify-between items-center text-sm border-b border-slate-100 pb-2 last:border-0 last:pb-0">

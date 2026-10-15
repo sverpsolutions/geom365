@@ -39,7 +39,7 @@ export default function supplier_form_page() {
           email: s.email ?? '', address: s.address ?? '', city: s.city ?? '',
           state: s.state, pincode: s.pincode ?? '', district: s.district ?? '',
           country: 'India', gst_number: s.gst_number ?? '', pan_number: s.pan_number ?? '',
-          opening_balance: s.opening_balance, credit_limit_days: String(s.credit_limit_days),
+          opening_balance: s.opening_balance != null ? String(s.opening_balance) : '0', credit_limit_days: String(s.credit_limit_days),
           website: '', notes: s.notes ?? '',
         })
       })

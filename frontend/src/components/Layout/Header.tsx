@@ -181,7 +181,7 @@ export default function Header({ onSidebarToggle }: HeaderProps) {
       {/* Global Command Bar wrapper */}
       <div 
         onClick={() => setShowCommandPalette(true)}
-        className="flex-1 max-w-xl cursor-pointer"
+        className="flex-1 max-w-lg cursor-pointer"
       >
         <div className="relative group w-full">
           <i className="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted text-[13px]"></i>
@@ -192,6 +192,16 @@ export default function Header({ onSidebarToggle }: HeaderProps) {
              <kbd className="px-1.5 py-0.5 bg-white border border-border rounded text-[11px] font-mono text-text-secondary">Ctrl K</kbd>
           </div>
         </div>
+      </div>
+
+      {/* GEOM365 Multi-Store Location Scope Indicator */}
+      <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 bg-purple-50/90 border border-purple-200/70 rounded-xl text-xs text-purple-950 font-medium shadow-xs">
+        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+        <span className="font-extrabold text-[#8c2785]">GEOM365 HQ</span>
+        <span className="text-purple-300">/</span>
+        <span className="text-slate-600 font-semibold">NCR01 • Delhi NCR</span>
+        <span className="text-purple-300">/</span>
+        <span className="px-2 py-0.5 rounded-full bg-[#8c2785] text-white text-[10px] font-black tracking-wide">20 Outlets 24/7</span>
       </div>
 
       <div className="flex items-center gap-4 ml-auto">

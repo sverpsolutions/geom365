@@ -24,6 +24,7 @@ from app.models.product import product
 from app.models.purchase import purchase, purchase_item
 from app.models.sync import unit_wise_purchase_return as pr, unit_wise_purchase_return_item as pr_item
 from app.services.billing_service import _write_stock_ledger, _update_product_stock
+from app.services import batch_service
 
 DN_PREFIX = "DN-HO-"
 ZERO = Decimal("0")
@@ -83,32 +84,48 @@ async def grn_lines(db: AsyncSession, g: purchase) -> list[dict]:
     line_sum = sum(Decimal(i.taxable_amt or 0) for i in items) or Decimal(1)
     header_factor = Decimal(g.taxable_amount or 0) / line_sum if g.taxable_amount else Decimal(1)  # spreads header discount
 
-    lines: dict[int, dict] = {}
+    # Group by (product_id, batch_no) so batches are individually returnable
+    lines: dict[tuple, dict] = {}
     for it in items:
-        row = lines.setdefault(it.product_id, {"product_id": it.product_id, "hsn_code": it.hsn_code, "unit": it.unit,
-                                               "gst_percent": Decimal(it.gst_percent or 0), "received_qty": ZERO, "taxable": ZERO})
+        k = (it.product_id, (it.batch_no or "").strip())
+        row = lines.setdefault(k, {
+            "product_id": it.product_id,
+            "batch_no": it.batch_no,
+            "batch_id": it.batch_id,
+            "expiry_date": str(it.expiry_date) if it.expiry_date else None,
+            "hsn_code": it.hsn_code,
+            "unit": it.unit,
+            "gst_percent": Decimal(it.gst_percent or 0),
+            "received_qty": ZERO,
+            "taxable": ZERO
+        })
         row["received_qty"] += Decimal(it.qty or 0)
         row["taxable"] += Decimal(it.taxable_amt or 0) * header_factor
 
     done = (await db.execute(
-        select(pr_item.product_id, func.sum(pr_item.qty), func.sum(pr_item.taxable_amt))
+        select(pr_item.product_id, func.coalesce(pr_item.batch_no, ''), func.sum(pr_item.qty), func.sum(pr_item.taxable_amt))
         .join(pr, pr.id == pr_item.prn_id)
         .where(pr.purchase_id == g.id, pr.status != "cancelled")
-        .group_by(pr_item.product_id)
+        .group_by(pr_item.product_id, pr_item.batch_no)
     )).all()
-    returned = {pid: (Decimal(q or 0), Decimal(t or 0)) for pid, q, t in done}
-    prods = {p.id: p for p in (await db.execute(select(product).where(product.id.in_(lines.keys())))).scalars()} if lines else {}
+    returned = {(pid, (b or '').strip()): (Decimal(q or 0), Decimal(t or 0)) for pid, b, q, t in done}
+    
+    prod_ids = [row["product_id"] for row in lines.values()]
+    prods = {p.id: p for p in (await db.execute(select(product).where(product.id.in_(prod_ids)))).scalars()} if prod_ids else {}
 
     out = []
-    for pid, row in lines.items():
+    for (pid, b_no), row in lines.items():
         p = prods.get(pid)
-        rq, rt = returned.get(pid, (ZERO, ZERO))
+        rq, rt = returned.get((pid, b_no), (ZERO, ZERO))
         out.append({
-            **row, "taxable": _two(row["taxable"]),
-            "name": p.name if p else f"#{pid}", "item_code": p.item_code if p else None,
+            **row,
+            "taxable": _two(row["taxable"]),
+            "name": p.name if p else f"#{pid}",
+            "item_code": p.item_code if p else None,
             "hsn_code": row["hsn_code"] or (p.hsn_code if p else None),
             "rate": _two(row["taxable"] / row["received_qty"]) if row["received_qty"] else ZERO,
-            "returned_qty": rq, "returned_taxable": rt,
+            "returned_qty": rq,
+            "returned_taxable": rt,
             "returnable_qty": max(row["received_qty"] - rq, ZERO),
             "ho_stock": Decimal(p.stock_qty or 0) if p else ZERO,
         })
@@ -131,7 +148,7 @@ async def _next_dn_no(db: AsyncSession) -> str:
 
 
 async def create_return(db: AsyncSession, data, user_id: Optional[int]) -> pr:
-    """data: purchase_no | supplier_id, items [{product_id, qty, rate?}], reason, return_date, notes."""
+    """data: purchase_no | supplier_id, items [{product_id, qty, rate?, batch_no?, batch_id?, expiry_date?}], reason, return_date, notes."""
     g = await _grn(db, data.purchase_no, lock=True) if data.purchase_no else None
     supplier_id = g.supplier_id if g else data.supplier_id
     sup = await db.get(supplier, supplier_id) if supplier_id else None
@@ -141,16 +158,24 @@ async def create_return(db: AsyncSession, data, user_id: Optional[int]) -> pr:
 
     rows = []
     if g:
-        lines = {l["product_id"]: l for l in await grn_lines(db, g)}
+        grn_items = await grn_lines(db, g)
+        # Index by (product_id, batch_no) and fallback by product_id
+        lines_by_batch = {(l["product_id"], (l.get("batch_no") or "").strip()): l for l in grn_items}
+        lines_by_pid = {l["product_id"]: l for l in grn_items}
+
         for req in data.items:
             qty = Decimal(str(req.qty))
-            l = lines.get(req.product_id)
+            req_bno = (req.batch_no or "").strip()
+            l = lines_by_batch.get((req.product_id, req_bno)) or lines_by_pid.get(req.product_id)
             if not l:
                 raise ValueError(f"Product {req.product_id} is not on GRN {g.purchase_no}")
             if qty > l["returnable_qty"]:
                 raise OverflowError(f"{l['name']}: only {l['returnable_qty']} returnable, asked {qty}")
             taxable = taxable_for(l["taxable"], l["received_qty"], l["returned_qty"], l["returned_taxable"], qty)
-            rows.append((req.product_id, l["item_code"], l["name"], l["hsn_code"], l["unit"], qty, l["gst_percent"], taxable))
+            batch_id = req.batch_id or l.get("batch_id")
+            batch_no = req.batch_no or l.get("batch_no")
+            exp_date = req.expiry_date or (date.fromisoformat(l["expiry_date"]) if l.get("expiry_date") else None)
+            rows.append((req.product_id, l["item_code"], l["name"], l["hsn_code"], l["unit"], qty, l["gst_percent"], taxable, batch_no, batch_id, exp_date))
     else:
         prods = {p.id: p for p in (await db.execute(select(product).where(product.id.in_([r.product_id for r in data.items])))).scalars()}
         for req in data.items:
@@ -161,18 +186,22 @@ async def create_return(db: AsyncSession, data, user_id: Optional[int]) -> pr:
             rate = Decimal(str(req.rate)) if req.rate else Decimal(p.purchase_price or p.cost_price or 0)
             if rate <= 0:
                 raise ValueError(f"{p.name}: enter a rate (no purchase/cost price on item master)")
-            rows.append((p.id, p.item_code, p.name, p.hsn_code, p.unit, qty, Decimal(p.gst_percent or 0), _two(rate * qty)))
+            rows.append((p.id, p.item_code, p.name, p.hsn_code, p.unit, qty, Decimal(p.gst_percent or 0), _two(rate * qty), req.batch_no, req.batch_id, req.expiry_date))
     rows = [r for r in rows if r[5] > 0]
     if not rows:
         raise ValueError("Enter a return quantity for at least one item")
 
     items, tot = [], dict.fromkeys(("taxable_amt", "cgst_amount", "sgst_amount", "igst_amount", "gst_amount", "total"), ZERO)
-    for pid, code, name, hsn, unit, qty, gst_pct, taxable in rows:
+    for pid, code, name, hsn, unit, qty, gst_pct, taxable, b_no, b_id, exp_d in rows:
         calc = gst_on(taxable, gst_pct, inter)
         for k in tot:
             tot[k] += calc[k]
-        items.append(pr_item(product_id=pid, item_code=code, name=name, hsn_code=hsn, unit=unit, qty=qty,
-                             price=_two(taxable / qty), basic_amount=calc["taxable_amt"], gst_percent=gst_pct, **calc))
+        items.append(pr_item(
+            product_id=pid, item_code=code, name=name, hsn_code=hsn, unit=unit, qty=qty,
+            price=_two(taxable / qty), basic_amount=calc["taxable_amt"], gst_percent=gst_pct,
+            batch_no=b_no, batch_id=b_id, expiry_date=exp_d,
+            **calc
+        ))
 
     adjusted = min(tot["total"], Decimal(g.due_amount or 0)) if g else ZERO
     for attempt in range(3):
@@ -194,9 +223,27 @@ async def create_return(db: AsyncSession, data, user_id: Optional[int]) -> pr:
     for it in items:
         it.prn_id = dn.id
         db.add(it)
-        await _write_stock_ledger(db, it.product_id, "purchase_return", -it.qty, dn.id, "purchase_return", None,
-                                  f"Debit note {dn.prn_no}" + (f" against {g.purchase_no}" if g else ""), user_id)
+        await _write_stock_ledger(
+            db, it.product_id, "purchase_return", -it.qty, dn.id, "purchase_return", dn.outlet_id,
+            f"Debit note {dn.prn_no}" + (f" against {g.purchase_no}" if g else "") + (f" (Batch: {it.batch_no})" if it.batch_no else ""),
+            user_id,
+            batch_no=it.batch_no,
+            batch_id=it.batch_id,
+            expiry_date=it.expiry_date
+        )
         await _update_product_stock(db, it.product_id, -it.qty)
+
+        # Decrement Location-wise batch stock if batch specified
+        if it.batch_id:
+            await batch_service.record_batch_movement(
+                db=db,
+                batch_id=it.batch_id,
+                location_id=dn.outlet_id or 1,
+                qty_delta=-it.qty,
+                movement_type="purchase_return",
+                product_id=it.product_id,
+                allow_negative=False,
+            )
 
     if adjusted:
         g.due_amount = Decimal(g.due_amount) - adjusted
@@ -215,12 +262,28 @@ async def cancel_return(db: AsyncSession, return_id: int, reason: str, user_id: 
         raise LookupError("Debit note not found (outlet PRNs are cancelled at the outlet)")
     if dn.status == "cancelled":
         return dn
+    
+    # Revert stock ledger and master product stock
     posted = (await db.execute(select(stock_ledger.product_id, stock_ledger.qty)
                                .where(stock_ledger.ref_id == dn.id, stock_ledger.txn_type == "purchase_return"))).all()
     for pid, qty in posted:
-        await _write_stock_ledger(db, pid, "purchase_return_cancel", -qty, dn.id, "purchase_return_cancel", None,
+        await _write_stock_ledger(db, pid, "purchase_return_cancel", -qty, dn.id, "purchase_return_cancel", dn.outlet_id,
                                   f"Cancel {dn.prn_no}: {reason}", user_id)
         await _update_product_stock(db, pid, -qty)
+
+    # Revert location-wise batch stock
+    pr_items = (await db.execute(select(pr_item).where(pr_item.prn_id == dn.id))).scalars().all()
+    for it in pr_items:
+        if it.batch_id:
+            await batch_service.record_batch_movement(
+                db=db,
+                batch_id=it.batch_id,
+                location_id=dn.outlet_id or 1,
+                qty_delta=it.qty,
+                movement_type="purchase",
+                product_id=it.product_id,
+            )
+
     if dn.adjusted_amount and dn.purchase_id:
         g = (await db.execute(select(purchase).where(purchase.id == dn.purchase_id).with_for_update())).scalar_one_or_none()
         if g:

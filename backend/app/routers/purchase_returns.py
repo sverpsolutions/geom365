@@ -24,6 +24,9 @@ class pr_item_in(BaseModel):
     product_id: int
     qty: Decimal = Field(gt=0)
     rate: Optional[Decimal] = Field(default=None, gt=0)  # direct mode only; GRN mode uses GRN rate
+    batch_no: Optional[str] = None
+    batch_id: Optional[int] = None
+    expiry_date: Optional[date] = None
 
 
 class pr_create(BaseModel):

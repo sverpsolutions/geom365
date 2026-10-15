@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { channels_api, channel_partner } from '../../api/channels';
 import toast from 'react-hot-toast';
 
-const ChannelPartners = () => {
+const ChannelPartners = (_props?: { searchQuery?: string; onCountUpdate?: (count: number) => void }) => {
   const [partners, setPartners] = useState<channel_partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);

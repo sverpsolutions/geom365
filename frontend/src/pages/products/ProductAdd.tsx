@@ -2,12 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useParams, useNavigate } from 'react-router-dom';
 import { products_api, product_list_item } from '../../api/products';
-import { masters_api, item_group_type, item_subgroup_type, item_subcategory_type, category_type, brand_type, sub_category_brand_type, manufacturer_type, sub_manufacturer_type, variant_type, flavour_type, product_classification_type, country_type, unit_type } from '../../api/masters';
+import { masters_api, item_group_type, item_subgroup_type, item_subcategory_type, item_category_type, category_type, brand_type, sub_category_brand_type, manufacturer_type, sub_manufacturer_type, variant_type, flavour_type, product_classification_type, country_type, unit_type, hsn_type } from '../../api/masters';
 import { suppliers_api, supplier_list_item } from '../../api/suppliers';
 import { packaging_api, packaging_config, PackagingType, calcTotalUnits, calcVolumeCBM, storage_type_type, temperature_category_type } from '../../api/packaging';
 import { getCompanySettings, CompanySettings } from '../../api/company';
 import { channels_api, channel_price, simulate_result } from '../../api/channels';
 import { audit_api } from '../../api/audit';
+import { batches_api, ProductBatch } from '../../api/batches';
 import toast from 'react-hot-toast';
 import QuickAddModal, { QuickAddConfig } from '../../components/QuickAddModal';
 import PriceSimulator from '../../components/PriceSimulator';
@@ -112,12 +113,12 @@ const ActivityCharts = ({ data }: { data: any[] }) => {
     scales: {
       x: { 
         grid: { display: false },
-        ticks: { font: { size: 9, weight: '600' as const }, color: '#94a3b8' }
+        ticks: { font: { size: 9, weight: 'bold' as const }, color: '#94a3b8' }
       },
       y: {
         border: { display: false },
         grid: { color: 'rgba(148, 163, 184, 0.08)' },
-        ticks: { font: { size: 9, weight: '600' as const }, color: '#94a3b8' }
+        ticks: { font: { size: 9, weight: 'bold' as const }, color: '#94a3b8' }
       }
     }
   };
@@ -222,6 +223,19 @@ const ProductAdd = () => {
       multiplier_to_base: '1', conversion_factor: '1',
       allow_sale: true, allow_purchase: true, status: 'ACTIVE',
       is_asset: false,
+      has_batch_tracking: false,
+      has_expiry_tracking: false,
+      mfg_date_required: false,
+      exp_date_required: false,
+      shelf_life_days: '',
+      min_shelf_life_purchase_days: '',
+      min_shelf_life_sale_days: '',
+      near_expiry_alert_days: 60,
+      allow_expired_sale: false,
+      allow_neg_batch_stock: false,
+      batch_wise_purchase_rate: true,
+      batch_wise_selling_price: false,
+      is_fefo_enabled: true,
     }
   });
 
@@ -267,7 +281,11 @@ const ProductAdd = () => {
   const hsnListRef = useRef<HTMLDivElement>(null);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<'General' | 'SIP' | 'Outlet Pricing' | 'Price Control' | 'Online Channels'>('General');
+  const [activeTab, setActiveTab] = useState<'General' | 'SIP' | 'Batch & Expiry' | 'Outlet Pricing' | 'Price Control' | 'Online Channels'>('General');
+  const [productBatches, setProductBatches] = useState<ProductBatch[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [calcMfgDate, setCalcMfgDate] = useState<string>('');
+  const [calcPreviewExpiry, setCalcPreviewExpiry] = useState<string>('');
   const [outletPricing, setOutletPricing] = useState<any[]>([]);
   const [channelPrices, setChannelPrices] = useState<channel_price[]>([]);
   const [loadingChannels, setLoadingChannels] = useState(false);
@@ -346,6 +364,29 @@ const ProductAdd = () => {
         loadChannelPrices(productId);
     }
   }, [productId, activeTab]);
+
+  useEffect(() => {
+    if (productId && activeTab === 'Batch & Expiry') {
+      setLoadingBatches(true);
+      batches_api.list({ product_id: productId, per_page: 50 })
+        .then(res => setProductBatches(Array.isArray(res.data) ? res.data : ((res.data as any)?.data || [])))
+        .catch(err => console.error("Failed to load product batches", err))
+        .finally(() => setLoadingBatches(false));
+    }
+  }, [productId, activeTab]);
+
+  const watchShelfLife = watch('shelf_life_days');
+  useEffect(() => {
+    if (calcMfgDate && watchShelfLife && Number(watchShelfLife) > 0) {
+      const d = new Date(calcMfgDate);
+      if (!isNaN(d.getTime())) {
+        d.setDate(d.getDate() + Number(watchShelfLife));
+        setCalcPreviewExpiry(d.toISOString().slice(0, 10));
+        return;
+      }
+    }
+    setCalcPreviewExpiry('');
+  }, [calcMfgDate, watchShelfLife]);
 
   const handleApplySimulatedPrice = async (result: simulate_result) => {
     if (!productId || !activeSimPartner) return;
@@ -1064,12 +1105,19 @@ const ProductAdd = () => {
       is_dual_unit: false, is_consumable: false, is_raw_material: false, is_raw_non_sellable: false,
       is_batch_required: false, is_weighing_item: false, is_discountable: true, is_hidden_pos: false,
       is_expired: false, status: 'ACTIVE', approved_by: '', multiplier_to_base: '1', conversion_factor: '1',
+      has_batch_tracking: false, has_expiry_tracking: false, mfg_date_required: false, exp_date_required: false,
+      min_shelf_life_purchase_days: '', min_shelf_life_sale_days: '', near_expiry_alert_days: 60,
+      allow_expired_sale: false, allow_neg_batch_stock: false, batch_wise_purchase_rate: true,
+      batch_wise_selling_price: false, is_fefo_enabled: true,
       price_update_level: 'All Store Level', pricing_mode: 'STANDARD', fixed_margin_percent: '',
       allow_custom_margin: true, minimum_margin_percent: '', default_channel_margin: '', online_partner_enabled: false,
       cp_margin: '', mrp_margin: '', sp_margin: '', wsp_margin: '',
     };
     reset(defaults);
     resetPackaging();
+    setProductBatches([]);
+    setCalcMfgDate('');
+    setCalcPreviewExpiry('');
     setIsEdit(false);
     setProductId(null);
     setImagePreview(null);
@@ -1522,7 +1570,7 @@ const ProductAdd = () => {
 
       {/* ── TABS ── */}
       <div className="flex items-center gap-1 overflow-x-auto no-scrollbar mb-6">
-        {['General', 'SIP', 'Outlet Pricing', 'Price Control', 'Online Channels'].map((t) => (
+        {['General', 'SIP', 'Batch & Expiry', 'Outlet Pricing', 'Price Control', 'Online Channels'].map((t) => (
           <button
             key={t}
             type="button"
@@ -1536,6 +1584,7 @@ const ProductAdd = () => {
             <i className={`fas ${
               t === 'General' ? 'fa-info-circle' : 
               t === 'SIP' ? 'fa-sync' : 
+              t === 'Batch & Expiry' ? 'fa-boxes' :
               t === 'Outlet Pricing' ? 'fa-store' : 
               t === 'Online Channels' ? 'fa-globe' :
               'fa-sliders-h'
@@ -2603,6 +2652,369 @@ const ProductAdd = () => {
                     )}
                 </div>
             )}
+          </div>
+        )}
+
+        {/* ── BATCH & EXPIRY MANAGEMENT TAB ── */}
+        {activeTab === 'Batch & Expiry' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-8">
+            {/* Presets Header */}
+            <div className="bg-gradient-to-r from-blue-900/30 to-indigo-900/20 border border-blue-500/20 p-6 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-black uppercase tracking-wider text-slate-800 dark:text-white flex items-center gap-2">
+                  <i className="fas fa-boxes text-blue-500"></i> Batch & Expiry Configuration Presets
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Quick-apply tracking rules according to product category requirements.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setValue('has_batch_tracking', false);
+                    setValue('has_expiry_tracking', false);
+                    setValue('mfg_date_required', false);
+                    setValue('exp_date_required', false);
+                    toast.success('Applied: Standard Non-Batch Preset');
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-700 dark:text-slate-200 transition-all shadow-sm"
+                >
+                  <i className="fas fa-ban mr-1.5 text-slate-400"></i> No Batch / Expiry
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setValue('has_batch_tracking', true);
+                    setValue('has_expiry_tracking', false);
+                    setValue('mfg_date_required', false);
+                    setValue('exp_date_required', false);
+                    setValue('is_fefo_enabled', false);
+                    toast.success('Applied: Batch-Only (Dry/Hardware) Preset');
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-100 transition-all shadow-sm"
+                >
+                  <i className="fas fa-barcode mr-1.5 text-amber-500"></i> Batch Only (No Expiry)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setValue('has_batch_tracking', true);
+                    setValue('has_expiry_tracking', true);
+                    setValue('mfg_date_required', true);
+                    setValue('exp_date_required', true);
+                    setValue('is_fefo_enabled', true);
+                    setValue('allow_expired_sale', false);
+                    if (!watch('shelf_life_days')) setValue('shelf_life_days', 180);
+                    if (!watch('near_expiry_alert_days')) setValue('near_expiry_alert_days', 60);
+                    toast.success('Applied: Full FMCG / Expiry Preset');
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 transition-all shadow-sm"
+                >
+                  <i className="fas fa-shield-alt mr-1.5 text-emerald-500"></i> Full Expiry + FEFO (FMCG)
+                </button>
+              </div>
+            </div>
+
+            {/* Core Tracking Toggles */}
+            <div className={cardCls}>
+              <SectionHeader icon="fa-sliders-h" title="Tracking Flags & Operational Controls" color="blue" />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[
+                  {
+                    key: 'has_batch_tracking',
+                    label: 'Batch Tracking',
+                    desc: 'Maintain distinct batch IDs, vendor lots & batch-wise stock levels',
+                    icon: 'fa-cubes',
+                    color: 'blue'
+                  },
+                  {
+                    key: 'has_expiry_tracking',
+                    label: 'Expiry Tracking',
+                    desc: 'Track expiration dates and enforce shelf-life constraints',
+                    icon: 'fa-calendar-alt',
+                    color: 'emerald'
+                  },
+                  {
+                    key: 'is_fefo_enabled',
+                    label: 'FEFO Allocation',
+                    desc: 'First Expiry, First Out automatically selects nearest expiry at POS/Sale',
+                    icon: 'fa-sort-amount-up-alt',
+                    color: 'violet'
+                  },
+                  {
+                    key: 'mfg_date_required',
+                    label: 'Mfg Date Required',
+                    desc: 'Mandate manufacturing date during GRN goods receipt',
+                    icon: 'fa-industry',
+                    color: 'cyan'
+                  },
+                  {
+                    key: 'exp_date_required',
+                    label: 'Expiry Date Required',
+                    desc: 'Mandate expiration date during GRN goods receipt',
+                    icon: 'fa-calendar-times',
+                    color: 'amber'
+                  },
+                  {
+                    key: 'allow_expired_sale',
+                    label: 'Allow Expired Sale',
+                    desc: 'Permit selling expired stock (Strictly disabled by default)',
+                    icon: 'fa-exclamation-triangle',
+                    color: 'rose'
+                  },
+                  {
+                    key: 'allow_neg_batch_stock',
+                    label: 'Allow Negative Batch Stock',
+                    desc: 'Permit billing below zero for individual batches',
+                    icon: 'fa-minus-circle',
+                    color: 'rose'
+                  },
+                  {
+                    key: 'batch_wise_purchase_rate',
+                    label: 'Batch Purchase Rate Tracking',
+                    desc: 'Track distinct cost/purchase rate per individual batch',
+                    icon: 'fa-file-invoice-dollar',
+                    color: 'blue'
+                  },
+                  {
+                    key: 'batch_wise_selling_price',
+                    label: 'Batch-Wise Selling Price',
+                    desc: 'Allow batches of same product to have different selling prices',
+                    icon: 'fa-tags',
+                    color: 'indigo'
+                  },
+                ].map((f) => (
+                  <label
+                    key={f.key}
+                    className={`flex items-start gap-3.5 p-4 rounded-2xl border transition-all cursor-pointer ${
+                      watch(f.key as any)
+                        ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800 shadow-sm'
+                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 opacity-60 hover:opacity-90'
+                    }`}
+                  >
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                      watch(f.key as any) ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                    }`}>
+                      <i className={`fas ${f.icon} text-sm`}></i>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-black uppercase tracking-tight text-slate-800 dark:text-slate-100">{f.label}</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{f.desc}</p>
+                    </div>
+                    <div className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                      <input type="checkbox" {...register(f.key as any)} className="sr-only peer" />
+                      <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Shelf Life & Policy Thresholds */}
+            <div className={cardCls}>
+              <SectionHeader icon="fa-hourglass-half" title="Shelf Life & Expiry Policies" color="amber" />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div>
+                  <Label>Total Shelf Life (Days)</Label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      {...register('shelf_life_days')}
+                      className={inputCls}
+                      placeholder="e.g. 180"
+                    />
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Days</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5">Auto-computes expiry when Mfg Date is entered at GRN.</p>
+                </div>
+
+                <div>
+                  <Label>Min Remaining at Purchase (Days)</Label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      {...register('min_shelf_life_purchase_days')}
+                      className={inputCls}
+                      placeholder="e.g. 60"
+                    />
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Days</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5">Rejects/warns at GRN if supplier goods have less life left.</p>
+                </div>
+
+                <div>
+                  <Label>Min Remaining at Sale (Days)</Label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      {...register('min_shelf_life_sale_days')}
+                      className={inputCls}
+                      placeholder="e.g. 15"
+                    />
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Days</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5">Blocks sale at POS if remaining shelf life is below this limit.</p>
+                </div>
+
+                <div>
+                  <Label>Near-Expiry Alert Threshold</Label>
+                  <select {...register('near_expiry_alert_days')} className={selectCls}>
+                    <option value="15">15 Days Before Expiry</option>
+                    <option value="30">30 Days Before Expiry</option>
+                    <option value="45">45 Days Before Expiry</option>
+                    <option value="60">60 Days Before Expiry (Recommended)</option>
+                    <option value="90">90 Days Before Expiry</option>
+                    <option value="120">120 Days Before Expiry</option>
+                    <option value="180">180 Days Before Expiry</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1.5">Batches within this window trigger dashboard alerts.</p>
+                </div>
+              </div>
+
+              {/* Date Simulator preview */}
+              <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 p-5 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2 mb-3">
+                  <i className="fas fa-calculator text-blue-500"></i> Interactive Shelf Life Calculator & Preview
+                </h4>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Simulate Mfg Date</label>
+                    <input
+                      type="date"
+                      value={calcMfgDate}
+                      onChange={(e) => setCalcMfgDate(e.target.value)}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div className="flex items-center justify-center pt-5 text-slate-400">
+                    <i className="fas fa-arrow-right text-lg hidden md:block"></i>
+                  </div>
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Calculated Expiry Date</label>
+                    <input
+                      type="date"
+                      readOnly
+                      value={calcPreviewExpiry}
+                      className={`${inputCls} bg-blue-50/50 dark:bg-blue-900/20 font-bold text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800`}
+                    />
+                  </div>
+                  <div className="w-full md:w-auto pt-4 md:pt-5">
+                    {calcPreviewExpiry ? (
+                      <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 text-xs font-bold">
+                        <i className="fas fa-check-circle text-emerald-600"></i> Valid Calculation ({watch('shelf_life_days')} days shelf life)
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 italic">Enter a Mfg Date and Shelf Life to preview auto-calculated expiry</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Central Product Batches Register (if editing existing product) */}
+            {productId ? (
+              <div className={cardCls}>
+                <div className="flex items-center justify-between mb-6">
+                  <SectionHeader icon="fa-list-ul" title={`Recorded Batches for Item #${productId}`} color="violet" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoadingBatches(true);
+                      batches_api.list({ product_id: productId, per_page: 50 })
+                        .then(res => setProductBatches(Array.isArray(res.data) ? res.data : ((res.data as any)?.data || [])))
+                        .catch(err => console.error("Failed to refresh batches", err))
+                        .finally(() => setLoadingBatches(false));
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all border border-slate-200 dark:border-slate-700"
+                  >
+                    <i className="fas fa-sync-alt mr-1"></i> Refresh
+                  </button>
+                </div>
+
+                {loadingBatches ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <i className="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p className="text-xs">Loading recorded batches...</p>
+                  </div>
+                ) : productBatches.length === 0 ? (
+                  <div className="py-12 text-center bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-400">
+                    <i className="fas fa-box-open text-3xl mb-2 opacity-30"></i>
+                    <p className="text-xs font-bold uppercase tracking-wider">No Batches Inwarded Yet</p>
+                    <p className="text-[11px] mt-1 text-slate-500">Batches will automatically register here as goods are received via GRN.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 dark:bg-slate-800 uppercase text-[10px] font-black text-slate-500 tracking-wider">
+                        <tr>
+                          <th className="px-4 py-3">Batch ID / No</th>
+                          <th className="px-4 py-3">Supplier Batch</th>
+                          <th className="px-4 py-3">Mfg Date</th>
+                          <th className="px-4 py-3">Exp Date</th>
+                          <th className="px-4 py-3 text-right">Available Qty</th>
+                          <th className="px-4 py-3 text-right">Purchase Rate</th>
+                          <th className="px-4 py-3 text-right">MRP</th>
+                          <th className="px-4 py-3 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {productBatches.map((b) => {
+                          const isExpired = b.status === 'Expired' || (b.days_to_expiry !== null && b.days_to_expiry !== undefined && b.days_to_expiry <= 0);
+                          const isNearExpiry = b.status === 'Near Expiry' || (b.days_to_expiry !== null && b.days_to_expiry !== undefined && b.days_to_expiry > 0 && b.days_to_expiry <= 60);
+                          return (
+                            <tr key={b.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                              <td className="px-4 py-3 font-mono font-bold text-blue-600 dark:text-blue-400">
+                                {b.batch_no}
+                              </td>
+                              <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                                {b.supplier_batch_no || '—'}
+                              </td>
+                              <td className="px-4 py-3 text-slate-500">
+                                {b.mfg_date || '—'}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`font-semibold ${isExpired ? 'text-rose-600' : isNearExpiry ? 'text-amber-600' : 'text-slate-700 dark:text-slate-200'}`}>
+                                  {b.exp_date || '—'}
+                                </span>
+                                {b.days_to_expiry !== null && b.days_to_expiry !== undefined && (
+                                  <span className="block text-[9px] text-slate-400">
+                                    {b.days_to_expiry <= 0 ? 'Expired' : `${b.days_to_expiry}d left`}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right font-black text-slate-800 dark:text-white">
+                                {b.total_current_qty ?? 0}
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
+                                ₹{Number(b.purchase_rate || 0).toFixed(2)}
+                              </td>
+                              <td className="px-4 py-3 text-right font-bold text-slate-800 dark:text-white">
+                                ₹{Number(b.mrp || 0).toFixed(2)}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                  b.status === 'Active' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' :
+                                  b.status === 'Near Expiry' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' :
+                                  b.status === 'Expired' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300' :
+                                  b.status === 'Quarantined' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300' :
+                                  'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                }`}>
+                                  {b.status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         )}
 

@@ -1,9 +1,13 @@
 from datetime import datetime, date
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import base
 from app.models.user import user
+
+if TYPE_CHECKING:
+    from app.models.batch import product_batch
 
 
 class manufacturer(base):
@@ -419,6 +423,20 @@ class product(base):
     is_sellable: Mapped[bool] = mapped_column(Boolean, default=True)
     is_raw_non_sellable: Mapped[bool] = mapped_column(Boolean, default=False)
     is_batch_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Complete Expiry Date & Batch Management fields
+    has_batch_tracking: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_expiry_tracking: Mapped[bool] = mapped_column(Boolean, default=False)
+    mfg_date_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    exp_date_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    min_shelf_life_purchase_days: Mapped[int | None] = mapped_column(Integer)
+    min_shelf_life_sale_days: Mapped[int | None] = mapped_column(Integer)
+    near_expiry_alert_days: Mapped[int] = mapped_column(Integer, default=60)
+    allow_expired_sale: Mapped[bool] = mapped_column(Boolean, default=False)
+    allow_neg_batch_stock: Mapped[bool] = mapped_column(Boolean, default=False)
+    batch_wise_purchase_rate: Mapped[bool] = mapped_column(Boolean, default=True)
+    batch_wise_selling_price: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_fefo_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
     is_weighing_item: Mapped[bool] = mapped_column(Boolean, default=False)
     is_discountable: Mapped[bool] = mapped_column(Boolean, default=True)
     is_hidden_pos: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -450,6 +468,7 @@ class product(base):
     barcodes: Mapped[list["product_barcode"]] = relationship("product_barcode", back_populates="product_rel", cascade="all, delete-orphan")
     outlet_prices: Mapped[list["outlet_pricing"]] = relationship("outlet_pricing", back_populates="product_rel", cascade="all, delete-orphan")
     channel_prices: Mapped[list["item_channel_price"]] = relationship("item_channel_price", back_populates="product_rel", cascade="all, delete-orphan")
+    batches: Mapped[list["product_batch"]] = relationship("product_batch", back_populates="product_rel", cascade="all, delete-orphan")
 
 
 class product_barcode(base):

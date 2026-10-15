@@ -9,7 +9,7 @@ export interface manufacturer_type { id: number; name: string; code: string | nu
 export interface item_group_type { id: number; name: string; code: string | null; short_name?: string; is_active: boolean; created_by_name?: string }
 export interface item_subgroup_type { id: number; group_id: number; group_name?: string; name: string; code: string | null; short_name?: string; is_active: boolean; created_by_name?: string }
 export interface item_subcategory_type { id: number; category_id: number; category_name?: string; name: string; code: string | null; short_name?: string; default_hsn_id?: number; is_active: boolean; created_by_name?: string }
-export interface sub_category_brand_type { id: number; name: string; brand_id: number; brand_name?: string; subcategory_id: number; short_name?: string; is_active: boolean; created_by_name?: string }
+export interface sub_category_brand_type { id: number; name: string; brand_id: number; brand_name?: string; subcategory_id: number; code?: string | null; short_name?: string; is_active: boolean; created_by_name?: string }
 export interface item_category_type { id: number; subgroup_id: number | null; subgroup_name?: string; name: string; code: string | null; short_name?: string; is_active: boolean; created_by_name?: string }
 export interface country_type { id: number; name: string; code: string | null; is_active: boolean }
 export interface sub_manufacturer_type { id: number; manufacturer_id: number; name: string; code: string | null; is_active: boolean }
@@ -53,7 +53,7 @@ export const masters_api = {
   get_hsn: (params?: { page?: number; per_page?: number; search?: string; code_type?: string }) =>
     api.get('/masters/hsn', { params }),
   get_hsn_by_id: (id: number) => api.get<hsn_type>(`/masters/hsn/${id}`),
-  create_hsn: (data: { hsn_code: string; code_type: string; category_type: string; description?: string; gst_percent: number; cgst_pct: number; sgst_pct: number; igst_pct: number }) => api.post('/masters/hsn', data),
+  create_hsn: (data: { hsn_code: string; code_type: string; category_type?: string; description?: string; gst_percent: number; cgst_pct: number; sgst_pct: number; igst_pct: number }) => api.post('/masters/hsn', data),
   update_hsn: (id: number, data: object) => api.put(`/masters/hsn/${id}`, data),
   delete_hsn: (id: number) => api.delete(`/masters/hsn/${id}`),
 

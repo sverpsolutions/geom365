@@ -104,7 +104,7 @@ const AddRowButton = ({ label, onClick }: { label: string; onClick: () => void }
 
 // ── Initial blank form state ──────────────────────────────────────────────────
 const BLANK_FORM = {
-  name: '', phone: '', email: '', supplier_type: 'Manufacturer', company_type: 'Proprietorship',
+  name: '', phone: '', email: '', supplier_code: '', supplier_type: 'Manufacturer', company_type: 'Proprietorship',
   category: 'FMCG', contact_name: '', website: '',
   // Address
   address: '', city: '', state: 'Delhi', state_code: '', pincode: '', district: '', country: 'India',
@@ -790,11 +790,40 @@ export default function VendorRegistration() {
                           placeholder="Certificate number or remarks..." />
                       </div>
                       <div className="mt-4">
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">File Reference / Path</label>
-                        <input type="text" value={doc.file_path || ''}
-                          onChange={e => { const a = [...form.documents] as any[]; a[i].file_path = e.target.value; setForm(f => ({ ...f, documents: a })) }}
-                          className="w-full border border-slate-200 rounded-lg px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm"
-                          placeholder="Enter document reference or file path..." />
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">File Upload (PDF, PNG, JPG)</label>
+                        <div className="flex gap-2 items-center flex-wrap">
+                          <input
+                            type="file"
+                            accept=".pdf,.png,.jpg,.jpeg,.webp"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              const fd = new FormData()
+                              fd.append('file', file)
+                              try {
+                                toast.loading('Uploading document...', { id: 'reg-doc-up' })
+                                const res = await suppliers_api.upload_file(fd)
+                                const a = [...form.documents] as any[]
+                                a[i].file_path = res.data.file_path
+                                setForm(f => ({ ...f, documents: a }))
+                                toast.success('Document uploaded!', { id: 'reg-doc-up' })
+                              } catch (err: any) {
+                                toast.error('Upload failed', { id: 'reg-doc-up' })
+                              }
+                            }}
+                            className="flex-1 border border-slate-200 rounded-lg p-1.5 text-xs bg-slate-50 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[11px] file:font-bold file:bg-blue-600 file:text-white"
+                          />
+                          {doc.file_path && (
+                            <a
+                              href={doc.file_path.startsWith('http') ? doc.file_path : `${doc.file_path}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold whitespace-nowrap hover:bg-blue-100"
+                            >
+                              View File
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </CardRow>
                   ))}

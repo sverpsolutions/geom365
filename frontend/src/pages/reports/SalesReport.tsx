@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api/axios';
+import CompanyReportHeader from '../../components/common/CompanyReportHeader';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
@@ -103,7 +104,7 @@ const SalesReport = () => {
   ];
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20 printable-report print:p-0 print:space-y-3">
       <div className="flex justify-between items-center no-print">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
@@ -149,12 +150,25 @@ const SalesReport = () => {
         </div>
       </div>
 
+      {/* Print Company Header */}
+      <CompanyReportHeader
+        title="SALES PERFORMANCE & REVENUE AUDIT REPORT"
+        subtitle={`Period: ${fromDate} to ${toDate}${outletId ? ` | Outlet: ${data?.outlets?.find((o: any) => String(o.id) === String(outletId))?.name || outletId}` : ' | All Outlets'}`}
+        metaItems={[
+          { label: 'Total Invoices', value: s.total_invoices || 0 },
+          { label: 'Net Sales', value: fmt(s.net_sales || 0) },
+          { label: 'GST Collected', value: fmt(s.total_gst || 0) },
+          { label: 'Total Collected', value: fmt(s.collected || 0) },
+        ]}
+        printOnly={true}
+      />
+
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 print:grid-cols-4 print:gap-2">
         {summary.map((s, i) => (
-          <div key={i} className="bg-white p-3 rounded-lg shadow-sm border border-slate-100">
-            <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-1">{s.label}</div>
-            <div className={`text-sm font-bold ${s.color || 'text-slate-800'}`}>
+          <div key={i} className="bg-white p-3 rounded-lg shadow-sm border border-slate-100 print:border-slate-300 print:p-2">
+            <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-1 print:text-slate-600">{s.label}</div>
+            <div className={`text-sm font-bold print:text-xs ${s.color || 'text-slate-800'}`}>
               {s.fmt ? fmt(s.value as number) : s.value}
             </div>
           </div>
@@ -162,12 +176,12 @@ const SalesReport = () => {
       </div>
 
       {/* Table */}
-      <div className="card shadow-sm border-0 overflow-hidden bg-white">
-        <div className="card-body p-0 overflow-x-auto">
+      <div className="card shadow-sm border-0 overflow-hidden bg-white print:shadow-none print:border print:border-slate-300 print:rounded-none">
+        <div className="card-body p-0 overflow-x-auto print:overflow-visible">
           {loading ? (
             <div className="p-10 text-center text-slate-400"><i className="fas fa-spinner fa-spin text-2xl"></i></div>
           ) : (
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs print:text-[9.5px]">
               <thead className="bg-gradient-to-r from-blue-700 to-teal-600 text-white uppercase tracking-tighter">
                 <tr>
                   <th className="px-4 py-3">Outlet</th>

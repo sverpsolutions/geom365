@@ -6,8 +6,18 @@ from app.core.dependencies import get_current_user, current_user_dep
 from app.services import import_service, location_import_service
 import os
 import shutil
+import re
 
 router = APIRouter(prefix="/import-export", tags=["import-export"])
+
+def _safe_upload_path(filename: str, prefix: str = "temp_") -> str:
+    clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', os.path.basename(filename or 'upload'))
+    upload_dir = os.path.abspath("uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    target_path = os.path.abspath(os.path.join(upload_dir, f"{prefix}{clean_name}"))
+    if not target_path.startswith(upload_dir):
+        raise HTTPException(400, "Invalid file path")
+    return target_path
 
 @router.get("/template/locations")
 async def download_location_template():
@@ -30,8 +40,7 @@ async def import_locations(
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(400, "Only Excel (.xlsx/.xls) files allowed")
     
-    os.makedirs("uploads", exist_ok=True)
-    temp_path = f"uploads/locations_{file.filename}"
+    temp_path = _safe_upload_path(file.filename, prefix="locations_")
     with open(temp_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
@@ -42,7 +51,10 @@ async def import_locations(
         raise HTTPException(500, f"Import failed: {str(e)}")
     finally:
         if os.path.exists(temp_path):
-            os.remove(temp_path)
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
 @router.get("/template")
 async def download_template(db: AsyncSession = Depends(get_db)):
@@ -66,9 +78,7 @@ async def preview_import(
     if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
         raise HTTPException(400, "Only Excel (.xlsx/.xls) or CSV files allowed")
     
-    # Save temp file
-    os.makedirs("uploads", exist_ok=True)
-    temp_path = f"uploads/temp_{file.filename}"
+    temp_path = _safe_upload_path(file.filename, prefix="temp_")
     with open(temp_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
@@ -87,8 +97,8 @@ async def process_import(
     db: AsyncSession = Depends(get_db),
     current_user: current_user_dep = Depends(get_current_user)
 ):
-    temp_path = f"uploads/temp_{filename}"
-    if not os.path.exists(temp_path):
+    temp_path = _safe_upload_path(filename, prefix="temp_")
+    if not os.path.isfile(temp_path):
         raise HTTPException(400, "File not found. Please upload again.")
     
     try:

@@ -12,7 +12,7 @@ const dmy = (d?: string | null) =>
 
 export function printDebitNote(r: debit_note, s: Partial<CompanySettings>) {
   const inter = r.is_interstate
-  const logo = s.logo_path ? new URL(s.logo_path, window.location.origin).href : ''
+  const logo = s.logo_path ? new URL(s.logo_path, window.location.origin).href : `${window.location.origin}/geom365_logo.png`
   const sum = { qty: 0, taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0, mrpVal: 0 }
   const gst = new Map<number, { taxable: number; cgst: number; sgst: number; igst: number }>()
 
@@ -95,9 +95,10 @@ export function printDebitNote(r: debit_note, s: Partial<CompanySettings>) {
   <div class="header">
     <div class="company-info">
       ${logo ? `<img src="${esc(logo)}" class="company-logo" alt="Logo" onerror="this.remove()">` : ''}
-      <h2>${esc(s.brand_name)}</h2>
-      <p>${esc(s.ho_address)}</p>
-      <p><strong>GSTIN:</strong> ${esc(s.gstin || 'N/A')}${s.company_state ? ` &nbsp;|&nbsp; State: ${esc(s.company_state)}` : ''}</p>
+      <h2>${esc(s.brand_name || 'geom365')}</h2>
+      <p style="font-weight: bold; margin-bottom: 2px;">${esc(s.legal_name || 'Geomett Box Private Limited')}</p>
+      <p>${esc(s.ho_address || 'TR-311, 312, ALTF Mohan Cooperative Industrial Estate, South Delhi – 110076')}</p>
+      <p>Ph: ${esc(s.ho_phone || '74003 39365 / 82934 14222')} &nbsp;|&nbsp; Email: ${esc(s.ho_email || 'care@geom365.com')} &nbsp;|&nbsp; <strong>GSTIN:</strong> ${esc(s.gstin || '07AAACG1234F1Z5')}</p>
     </div>
     <div class="doc-title">
       <h1>PURCHASE RETURN NOTE</h1>

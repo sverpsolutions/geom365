@@ -10,7 +10,7 @@ const ShopLayout: React.FC = () => {
   const totalItems = cartItems.reduce((acc, item) => acc + item.quantity, 0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const isActive = (path: str) => location.pathname === path;
+  const isActive = (path: string) => location.pathname === path;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">

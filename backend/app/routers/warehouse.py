@@ -27,7 +27,7 @@ from app.models.warehouse import (
 )
 from app.schemas.common import success_response
 
-router = APIRouter(prefix="/warehouse", tags=["warehouse"])
+router = APIRouter(prefix="/warehouse", tags=["warehouse"], dependencies=[Depends(get_current_user)])
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

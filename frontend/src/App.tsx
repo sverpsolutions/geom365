@@ -9,6 +9,7 @@ import ProductAdd from './pages/products/ProductAdd';
 import ProductForm from './pages/products/ProductForm';
 import ImportProducts from './pages/products/ImportProducts';
 import Suppliers from './pages/masters/Suppliers';
+import SupplierDetail from './pages/suppliers/SupplierDetail';
 import VendorApprovals from './pages/suppliers/VendorApprovals';
 import VendorRegistration from './pages/suppliers/VendorRegistration';
 import VendorPortal from './pages/suppliers/VendorPortal';
@@ -19,11 +20,17 @@ import InvoiceView from './pages/billing/InvoiceView';
 import EstimateList from './pages/billing/EstimateList';
 import EstimateCreate from './pages/billing/EstimateCreate';
 import Purchases from './pages/purchases/Purchases';
+import PurchaseEntry from './pages/purchases/PurchaseEntry';
 import POList from './pages/purchases/POList';
 import POCreate from './pages/purchases/POCreate';
 import PODetail from './pages/purchases/PODetail';
 import POGuestDetail from './pages/purchases/POGuestDetail';
 import Inventory from './pages/inventory/Inventory';
+import StockTakeList from './pages/inventory/StockTakeList';
+import StockTakeCount from './pages/inventory/StockTakeCount';
+import StockTakeView from './pages/inventory/StockTakeView';
+import StockTakeVariancePrint from './pages/inventory/StockTakeVariancePrint';
+import GRNPrint from './pages/purchases/GRNPrint';
 import AccountsDashboard from './pages/accounts/AccountsDashboard';
 import Payments from './pages/accounts/Payments';
 import ReportCenter from './pages/reports/ReportCenter';
@@ -76,6 +83,8 @@ import ChannelMarginReport from './pages/reports/ChannelMarginReport';
 import LowMarginReport from './pages/reports/LowMarginReport';
 import MarkdownItemReport from './pages/reports/MarkdownItemReport';
 import ThemeSettings from './pages/settings/ThemeSettings';
+import UserManagement from './pages/settings/UserManagement';
+import DashboardBuilder from './pages/dashboard/DashboardBuilder';
 import PortalHub from './pages/help/PortalHub';
 import BillEntry from './pages/accounts/BillEntry';
 import Schemes from './pages/promotions/Schemes';
@@ -91,6 +100,8 @@ import LogisticTransferWizard from './pages/logistics/LogisticTransferWizard';
 import ShopLayout from './layouts/ShopLayout';
 import ShopHome from './pages/shop/ShopHome';
 import Cart from './pages/shop/Cart';
+import VendorPortalLogin from './pages/suppliers/VendorPortalLogin';
+import VendorPortalActivate from './pages/suppliers/VendorPortalActivate';
 import ShopDashboard from './pages/shop/ShopDashboard';
 import ShopOrders from './pages/shop/ShopOrders';
 import ShopCustomers from './pages/shop/ShopCustomers';
@@ -109,9 +120,16 @@ const App = () => {
         <Toaster position="top-right" />
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/vendor/login" element={<VendorPortalLogin />} />
+          <Route path="/vendor/activate/:token" element={<VendorPortalActivate />} />
+          <Route path="/vendor/reset-password/:token" element={<VendorPortalActivate />} />
           <Route path="/vendor-registration/:token" element={<VendorRegistration />} />
           <Route path="/vendor-portal" element={<VendorPortal />} />
+          <Route path="/portal/vendor" element={<VendorPortal />} />
           <Route path="/po/guest/:id" element={<POGuestDetail />} />
+          <Route path="/inventory/stock-take/variance-print/:id" element={<StockTakeVariancePrint />} />
+          <Route path="/purchases/grn/print/:id" element={<GRNPrint />} />
+          <Route path="/grn/print/:id" element={<GRNPrint />} />
           
           {/* Owner phone view (installable) */}
           <Route path="/owner" element={<OwnerMobile />} />
@@ -139,7 +157,10 @@ const App = () => {
             <Route path="products/import" element={<ImportProducts />} />
             
             <Route path="masters/suppliers" element={<Suppliers />} />
+            <Route path="masters/suppliers/:id" element={<SupplierDetail />} />
             <Route path="masters/suppliers/approvals" element={<VendorApprovals />} />
+            <Route path="portal/vendor" element={<VendorPortal />} />
+            <Route path="vendor/register" element={<VendorRegistration />} />
             <Route path="masters/customers" element={<Customers />} />
             <Route path="masters/groups" element={<Groups />} />
             <Route path="masters/subgroups" element={<SubGroups />} />
@@ -164,6 +185,8 @@ const App = () => {
             {/* Settings */}
             <Route path="settings/company" element={<CompanySettings />} />
             <Route path="settings/theme" element={<ThemeSettings />} />
+            <Route path="settings/users" element={<UserManagement />} />
+            <Route path="settings/dashboard-builder" element={<DashboardBuilder />} />
             <Route path="help" element={<SystemHelp />} />
             <Route path="portals" element={<PortalHub />} />
             <Route path="reports/audit-logs" element={<AuditLogReport />} />
@@ -179,6 +202,8 @@ const App = () => {
             {/* Purchases & Inventory */}
             <Route path="purchases/list" element={<Purchases />} />
             <Route path="purchases/grn" element={<Purchases />} />
+            <Route path="purchases/grn/new" element={<PurchaseEntry />} />
+            <Route path="purchases/grn/:id" element={<Purchases />} />
             <Route path="purchases/po" element={<POList />} />
             <Route path="purchases/po/create" element={<POCreate />} />
             <Route path="purchases/po/edit/:id" element={<POCreate />} />
@@ -187,6 +212,10 @@ const App = () => {
             <Route path="inventory/status" element={<Inventory />} />
             <Route path="inventory/sync" element={<GlobalSync />} />
             <Route path="inventory/monitor" element={<SyncMonitor />} />
+            <Route path="inventory/stock-take" element={<StockTakeList />} />
+            <Route path="inventory/audit" element={<StockTakeList />} />
+            <Route path="inventory/stock-take/count/:id" element={<StockTakeCount />} />
+            <Route path="inventory/stock-take/view/:id" element={<StockTakeView />} />
             <Route path="inventory/*" element={<Inventory />} />
             
             {/* Logistics */}

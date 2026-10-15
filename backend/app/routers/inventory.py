@@ -13,6 +13,7 @@ from app.models.outlet import outlet
 from app.models.product import product
 from app.schemas.inventory import MultiTransferSessionCreate, MultiTransferSessionOut, BranchChipInfo
 from app.services.billing_service import _write_stock_ledger, _update_product_stock
+from app.services import batch_service
 from decimal import Decimal
 from pydantic import BaseModel
 
@@ -69,7 +70,11 @@ async def save_multi_transfer_draft(
                 session_id=session.id,
                 product_id=item.product_id,
                 barcode=item.barcode,
-                qty_per_branch=item.qty_per_branch
+                qty_per_branch=item.qty_per_branch,
+                batch_id=item.batch_id,
+                batch_no=item.batch_no,
+                mfg_date=item.mfg_date,
+                expiry_date=item.expiry_date,
             ))
             
         await db.commit()
@@ -90,7 +95,11 @@ async def save_multi_transfer_draft(
                     "session_id": i.session_id,
                     "product_id": i.product_id,
                     "barcode": i.barcode,
-                    "qty_per_branch": i.qty_per_branch
+                    "qty_per_branch": i.qty_per_branch,
+                    "batch_id": i.batch_id,
+                    "batch_no": i.batch_no,
+                    "mfg_date": i.mfg_date,
+                    "expiry_date": i.expiry_date,
                 } for i in session.items
             ]
         }
@@ -129,13 +138,12 @@ async def confirm_multi_transfer(
     generated_ids = []
     source_managed = await _ho_managed(db, session.from_location_id)
     prices = {r.id: r for r in (await db.execute(
-        select(product.id, product.cost_price, product.mrp).where(product.id.in_({i.product_id for i in items}))
+        select(product.id, product.cost_price, product.mrp, product.is_batch_required, product.has_batch_tracking).where(product.id.in_({i.product_id for i in items}))
     )).all()}
 
     # 2. Loop through branches and create TRF records
     for b_link in branches:
         # Generate TRF number
-        # In a real system, we'd use a more robust counter, but for now:
         trf_count = (await db.execute(select(func.count(unit_wise_stock_transfer.id)))).scalar() or 0
         trf_no = f"TRF-{now.year}-{trf_count + 1:04d}"
         
@@ -156,20 +164,65 @@ async def confirm_multi_transfer(
         for s_item in items:
             p = prices.get(s_item.product_id)
             cost = (p.cost_price if p else 0) or 0
+            mrp_val = (p.mrp if p else 0) or 0
+
+            # Batch handling
+            resolved_batch_id = s_item.batch_id
+            resolved_batch_no = s_item.batch_no
+            resolved_exp_date = s_item.expiry_date
+            resolved_mfg_date = s_item.mfg_date
+
+            if resolved_batch_no and not resolved_batch_id:
+                try:
+                    b_obj = await batch_service.get_or_create_batch(
+                        db=db,
+                        product_id=s_item.product_id,
+                        batch_no=resolved_batch_no,
+                        mfg_date=resolved_mfg_date,
+                        exp_date=resolved_exp_date,
+                        mrp=mrp_val,
+                        cost_price=cost,
+                        user_id=current_user.user_id,
+                    )
+                    resolved_batch_id = b_obj.id
+                    if not resolved_exp_date and b_obj.exp_date:
+                        resolved_exp_date = b_obj.exp_date
+                except Exception as b_err:
+                    print(f"Warning: batch get/create error: {b_err}")
+
             db.add(unit_wise_stock_transfer_item(
                 transfer_id=trf.id,
                 product_id=s_item.product_id,
                 qty=s_item.qty_per_branch,
                 unit="PCS",
                 cost_price=cost,
-                mrp=(p.mrp if p else 0) or 0,
+                mrp=mrp_val,
                 total_val=cost * s_item.qty_per_branch,
+                batch_id=resolved_batch_id,
+                batch_no=resolved_batch_no,
+                mfg_date=resolved_mfg_date,
+                expiry_date=resolved_exp_date,
             ))
             # dispatch: goods leave the source now
             await _write_stock_ledger(db, s_item.product_id, "transfer_out", -s_item.qty_per_branch, trf.id,
                                       "stock_transfer", session.from_location_id, trf_no, current_user.user_id)
             if source_managed:
                 await _update_product_stock(db, s_item.product_id, -s_item.qty_per_branch)
+            
+            # Deduct batch stock from product_batch_stock if batch_id exists
+            if resolved_batch_id:
+                try:
+                    await batch_service.record_batch_movement(
+                        db=db,
+                        batch_id=resolved_batch_id,
+                        location_id=session.from_location_id,
+                        qty_delta=-s_item.qty_per_branch,
+                        movement_type="transfer_out",
+                        product_id=s_item.product_id,
+                        allow_negative=True,
+                    )
+                except Exception as b_move_err:
+                    print(f"Warning: batch stock deduction error: {b_move_err}")
             
         generated_trfs.append(trf_no)
         generated_ids.append(trf.id)
@@ -212,7 +265,9 @@ async def get_transfer_for_print(
         "from": loc(locs.get(trf.from_outlet_id)), "to": loc(locs.get(trf.to_outlet_id)),
         "items": [{"id": i.id, "product_id": i.product_id, "name": n, "item_code": c, "barcode": b, "hsn_code": h,
                    "qty": i.qty, "received_qty": i.received_qty, "unit": i.unit,
-                   "cost_price": i.cost_price, "mrp": i.mrp, "total_val": i.total_val}
+                   "cost_price": i.cost_price, "mrp": i.mrp, "total_val": i.total_val,
+                   "batch_id": i.batch_id, "batch_no": i.batch_no,
+                   "expiry_date": i.expiry_date.isoformat() if i.expiry_date else None}
                   for i, n, c, b, h in rows],
     }
 
@@ -258,6 +313,18 @@ async def receive_transfer(
                                       trf.to_outlet_id, trf.transfer_no, current_user.user_id)
             if dest_managed:
                 await _update_product_stock(db, it.product_id, q)
+            if it.batch_id:
+                try:
+                    await batch_service.record_batch_movement(
+                        db=db,
+                        batch_id=it.batch_id,
+                        location_id=trf.to_outlet_id,
+                        qty_delta=q,
+                        movement_type="transfer_in",
+                        product_id=it.product_id,
+                    )
+                except Exception as b_in_err:
+                    print(f"Warning: batch transfer_in stock error: {b_in_err}")
 
     short = any(got[i] != it.qty for i, it in items.items())
     trf.status = "received_short" if short else "received"

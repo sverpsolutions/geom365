@@ -1,12 +1,16 @@
 from pydantic import BaseModel
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Optional
 
 class MultiTransferItemBase(BaseModel):
     product_id: int
     barcode: Optional[str] = None
     qty_per_branch: Decimal
+    batch_id: Optional[int] = None
+    batch_no: Optional[str] = None
+    mfg_date: Optional[date] = None
+    expiry_date: Optional[date] = None
 
 class MultiTransferItemCreate(MultiTransferItemBase):
     pass

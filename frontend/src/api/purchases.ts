@@ -94,6 +94,7 @@ export interface po_item_detail {
   product_id: number
   product_name: string
   item_code: string
+  hsn_code?: string
   base_unit: string
   order_qty: number
   qty: number
@@ -182,7 +183,7 @@ export interface purchase_item_payload {
 export interface purchase_create_payload {
   outlet_id?: number
   supplier_id: number
-  invoice_no?: string
+  invoice_no: string
   invoice_date: string
   discount?: number
   paid_amount?: number
@@ -206,6 +207,45 @@ export interface purchase_list_item {
   payment_mode: string
   status: string
   created_at: string
+}
+
+export interface purchase_detail_item {
+  id: number
+  product_id: number
+  product_name: string
+  product_code: string | null
+  barcode?: string | null
+  qty: number
+  free_qty?: number
+  pcs: number
+  unit: string
+  price: number
+  disc_val: number
+  disc_type?: string
+  basic_amt: number
+  taxable_amt: number
+  gst_percent: number
+  gst_amount: number
+  total: number
+  hsn_code: string | null
+  mrp?: number
+  cost_price?: number
+  batch_no?: string | null
+  batch_id?: number | null
+  mfg_date?: string | null
+  expiry_date?: string | null
+  lp_date?: string | null
+  lp_qty?: number | null
+  sales_since_lp?: number | null
+  sales_lp?: number | null
+}
+
+export interface purchase_detail extends purchase_list_item {
+  outlet_id: number | null
+  discount: number
+  taxable_amount: number
+  notes: string | null
+  items: purchase_detail_item[]
 }
 
 // ── API Functions ──────────────────────────────────────────────────────────────
@@ -274,8 +314,27 @@ export const purchases_api = {
     api.get<{ data: purchase_list_item[]; total: number; page: number; per_page: number }>('/purchases/grn', { params }),
 
   create_grn: (data: purchase_create_payload) =>
-    api.post('/purchases/grn', data),
+    api.post<{ success: boolean; purchase_id: number; purchase_no: string }>('/purchases/grn', data),
 
   get_grn: (id: number) =>
-    api.get(`/purchases/grn/${id}`),
+    api.get<purchase_detail>(`/purchases/grn/${id}`),
+
+  get_product_history: (product_id: number) =>
+    api.get<{ last_purchase_date: string; last_purchase_qty: number; sales_since_lp: number }>('/purchases/get_product_history_ajax', {
+      params: { product_id },
+    }),
+
+  check_invoice: (supplier_id: number, invoice_no: string, exclude_purchase_id?: number) =>
+    api.get<{
+      is_duplicate: boolean
+      is_blank: boolean
+      existing_purchase_id?: number
+      existing_purchase_no?: string
+      existing_invoice_no?: string
+      invoice_date?: string
+      message: string
+    }>('/purchases/check-invoice', {
+      params: { supplier_id, invoice_no, exclude_purchase_id },
+    }),
 }
+

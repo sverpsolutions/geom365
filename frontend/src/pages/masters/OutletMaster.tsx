@@ -1,54 +1,155 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { useSyncStore } from '../../store/syncStore';
 
 const API_BASE = '/api/v1';
 
+interface Region {
+  id: number;
+  code: string;
+  name: string;
+  manager_name?: string;
+  contact_phone?: string;
+  email?: string;
+  is_active: boolean;
+  total_zones?: number;
+  total_stores?: number;
+}
+
+interface Zone {
+  id: number;
+  name: string;
+  zone_code?: string;
+  region_id?: number;
+  region_name?: string;
+  manager_name?: string;
+  contact_phone?: string;
+  email?: string;
+  is_active: boolean;
+  total_stores?: number;
+}
+
+interface Outlet {
+  id: number;
+  unit_code: string;
+  outlet_name: string;
+  display_name?: string;
+  region_id?: number;
+  region_name?: string;
+  zone_id?: number;
+  zone_name?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+  address?: string;
+  landmark?: string;
+  manager_name?: string;
+  manager_mobile?: string;
+  manager_email?: string;
+  store_phone?: string;
+  whatsapp_number?: string;
+  emergency_contact?: string;
+  store_type?: string;
+  store_category?: string;
+  store_size?: string;
+  store_timing?: string;
+  is_active: boolean;
+  is_connected: boolean;
+  is_delivery_available?: boolean;
+  is_online_order_available?: boolean;
+  server_name?: string;
+  database_name?: string;
+  db_username?: string;
+  db_password?: string;
+  type?: string;
+  notes?: string;
+  price_update_level?: string;
+  opening_date?: string;
+  gst_number?: string;
+  pan_number?: string;
+  latitude?: string;
+  longitude?: string;
+  map_link?: string;
+  short_name?: string;
+  company_name?: string;
+}
+
+interface CompanyHierarchy {
+  company_name: string;
+  legal_name: string;
+  brand_name: string;
+  ho_address: string;
+  ho_phone: string;
+  ho_email: string;
+  logo_path: string;
+  total_regions: number;
+  total_zones: number;
+  total_stores: number;
+  regions: {
+    id: number;
+    code: string;
+    name: string;
+    manager_name?: string;
+    contact_phone?: string;
+    email?: string;
+    is_active: boolean;
+    zones: {
+      id: number;
+      zone_code?: string;
+      name: string;
+      manager_name?: string;
+      contact_phone?: string;
+      is_active: boolean;
+      outlets: {
+        id: number;
+        unit_code: string;
+        outlet_name: string;
+        display_name?: string;
+        city?: string;
+        state?: string;
+        pincode?: string;
+        manager_name?: string;
+        manager_mobile?: string;
+        store_type?: string;
+        store_category?: string;
+        is_active: boolean;
+      }[];
+    }[];
+  }[];
+}
+
 const OutletMaster = () => {
+  const [viewMode, setViewMode] = useState<'outlets' | 'hierarchy' | 'regions-zones'>('outlets');
   const [showModal, setShowModal] = useState(false);
   const [checkingId, setCheckingId] = useState<number | null>(null);
-  const [outlets, setOutlets] = useState<any[]>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [hierarchy, setHierarchy] = useState<CompanyHierarchy | null>(null);
   const [loading, setLoading] = useState(true);
-  const [connectionData, setConnectionData] = useState<any>(null);
-  
+
+  // Region & Zone Modals
+  const [showRegionModal, setShowRegionModal] = useState(false);
+  const [showZoneModal, setShowZoneModal] = useState(false);
+  const [regionForm, setRegionForm] = useState({ code: '', name: '', manager_name: '', contact_phone: '', email: '' });
+  const [zoneForm, setZoneForm] = useState({ name: '', zone_code: '', region_id: 1, manager_name: '', contact_phone: '', email: '' });
+  const [editingRegionId, setEditingRegionId] = useState<number | null>(null);
+  const [editingZoneId, setEditingZoneId] = useState<number | null>(null);
+
   const { runningOutlets, globalStatus } = useSyncStore();
 
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<any>(null);
-  
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    setImporting(true);
-    setImportResult(null);
-    try {
-      const res = await api.post(`/import-export/import/locations`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setImportResult(res.data);
-      fetchOutlets();
-    } catch (err: any) {
-      alert(`Import failed: ${formatError(err)}`);
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const downloadTemplate = () => {
-    window.open(`${API_BASE}/import-export/template/locations`, '_blank');
-  };
-  
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<Partial<Outlet>>({
     outlet_name: '',
     unit_code: '',
     outlet_code: '',
+    display_name: '',
+    region_id: 1,
+    zone_id: undefined,
     short_name: '',
     company_name: '',
-    city: '',
-    state: '',
+    city: 'New Delhi',
+    state: 'Delhi',
     country: 'India',
     pincode: '',
     address: '',
@@ -64,11 +165,11 @@ const OutletMaster = () => {
     latitude: '',
     longitude: '',
     map_link: '',
-    store_type: 'T1',
-    store_category: 'Supermarket',
+    store_type: 'Company Operated',
+    store_category: '24/7 Convenience Retail',
     store_size: '',
     opening_date: '',
-    store_timing: '',
+    store_timing: '24 Hours / 7 Days Open',
     is_delivery_available: false,
     is_online_order_available: false,
     notes: '',
@@ -80,22 +181,35 @@ const OutletMaster = () => {
     type: 'O',
     is_active: true
   });
+
   const [activeTab, setActiveTab] = useState('General');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterRegion, setFilterRegion] = useState<string>('');
+  const [filterZone, setFilterZone] = useState<string>('');
   const [filterCity, setFilterCity] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('');
   const [editId, setEditId] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchOutlets();
+    fetchAllData();
   }, []);
 
-  const fetchOutlets = async () => {
+  const fetchAllData = async () => {
+    setLoading(true);
     try {
-      const res = await api.get(`/outlets`);
-      setOutlets(res.data);
+      const [outletsRes, regionsRes, zonesRes, hierRes] = await Promise.all([
+        api.get('/outlets'),
+        api.get('/outlets/regions'),
+        api.get('/outlets/zones'),
+        api.get('/outlets/hierarchy')
+      ]);
+      setOutlets(outletsRes.data);
+      setRegions(regionsRes.data);
+      setZones(zonesRes.data);
+      setHierarchy(hierRes.data);
     } catch (err) {
-      console.error("Failed to fetch outlets", err);
+      console.error('Failed to fetch store hierarchy data', err);
     } finally {
       setLoading(false);
     }
@@ -103,16 +217,14 @@ const OutletMaster = () => {
 
   const checkConnection = async (id: number) => {
     setCheckingId(id);
-    setConnectionData(null);
     try {
       const res = await api.post(`/outlets/test-connection/${id}`);
       if (res.data.success) {
-        setConnectionData({ id, info: res.data.data.sample_info });
         alert(`Success! ${res.data.data.sample_info}`);
       } else {
         alert(`Connection Failed: ${res.data.error}`);
       }
-      fetchOutlets(); // Refresh status
+      fetchAllData();
     } catch (err: any) {
       alert(`Error: ${formatError(err)}`);
     } finally {
@@ -120,96 +232,31 @@ const OutletMaster = () => {
     }
   };
 
-  const handleEdit = (o: any) => {
+  const handleEdit = (o: Outlet) => {
     setEditId(o.id);
     setFormData({
-      outlet_name: o.outlet_name || '',
-      unit_code: o.unit_code || '',
-      outlet_code: o.outlet_code || '',
-      short_name: o.short_name || '',
-      company_name: o.company_name || '',
-      city: o.city || '',
-      state: o.state || '',
-      country: o.country || 'India',
-      pincode: o.pincode || '',
-      address: o.address || '',
-      landmark: o.landmark || '',
-      manager_name: o.manager_name || '',
-      manager_mobile: o.manager_mobile || '',
-      manager_email: o.manager_email || '',
-      store_phone: o.store_phone || '',
-      whatsapp_number: o.whatsapp_number || '',
-      emergency_contact: o.emergency_contact || '',
-      gst_number: o.gst_number || '',
-      pan_number: o.pan_number || '',
-      latitude: o.latitude || '',
-      longitude: o.longitude || '',
-      map_link: o.map_link || '',
-      store_type: o.store_type || 'T1',
-      store_category: o.store_category || 'Supermarket',
-      store_size: o.store_size || '',
-      opening_date: o.opening_date ? o.opening_date.split('T')[0] : '',
-      store_timing: o.store_timing || '',
-      is_delivery_available: o.is_delivery_available || false,
-      is_online_order_available: o.is_online_order_available || false,
-      notes: o.notes || '',
-      price_update_level: o.price_update_level || 'All Store Level',
-      server_name: o.server_name || '',
-      database_name: o.database_name || '',
-      db_username: o.db_username || 'postgres',
-      db_password: o.db_password || '',
-      type: o.type || 'O',
-      is_active: o.is_active
+      ...o,
+      opening_date: o.opening_date ? o.opening_date.split('T')[0] : ''
     });
+    setActiveTab('General');
     setShowModal(true);
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm("Are you sure you want to delete this outlet?")) return;
+    if (!window.confirm("Are you sure you want to deactivate this outlet?")) return;
     try {
       await api.delete(`/outlets/${id}`);
-      fetchOutlets();
+      fetchAllData();
     } catch (err) {
-      alert("Failed to delete outlet");
+      alert("Failed to deactivate outlet");
     }
   };
 
-  const parseMapLink = () => {
-    if (!formData.map_link) return;
-    // Simple regex to extract lat,long from @lat,long format in Google Maps URLs
-    const regex = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
-    const match = formData.map_link.match(regex);
-    if (match) {
-      setFormData({ ...formData, latitude: match[1], longitude: match[2] });
-    } else {
-      alert("Could not extract coordinates. Please ensure the link is a standard Google Maps URL.");
-    }
-  };
-
-  const sendWhatsApp = (o: any) => {
-    const text = `*Store Details: ${o.outlet_name}*\nAddress: ${o.address || 'N/A'}\nCity: ${o.city || 'N/A'}\nManager: ${o.manager_name || 'N/A'}\nPhone: ${o.store_phone || 'N/A'}\nLocation: ${o.map_link || 'N/A'}`;
+  const sendWhatsApp = (o: Outlet) => {
+    const text = `*GEOM365 Store: ${o.display_name || o.outlet_name}*\nUnit: ${o.unit_code}\nZone: ${o.zone_name || 'N/A'}\nAddress: ${o.address || 'N/A'}\nManager: ${o.manager_name || 'N/A'}\nPhone: ${o.manager_mobile || o.store_phone || 'N/A'}`;
     const url = `https://wa.me/${o.whatsapp_number || o.manager_mobile}?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
-
-  const exportExcel = () => {
-    alert("Exporting to Excel...");
-    // Implementation for excel export would go here
-  };
-
-  const exportPDF = () => {
-    alert("Exporting to PDF...");
-    // Implementation for PDF export would go here
-  };
-
-  const filteredOutlets = outlets.filter(o => {
-    const matchesSearch = (o.outlet_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-                        (o.unit_code?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-                        (o.manager_name?.toLowerCase() || '').includes(searchQuery.toLowerCase());
-    const matchesCity = !filterCity || o.city === filterCity;
-    const matchesType = !filterType || o.store_type === filterType;
-    return matchesSearch && matchesCity && matchesType;
-  });
 
   const formatError = (err: any) => {
     const detail = err.response?.data?.detail;
@@ -217,16 +264,11 @@ const OutletMaster = () => {
     if (Array.isArray(detail)) {
       return detail.map((d: any) => `${d.loc.join('.')}: ${d.msg}`).join('\n');
     }
-    if (typeof detail === 'object' && detail !== null) {
-      return JSON.stringify(detail);
-    }
     return err.message || "An unexpected error occurred";
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Sanitize data: convert empty strings to null for optional fields like dates
     const dataToSend = {
       ...formData,
       opening_date: formData.opening_date || null
@@ -242,632 +284,953 @@ const OutletMaster = () => {
       }
       setShowModal(false);
       setEditId(null);
-      fetchOutlets();
+      fetchAllData();
     } catch (err: any) {
       alert(`Error: ${formatError(err)}`);
     }
   };
 
+  const handleSaveRegion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingRegionId) {
+        await api.put(`/outlets/regions/${editingRegionId}`, regionForm);
+      } else {
+        await api.post('/outlets/regions', regionForm);
+      }
+      setShowRegionModal(false);
+      setEditingRegionId(null);
+      setRegionForm({ code: '', name: '', manager_name: '', contact_phone: '', email: '' });
+      fetchAllData();
+    } catch (err: any) {
+      alert(`Failed to save region: ${formatError(err)}`);
+    }
+  };
+
+  const handleSaveZone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingZoneId) {
+        await api.put(`/outlets/zones/${editingZoneId}`, zoneForm);
+      } else {
+        await api.post('/outlets/zones', zoneForm);
+      }
+      setShowZoneModal(false);
+      setEditingZoneId(null);
+      setZoneForm({ name: '', zone_code: '', region_id: 1, manager_name: '', contact_phone: '', email: '' });
+      fetchAllData();
+    } catch (err: any) {
+      alert(`Failed to save zone: ${formatError(err)}`);
+    }
+  };
+
+  const filteredOutlets = outlets.filter(o => {
+    const matchesSearch = !searchQuery || 
+      (o.outlet_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (o.display_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (o.unit_code?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (o.manager_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (o.address?.toLowerCase() || '').includes(searchQuery.toLowerCase());
+    
+    const matchesRegion = !filterRegion || String(o.region_id) === filterRegion;
+    const matchesZone = !filterZone || String(o.zone_id) === filterZone;
+    const matchesCity = !filterCity || o.city === filterCity;
+    const matchesType = !filterType || o.store_type === filterType;
+    const matchesStatus = !filterStatus || (filterStatus === 'active' ? o.is_active : !o.is_active);
+
+    return matchesSearch && matchesRegion && matchesZone && matchesCity && matchesType && matchesStatus;
+  });
+
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto p-2">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <div>
-          <h1 className="text-2xl font-black flex items-center text-slate-800">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white mr-3 shadow-lg shadow-indigo-200">
-              <i className="fas fa-store"></i>
+    <div className="space-y-6 max-w-[1700px] mx-auto p-3">
+      {/* ── Brand Header Banner ── */}
+      <div className="bg-gradient-to-r from-[#1c1322] via-[#2f1338] to-[#1a1c36] text-white p-6 rounded-3xl shadow-xl border border-white/10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center p-1.5 shadow-inner border border-white/20 shrink-0">
+            <img src="/geom365_logo.png" alt="GEOM365" className="w-full h-full object-contain" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#8c2785] text-white text-[10px] font-black tracking-widest uppercase">
+                GEOMETT BOX PVT LTD
+              </span>
+              <span className="text-purple-300 text-xs font-semibold">24/7 Retail Operations</span>
             </div>
-            OUTLET MASTER
-          </h1>
-          <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-1 opacity-70">
-            Advanced Location & Store Management System
-          </p>
+            <h1 className="text-2xl font-black tracking-tight text-white mt-1">
+              Store Network & Location Hierarchy
+            </h1>
+            <p className="text-xs text-purple-200/80 mt-0.5">
+              Head Office: Mohan Cooperative Industrial Estate, South Delhi • Helpline: 74003 39365
+            </p>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={exportExcel} className="bg-emerald-50 text-emerald-600 font-bold py-2 px-4 rounded-xl hover:bg-emerald-100 transition-all flex items-center text-xs border border-emerald-100">
-            <i className="fas fa-file-excel mr-2"></i> Excel
-          </button>
-          <button onClick={exportPDF} className="bg-rose-50 text-rose-600 font-bold py-2 px-4 rounded-xl hover:bg-rose-100 transition-all flex items-center text-xs border border-rose-100">
-            <i className="fas fa-file-pdf mr-2"></i> PDF
-          </button>
-          <button onClick={() => setShowImportModal(true)} className="bg-amber-50 text-amber-600 font-bold py-2 px-4 rounded-xl hover:bg-amber-100 transition-all flex items-center text-xs border border-amber-100">
-            <i className="fas fa-file-import mr-2"></i> Bulk Import
-          </button>
-          <button 
-            onClick={() => {
-              setEditId(null);
-              setFormData({ 
-                outlet_name: '', unit_code: '', outlet_code: '', short_name: '', company_name: '',
-                city: '', state: '', country: 'India', pincode: '', address: '', landmark: '',
-                manager_name: '', manager_mobile: '', manager_email: '', store_phone: '', whatsapp_number: '', emergency_contact: '',
-                gst_number: '', pan_number: '', latitude: '', longitude: '', map_link: '',
-                store_type: 'T1', store_category: 'Supermarket', store_size: '', opening_date: '', store_timing: '',
-                is_delivery_available: false, is_online_order_available: false, notes: '',
-                price_update_level: 'All Store Level', server_name: '', database_name: '', db_username: 'postgres', db_password: '', type: 'O', is_active: true 
-              });
-              setShowModal(true);
-            }}
-            className="bg-indigo-600 text-white font-bold py-2.5 px-6 rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all flex items-center text-sm"
+
+        {/* View Switcher Pills */}
+        <div className="flex items-center gap-2 bg-black/30 p-1.5 rounded-2xl border border-white/10 shrink-0">
+          <button
+            onClick={() => setViewMode('outlets')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              viewMode === 'outlets' 
+                ? 'bg-[#8c2785] text-white shadow-md' 
+                : 'text-purple-200 hover:text-white hover:bg-white/5'
+            }`}
           >
-            <i className="fas fa-plus-circle mr-2 text-lg"></i> ADD NEW OUTLET
+            <i className="fas fa-store"></i> All Outlets ({outlets.length})
+          </button>
+          <button
+            onClick={() => setViewMode('hierarchy')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              viewMode === 'hierarchy' 
+                ? 'bg-[#8c2785] text-white shadow-md' 
+                : 'text-purple-200 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <i className="fas fa-sitemap"></i> Enterprise Hierarchy Tree
+          </button>
+          <button
+            onClick={() => setViewMode('regions-zones')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              viewMode === 'regions-zones' 
+                ? 'bg-[#8c2785] text-white shadow-md' 
+                : 'text-purple-200 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <i className="fas fa-map-marked-alt"></i> Regions & Zones ({regions.length}/{zones.length})
           </button>
         </div>
       </div>
 
-      {/* Global Sync Notification */}
-      {globalStatus && (
-        <div className="bg-indigo-600 text-white p-4 rounded-2xl shadow-lg flex items-center justify-between animate-bounce-slow">
-           <div className="flex items-center gap-3">
-              <i className="fas fa-sync-alt fa-spin text-xl"></i>
-              <div>
-                 <p className="text-xs font-black uppercase tracking-widest">Global Synchronization Active</p>
-                 <p className="text-[10px] font-bold text-indigo-200">{globalStatus}</p>
+      {/* ── KPI Summary Cards ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Total Outlets</p>
+            <p className="text-2xl font-black text-slate-800 mt-1">{outlets.length}</p>
+            <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">24/7 Confirmed Active</p>
+          </div>
+          <div className="w-11 h-11 rounded-2xl bg-purple-50 text-[#8c2785] flex items-center justify-center text-lg">
+            <i className="fas fa-store-alt"></i>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Operational Regions</p>
+            <p className="text-2xl font-black text-slate-800 mt-1">{regions.length}</p>
+            <p className="text-[11px] text-purple-600 font-semibold mt-0.5">NCR01 • Delhi NCR Hub</p>
+          </div>
+          <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg">
+            <i className="fas fa-globe-asia"></i>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Operational Zones</p>
+            <p className="text-2xl font-black text-slate-800 mt-1">{zones.length}</p>
+            <p className="text-[11px] text-indigo-600 font-semibold mt-0.5">Delhi, Noida, Gurugram</p>
+          </div>
+          <div className="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg">
+            <i className="fas fa-layer-group"></i>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Database Status</p>
+            <p className="text-2xl font-black text-emerald-600 mt-1">
+              {outlets.filter(o => o.is_connected).length} / {outlets.length}
+            </p>
+            <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Live Synced Stores</p>
+          </div>
+          <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg">
+            <i className="fas fa-signal"></i>
+          </div>
+        </div>
+      </div>
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* VIEW: ALL OUTLETS                                             */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {viewMode === 'outlets' && (
+        <div className="space-y-6">
+          {/* Action Bar & Multi-Level Filters */}
+          <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="relative flex-1 max-w-md">
+                <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input 
+                  type="text" 
+                  placeholder="Search store name, code, manager, address..." 
+                  className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#8c2785] focus:border-transparent transition-all"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                />
               </div>
-           </div>
-           <div className="flex gap-2">
-              <span className="text-[10px] font-black bg-white/20 px-3 py-1 rounded-full uppercase">Processing Stores</span>
-           </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button 
+                  onClick={() => {
+                    setEditId(null);
+                    setFormData({
+                      outlet_name: '', unit_code: '', outlet_code: '', display_name: '',
+                      region_id: 1, zone_id: zones[0]?.id || undefined,
+                      city: 'New Delhi', state: 'Delhi', country: 'India', pincode: '', address: '',
+                      manager_name: '', manager_mobile: '', manager_email: '', store_phone: '',
+                      store_type: 'Company Operated', store_category: '24/7 Convenience Retail',
+                      store_timing: '24 Hours / 7 Days Open', is_active: true, is_connected: true, type: 'O'
+                    });
+                    setActiveTab('General');
+                    setShowModal(true);
+                  }}
+                  className="bg-[#8c2785] hover:bg-[#731f6d] text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center text-xs"
+                >
+                  <i className="fas fa-plus-circle mr-2"></i> Register New Store
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Pills */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-slate-100">
+              <select 
+                className="bg-slate-50 border border-slate-200 rounded-xl text-xs px-3 py-2 font-medium text-slate-700 focus:ring-2 focus:ring-[#8c2785]"
+                value={filterRegion}
+                onChange={e => setFilterRegion(e.target.value)}
+              >
+                <option value="">All Regions ({regions.length})</option>
+                {regions.map(r => (
+                  <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
+                ))}
+              </select>
+
+              <select 
+                className="bg-slate-50 border border-slate-200 rounded-xl text-xs px-3 py-2 font-medium text-slate-700 focus:ring-2 focus:ring-[#8c2785]"
+                value={filterZone}
+                onChange={e => setFilterZone(e.target.value)}
+              >
+                <option value="">All Zones ({zones.length})</option>
+                {zones.map(z => (
+                  <option key={z.id} value={z.id}>{z.name} ({z.zone_code || 'Zone'})</option>
+                ))}
+              </select>
+
+              <select 
+                className="bg-slate-50 border border-slate-200 rounded-xl text-xs px-3 py-2 font-medium text-slate-700 focus:ring-2 focus:ring-[#8c2785]"
+                value={filterCity}
+                onChange={e => setFilterCity(e.target.value)}
+              >
+                <option value="">All Cities</option>
+                {Array.from(new Set(outlets.map(o => o.city).filter(Boolean))).map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+
+              <select 
+                className="bg-slate-50 border border-slate-200 rounded-xl text-xs px-3 py-2 font-medium text-slate-700 focus:ring-2 focus:ring-[#8c2785]"
+                value={filterStatus}
+                onChange={e => setFilterStatus(e.target.value)}
+              >
+                <option value="">All Status</option>
+                <option value="active">Active Stores</option>
+                <option value="inactive">Inactive Stores</option>
+              </select>
+
+              <button 
+                onClick={() => { setSearchQuery(''); setFilterRegion(''); setFilterZone(''); setFilterCity(''); setFilterType(''); setFilterStatus(''); }}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl text-xs px-3 py-2 transition-all"
+              >
+                <i className="fas fa-undo mr-1.5"></i> Reset Filters
+              </button>
+            </div>
+          </div>
+
+          {/* Store Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredOutlets.length === 0 ? (
+              <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                <i className="fas fa-store-slash text-5xl text-slate-200 mb-4"></i>
+                <p className="text-slate-400 font-bold">No stores found matching your filters.</p>
+              </div>
+            ) : filteredOutlets.map(o => (
+              <div 
+                key={o.id} 
+                className="group bg-white rounded-3xl overflow-hidden shadow-xs hover:shadow-xl hover:shadow-purple-900/10 border border-slate-200 transition-all duration-300 flex flex-col relative"
+              >
+                {/* Store Top Card Banner */}
+                <div className="p-5 bg-gradient-to-br from-purple-50 via-slate-50 to-purple-100/40 border-b border-purple-100/50">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-xs">
+                        {o.is_active ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#8c2785] text-white">
+                        {o.store_timing || '24/7 OPEN'}
+                      </span>
+                    </div>
+
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => handleEdit(o)} 
+                        className="w-7 h-7 rounded-full bg-white text-[#8c2785] flex items-center justify-center hover:bg-[#8c2785] hover:text-white transition-all shadow-xs border border-purple-100"
+                        title="Edit Store"
+                      >
+                        <i className="fas fa-edit text-[11px]"></i>
+                      </button>
+                      <button 
+                        onClick={() => sendWhatsApp(o)} 
+                        className="w-7 h-7 rounded-full bg-white text-emerald-600 flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-all shadow-xs border border-emerald-100"
+                        title="Share on WhatsApp"
+                      >
+                        <i className="fab fa-whatsapp text-[12px]"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <h3 className="text-base font-black text-slate-800 leading-tight mb-1 truncate" title={o.display_name || o.outlet_name}>
+                    {o.display_name || o.outlet_name}
+                  </h3>
+                  
+                  <div className="flex items-center gap-2 mt-2">
+                    <code className="text-[11px] font-bold bg-white px-2 py-0.5 rounded-md text-[#8c2785] border border-purple-200 shadow-2xs">
+                      {o.unit_code}
+                    </code>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate">
+                      {o.city || 'Delhi NCR'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Location Hierarchy Badges */}
+                <div className="px-5 py-2.5 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 font-semibold flex items-center gap-1.5 truncate">
+                    <i className="fas fa-map-pin text-[#8c2785]"></i>
+                    <strong className="text-slate-800 font-bold">{o.zone_name || 'Delhi Zone'}</strong>
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">
+                    {o.region_name || 'NCR01'}
+                  </span>
+                </div>
+
+                {/* Store Body Details */}
+                <div className="p-5 space-y-3.5 flex-grow text-xs">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 mt-0.5">
+                      <i className="fas fa-location-arrow text-[11px]"></i>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider leading-none mb-1">Store Address</p>
+                      <p className="text-slate-600 font-medium leading-relaxed line-clamp-2">{o.address || 'Address registered'}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 mt-0.5">
+                      <i className="fas fa-user-tie text-[11px]"></i>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider leading-none mb-1">Store In-Charge</p>
+                      <p className="text-slate-700 font-bold leading-tight">{o.manager_name || 'Store Manager'}</p>
+                      <p className="text-[10px] text-slate-400 font-mono mt-0.5">{o.manager_mobile || o.store_phone || '+91 74003 39365'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom Status & Diagnostic Action */}
+                <div className="px-5 py-3.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between">
+                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                    o.is_connected ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${o.is_connected ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                    {o.is_connected ? 'DB Online' : 'Standby'}
+                  </span>
+
+                  <button 
+                    onClick={() => checkConnection(o.id)}
+                    disabled={checkingId === o.id}
+                    className="text-[11px] font-bold text-[#8c2785] hover:text-[#731f6d] flex items-center gap-1 transition-all"
+                  >
+                    {checkingId === o.id ? (
+                      <><i className="fas fa-spinner fa-spin"></i> Testing</>
+                    ) : (
+                      <><i className="fas fa-plug"></i> Test Ping</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Filters & Search */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="relative">
-          <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-          <input 
-            type="text" 
-            placeholder="Search by name, code or manager..." 
-            className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 transition-all"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <select 
-          className="bg-slate-50 border-none rounded-xl text-sm px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 transition-all"
-          value={filterCity}
-          onChange={e => setFilterCity(e.target.value)}
-        >
-          <option value="">All Cities</option>
-          {Array.from(new Set(outlets.map(o => o.city).filter(Boolean))).map(city => (
-            <option key={city} value={city}>{city}</option>
-          ))}
-        </select>
-        <select 
-          className="bg-slate-50 border-none rounded-xl text-sm px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 transition-all"
-          value={filterType}
-          onChange={e => setFilterType(e.target.value)}
-        >
-          <option value="">All Store Types</option>
-          <option value="T1">Type T1 (Large)</option>
-          <option value="T2">Type T2 (Medium)</option>
-          <option value="T3">Type T3 (Small)</option>
-        </select>
-        <div className="flex gap-2">
-           <button className="flex-1 bg-indigo-50 text-indigo-600 font-bold rounded-xl text-xs hover:bg-indigo-100 transition-all">
-              <i className="fas fa-sync mr-1"></i> Sync All
-           </button>
-           <button className="flex-1 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs hover:bg-slate-200 transition-all" onClick={() => {setSearchQuery(''); setFilterCity(''); setFilterType('');}}>
-              Reset
-           </button>
-        </div>
-      </div>
-
-      {/* Main Grid View */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {filteredOutlets.length === 0 ? (
-          <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
-            <i className="fas fa-store-slash text-5xl text-slate-200 mb-4"></i>
-            <p className="text-slate-400 font-bold">No outlets found matching your criteria.</p>
-          </div>
-        ) : filteredOutlets.map(o => {
-          const isSyncing = runningOutlets[o.id];
-          return (
-          <div key={o.id} className="group bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-xl hover:shadow-indigo-500/10 border border-slate-100 transition-all duration-300 flex flex-col relative">
-            {/* Progress Bar */}
-            {isSyncing && (
-              <div className="absolute top-0 left-0 w-full h-1 bg-indigo-100 z-20">
-                <div className="h-full bg-indigo-600 animate-progress-indeterminate"></div>
-              </div>
-            )}
-            
-            {/* Store Top Section */}
-            <div className="relative p-5 bg-gradient-to-br from-indigo-50 to-indigo-100/30">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex gap-2">
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${o.is_active ? 'bg-green-500 text-white' : 'bg-slate-400 text-white'}`}>
-                    {o.is_active ? 'ACTIVE' : 'INACTIVE'}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* VIEW: ENTERPRISE HIERARCHY TREE                                */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {viewMode === 'hierarchy' && hierarchy && (
+        <div className="space-y-6">
+          {/* Company Card Header */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-slate-100">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-purple-50 p-2 border border-purple-200 flex items-center justify-center shrink-0">
+                  <img src="/geom365_logo.png" alt="GEOM365" className="max-w-full max-h-full object-contain" />
+                </div>
+                <div>
+                  <span className="px-2.5 py-0.5 rounded-md bg-[#8c2785] text-white text-[10px] font-black uppercase">
+                    Level 1: Enterprise Corporate Entity
                   </span>
-                  {isSyncing && (
-                    <span className="px-3 py-1 rounded-full text-[10px] font-black bg-indigo-600 text-white animate-pulse">
-                      SYNCING...
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-1">
-                  <button onClick={() => handleEdit(o)} className="w-8 h-8 rounded-full bg-white text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-sm">
-                    <i className="fas fa-edit text-xs"></i>
-                  </button>
-                  <button onClick={() => sendWhatsApp(o)} className="w-8 h-8 rounded-full bg-white text-green-600 flex items-center justify-center hover:bg-green-600 hover:text-white transition-all shadow-sm">
-                    <i className="fab fa-whatsapp text-xs"></i>
-                  </button>
+                  <h2 className="text-xl font-black text-slate-800 mt-1">{hierarchy.legal_name}</h2>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">{hierarchy.ho_address}</p>
                 </div>
               </div>
-              <h3 className="text-lg font-black text-slate-800 leading-tight mb-1 truncate">{o.outlet_name}</h3>
-              <div className="flex items-center gap-2">
-                <code className="text-[10px] font-bold bg-white/60 px-2 py-0.5 rounded text-indigo-600 border border-indigo-100">{o.unit_code}</code>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{o.store_type || 'T1'} • {o.city || 'GENERIC'}</span>
+
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <p className="text-[10px] font-black text-slate-400 uppercase">Executive Contact</p>
+                  <p className="text-xs font-bold text-slate-800">{hierarchy.ho_phone}</p>
+                  <p className="text-xs text-[#8c2785] font-semibold">{hierarchy.ho_email}</p>
+                </div>
               </div>
             </div>
 
-            {/* Store Details Section */}
-            <div className="p-5 space-y-4 flex-grow">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 shrink-0 mt-0.5">
-                  <i className="fas fa-map-marker-alt text-xs"></i>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Address</p>
-                  <p className="text-xs text-slate-600 font-medium line-clamp-2">{o.address || 'Address not updated'}</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 shrink-0 mt-0.5">
-                  <i className="fas fa-user-tie text-xs"></i>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Manager</p>
-                  <p className="text-xs text-slate-600 font-medium">{o.manager_name || 'Not Assigned'}</p>
-                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">{o.manager_mobile || o.store_phone || 'No Contact'}</p>
-                </div>
-              </div>
-
-              {/* Status Icons */}
-              <div className="pt-2 flex flex-wrap gap-2 border-t border-slate-50">
-                <div title="Database Link" className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-black uppercase ${o.is_connected ? 'text-green-600 bg-green-50' : 'text-rose-600 bg-rose-50'}`}>
-                  <i className={`fas ${o.is_connected ? 'fa-plug' : 'fa-unplug'}`}></i> {o.is_connected ? 'Online' : 'Offline'}
-                </div>
-                {o.is_delivery_available && (
-                  <div title="Delivery Available" className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-black uppercase text-indigo-600 bg-indigo-50">
-                    <i className="fas fa-truck"></i> Delivery
+            {/* Tree Nodes: Regions -> Zones -> Stores */}
+            <div className="mt-6 space-y-6">
+              {hierarchy.regions.map(r => (
+                <div key={r.id} className="border-2 border-purple-100 rounded-3xl p-6 bg-gradient-to-b from-purple-50/20 to-white space-y-5">
+                  {/* Level 2: Region */}
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-4 border-b border-purple-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center text-base font-black shadow-md shadow-purple-200">
+                        <i className="fas fa-globe"></i>
+                      </div>
+                      <div>
+                        <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-[10px] font-black uppercase">
+                          Level 2: Region • Code {r.code}
+                        </span>
+                        <h3 className="text-lg font-black text-slate-800 mt-0.5">{r.name}</h3>
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-600 font-medium">
+                      Regional Head: <strong className="text-slate-800">{r.manager_name}</strong> • Phone: {r.contact_phone}
+                    </div>
                   </div>
-                )}
-                {o.is_online_order_available && (
-                  <div title="Online Ordering" className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-black uppercase text-amber-600 bg-amber-50">
-                    <i className="fas fa-globe"></i> Online
-                  </div>
-                )}
-              </div>
-            </div>
 
-            {/* Store Bottom Action */}
-            <div className="px-5 py-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
-              <button 
-                onClick={() => checkConnection(o.id)}
-                disabled={checkingId === o.id}
-                className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest flex items-center transition-all disabled:opacity-50"
-              >
-                {checkingId === o.id ? <i className="fas fa-spinner fa-spin mr-2"></i> : <i className="fas fa-link mr-2"></i>}
-                Check Status
-              </button>
-              <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=40x40&data=${o.unit_code}`} 
-                className="w-8 h-8 rounded border border-slate-200 bg-white p-0.5" 
-                alt="QR Code"
-                onClick={() => window.open(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${o.unit_code}`, '_blank')}
-              />
+                  {/* Level 3: Zones Container */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {r.zones.map(z => (
+                      <div key={z.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-black uppercase">
+                              Level 3: Zone • {z.zone_code || 'Zone'}
+                            </span>
+                            <h4 className="text-sm font-black text-slate-800 mt-1">{z.name}</h4>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full bg-[#8c2785] text-white text-[10px] font-bold">
+                            {z.outlets.length} Stores
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          Area Manager: <strong className="text-slate-700">{z.manager_name}</strong> ({z.contact_phone})
+                        </p>
+
+                        {/* Level 4: Stores list within this Zone */}
+                        <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Assigned 24/7 Outlets:</p>
+                          <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                            {z.outlets.map(sto => (
+                              <div key={sto.id} className="p-2 rounded-xl bg-slate-50 hover:bg-purple-50/50 transition-colors flex items-center justify-between text-xs">
+                                <div className="truncate">
+                                  <p className="font-bold text-slate-800 truncate leading-tight">{sto.display_name || sto.outlet_name}</p>
+                                  <p className="text-[10px] text-slate-400 font-mono">{sto.unit_code} • {sto.city}</p>
+                                </div>
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        )})}
-      </div>
+        </div>
+      )}
 
-      {/* Modal - REDESIGNED TABBED INTERFACE */}
-      {showModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="bg-indigo-600 p-6 text-white flex justify-between items-center">
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* VIEW: REGIONS & ZONES MANAGEMENT                              */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {viewMode === 'regions-zones' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Regions Table */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-xl font-black uppercase tracking-tight">{editId ? 'Edit Outlet Profile' : 'Register New Outlet'}</h3>
-                <p className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest mt-1">
-                  {editId ? `Editing unit: ${formData.unit_code}` : 'Enter complete store details below'}
-                </p>
+                <h3 className="text-lg font-black text-slate-800">Operational Regions</h3>
+                <p className="text-xs text-slate-500">Corporate macro-divisions</p>
               </div>
-              <button onClick={() => { setShowModal(false); setEditId(null); }} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all">
-                <i className="fas fa-times text-lg"></i>
+              <button 
+                onClick={() => {
+                  setEditingRegionId(null);
+                  setRegionForm({ code: '', name: '', manager_name: '', contact_phone: '', email: '' });
+                  setShowRegionModal(true);
+                }}
+                className="bg-[#8c2785] text-white font-bold py-2 px-4 rounded-xl text-xs hover:bg-[#731f6d] transition-all"
+              >
+                <i className="fas fa-plus mr-1"></i> Add Region
               </button>
             </div>
 
-            {/* Modal Navigation Tabs */}
-            <div className="flex bg-slate-50 border-b border-slate-100 overflow-x-auto no-scrollbar px-6">
-              {['General', 'Address & Map', 'Contact', 'Tax & Ops', 'Price Control'].map(tab => (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-bold">
+                  <tr>
+                    <th className="p-3 rounded-l-xl">Code</th>
+                    <th className="p-3">Region Name</th>
+                    <th className="p-3">Manager</th>
+                    <th className="p-3">Zones / Stores</th>
+                    <th className="p-3 rounded-r-xl">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {regions.map(r => (
+                    <tr key={r.id} className="hover:bg-slate-50/60">
+                      <td className="p-3 font-mono font-bold text-[#8c2785]">{r.code}</td>
+                      <td className="p-3 font-bold text-slate-800">{r.name}</td>
+                      <td className="p-3">
+                        <p className="font-semibold text-slate-700">{r.manager_name || 'N/A'}</p>
+                        <p className="text-[10px] text-slate-400">{r.contact_phone}</p>
+                      </td>
+                      <td className="p-3">
+                        <span className="font-bold text-indigo-600">{r.total_zones || 5} Zones</span> • {r.total_stores || outlets.length} Stores
+                      </td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px]">
+                          Active
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Zones Table */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-black text-slate-800">Cluster Zones</h3>
+                <p className="text-xs text-slate-500">Regional sales & operational clusters</p>
+              </div>
+              <button 
+                onClick={() => {
+                  setEditingZoneId(null);
+                  setZoneForm({ name: '', zone_code: '', region_id: regions[0]?.id || 1, manager_name: '', contact_phone: '', email: '' });
+                  setShowZoneModal(true);
+                }}
+                className="bg-[#2c57a4] text-white font-bold py-2 px-4 rounded-xl text-xs hover:bg-[#234685] transition-all"
+              >
+                <i className="fas fa-plus mr-1"></i> Add Zone
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-bold">
+                  <tr>
+                    <th className="p-3 rounded-l-xl">Code</th>
+                    <th className="p-3">Zone Name</th>
+                    <th className="p-3">Area Manager</th>
+                    <th className="p-3">Stores</th>
+                    <th className="p-3 rounded-r-xl">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {zones.map(z => (
+                    <tr key={z.id} className="hover:bg-slate-50/60">
+                      <td className="p-3 font-mono font-bold text-[#2c57a4]">{z.zone_code || 'ZONE'}</td>
+                      <td className="p-3 font-bold text-slate-800">{z.name}</td>
+                      <td className="p-3">
+                        <p className="font-semibold text-slate-700">{z.manager_name || 'Area Manager'}</p>
+                        <p className="text-[10px] text-slate-400">{z.contact_phone}</p>
+                      </td>
+                      <td className="p-3 font-bold text-[#8c2785]">
+                        {z.total_stores || outlets.filter(o => o.zone_id === z.id).length} Stores
+                      </td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px]">
+                          Active
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* MODAL: CREATE / EDIT STORE                                    */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl border border-slate-100 max-h-[90vh] flex flex-col">
+            <div className="p-6 bg-gradient-to-r from-[#1c1322] to-[#2f1338] text-white flex justify-between items-center">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-purple-300">
+                  GEOM365 Store Registry
+                </span>
+                <h3 className="text-lg font-black text-white mt-0.5">
+                  {editId ? 'Modify Store Information' : 'Register New GEOM365 Store'}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+              >
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex bg-slate-50 border-b border-slate-100 px-6 gap-2">
+              {['General', 'Address & Contact', 'Operations & Database'].map(t => (
                 <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 shrink-0 ${
-                    activeTab === tab 
-                      ? 'border-indigo-600 text-indigo-600' 
+                  key={t}
+                  onClick={() => setActiveTab(t)}
+                  className={`py-3 px-4 text-xs font-bold border-b-2 transition-all ${
+                    activeTab === t 
+                      ? 'border-[#8c2785] text-[#8c2785]' 
                       : 'border-transparent text-slate-400 hover:text-slate-600'
                   }`}
                 >
-                  {tab}
+                  {t}
                 </button>
               ))}
             </div>
 
-            <form onSubmit={handleSubmit} className="max-h-[70vh] overflow-y-auto no-scrollbar">
-              <div className="p-8 space-y-6">
-                
-                {/* ── TAB: GENERAL ── */}
-                {activeTab === 'General' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Outlet Name <span className="text-rose-500">*</span></label>
-                        <input required type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.outlet_name} onChange={e => setFormData({...formData, outlet_name: e.target.value})} />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Unit Code <span className="text-rose-500">*</span></label>
-                          <input required type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-mono font-bold text-indigo-600 uppercase" value={formData.unit_code} onChange={e => setFormData({...formData, unit_code: e.target.value})} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Short Name</label>
-                          <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.short_name} onChange={e => setFormData({...formData, short_name: e.target.value})} />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Company Name</label>
-                        <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.company_name} onChange={e => setFormData({...formData, company_name: e.target.value})} />
-                      </div>
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 flex-1">
+              {activeTab === 'General' && (
+                <div className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Outlet Name *</label>
+                      <input 
+                        required 
+                        type="text" 
+                        placeholder="e.g. geom365 - South Extension" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.outlet_name || ''} 
+                        onChange={e => setFormData({...formData, outlet_name: e.target.value})} 
+                      />
                     </div>
-
-                    <div className="bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100 space-y-4">
-                       <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2 flex items-center">
-                          <i className="fas fa-database mr-2 text-lg"></i> DB Connection Settings
-                       </p>
-                       <div className="grid grid-cols-2 gap-4">
-                        <div className="col-span-2">
-                          <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1.5 block">Server / IP</label>
-                          <input required type="text" className="w-full bg-white border-none rounded-xl p-3 text-sm font-mono font-bold text-indigo-800" value={formData.server_name} onChange={e => setFormData({...formData, server_name: e.target.value})} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1.5 block">Database Name</label>
-                          <input required type="text" className="w-full bg-white border-none rounded-xl p-3 text-sm font-mono font-bold text-indigo-800" value={formData.database_name} onChange={e => setFormData({...formData, database_name: e.target.value})} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1.5 block">Type</label>
-                          <select className="w-full bg-white border-none rounded-xl p-3 text-sm font-bold text-indigo-800" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
-                            <option value="O">Standard Outlet</option>
-                            <option value="H">Head Office / Hub</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1.5 block">DB User</label>
-                          <input type="text" className="w-full bg-white border-none rounded-xl p-3 text-sm font-mono font-bold text-indigo-800" value={formData.db_username} onChange={e => setFormData({...formData, db_username: e.target.value})} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1.5 block">DB Password</label>
-                          <input type="password" placeholder="••••••••" className="w-full bg-white border-none rounded-xl p-3 text-sm font-mono font-bold text-indigo-800" value={formData.db_password} onChange={e => setFormData({...formData, db_password: e.target.value})} />
-                        </div>
-                       </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Display Name (Signage)</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. GEOM365 South Extension Market" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.display_name || ''} 
+                        onChange={e => setFormData({...formData, display_name: e.target.value})} 
+                      />
                     </div>
                   </div>
-                )}
 
-                {/* ── TAB: ADDRESS & MAP ── */}
-                {activeTab === 'Address & Map' && (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="md:col-span-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Full Address</label>
-                        <textarea rows={3} className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700 resize-none" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Landmark</label>
-                        <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700 mt-2" value={formData.landmark} onChange={e => setFormData({...formData, landmark: e.target.value})} />
-                      </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Unit Code *</label>
+                      <input 
+                        required 
+                        type="text" 
+                        placeholder="e.g. G0021" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-[#8c2785]"
+                        value={formData.unit_code || ''} 
+                        onChange={e => setFormData({...formData, unit_code: e.target.value, outlet_code: e.target.value})} 
+                      />
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">City</label>
-                        <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">State</label>
-                        <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Country</label>
-                        <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.country} onChange={e => setFormData({...formData, country: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Pincode</label>
-                        <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.pincode} onChange={e => setFormData({...formData, pincode: e.target.value})} />
-                      </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Region</label>
+                      <select 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                        value={formData.region_id || ''}
+                        onChange={e => setFormData({...formData, region_id: Number(e.target.value)})}
+                      >
+                        {regions.map(r => (
+                          <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
+                        ))}
+                      </select>
                     </div>
-
-                    <div className="bg-rose-50/50 p-6 rounded-2xl border border-rose-100 space-y-4">
-                       <div className="flex justify-between items-center mb-2">
-                          <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest flex items-center">
-                            <i className="fas fa-map-marked-alt mr-2 text-lg"></i> Geolocation Settings
-                          </p>
-                          <button type="button" onClick={parseMapLink} className="bg-white text-rose-600 font-black text-[9px] px-3 py-1.5 rounded-lg border border-rose-200 shadow-sm hover:bg-rose-100 transition-all uppercase">
-                             Auto-Fetch Lat/Long
-                          </button>
-                       </div>
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="md:col-span-2">
-                            <label className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1.5 block">Google Maps Location Link</label>
-                            <input type="text" placeholder="Paste link here..." className="w-full bg-white border-none rounded-xl p-3 text-sm font-mono text-rose-800" value={formData.map_link} onChange={e => setFormData({...formData, map_link: e.target.value})} />
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1.5 block">Latitude</label>
-                            <input type="text" className="w-full bg-white border-none rounded-xl p-3 text-sm font-mono font-bold text-rose-800" value={formData.latitude} onChange={e => setFormData({...formData, latitude: e.target.value})} />
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1.5 block">Longitude</label>
-                            <input type="text" className="w-full bg-white border-none rounded-xl p-3 text-sm font-mono font-bold text-rose-800" value={formData.longitude} onChange={e => setFormData({...formData, longitude: e.target.value})} />
-                          </div>
-                       </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Zone</label>
+                      <select 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                        value={formData.zone_id || ''}
+                        onChange={e => setFormData({...formData, zone_id: Number(e.target.value)})}
+                      >
+                        <option value="">Select Zone</option>
+                        {zones.map(z => (
+                          <option key={z.id} value={z.id}>{z.name} ({z.zone_code})</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                )}
 
-                {/* ── TAB: CONTACT ── */}
-                {activeTab === 'Contact' && (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                       <div className="space-y-4">
-                          <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 border-b pb-2">Store Management</p>
-                          <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Manager Name</label>
-                            <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.manager_name} onChange={e => setFormData({...formData, manager_name: e.target.value})} />
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Manager Mobile</label>
-                              <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.manager_mobile} onChange={e => setFormData({...formData, manager_mobile: e.target.value})} />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Manager Email</label>
-                              <input type="email" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.manager_email} onChange={e => setFormData({...formData, manager_email: e.target.value})} />
-                            </div>
-                          </div>
-                       </div>
-                       <div className="space-y-4">
-                          <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-4 border-b pb-2">Store Contacts</p>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Store Phone</label>
-                              <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.store_phone} onChange={e => setFormData({...formData, store_phone: e.target.value})} />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">WhatsApp Number</label>
-                              <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.whatsapp_number} onChange={e => setFormData({...formData, whatsapp_number: e.target.value})} />
-                            </div>
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1.5 block font-black">Emergency Contact Number</label>
-                            <input type="text" className="w-full bg-rose-50 border-none rounded-xl p-3 text-sm font-bold text-rose-700" value={formData.emergency_contact} onChange={e => setFormData({...formData, emergency_contact: e.target.value})} />
-                          </div>
-                       </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Store Type</label>
+                      <select 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.store_type || 'Company Operated'}
+                        onChange={e => setFormData({...formData, store_type: e.target.value})}
+                      >
+                        <option value="Company Operated">Company Operated (COCO)</option>
+                        <option value="Franchise">Franchise (FOFO)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Store Category</label>
+                      <input 
+                        type="text" 
+                        placeholder="24/7 Convenience Retail" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.store_category || ''} 
+                        onChange={e => setFormData({...formData, store_category: e.target.value})} 
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Store Timing</label>
+                      <input 
+                        type="text" 
+                        placeholder="24 Hours / 7 Days Open" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.store_timing || '24 Hours / 7 Days Open'} 
+                        onChange={e => setFormData({...formData, store_timing: e.target.value})} 
+                      />
                     </div>
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* ── TAB: TAX & OPS ── */}
-                {activeTab === 'Tax & Ops' && (
-                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                       <div className="space-y-4">
-                          <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-4 border-b pb-2">Compliance Details</p>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">GST Number</label>
-                              <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-mono font-bold text-slate-700 uppercase" value={formData.gst_number} onChange={e => setFormData({...formData, gst_number: e.target.value})} />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">PAN Number</label>
-                              <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-mono font-bold text-slate-700 uppercase" value={formData.pan_number} onChange={e => setFormData({...formData, pan_number: e.target.value})} />
-                            </div>
-                          </div>
-                       </div>
-                       <div className="space-y-4">
-                          <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-4 border-b pb-2">Operational Meta</p>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Store Category</label>
-                              <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.store_category} onChange={e => setFormData({...formData, store_category: e.target.value})} />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Opening Date</label>
-                              <input type="date" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.opening_date} onChange={e => setFormData({...formData, opening_date: e.target.value})} />
-                            </div>
-                          </div>
-                       </div>
+              {activeTab === 'Address & Contact' && (
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Full Address *</label>
+                    <textarea 
+                      rows={2} 
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                      value={formData.address || ''} 
+                      onChange={e => setFormData({...formData, address: e.target.value})} 
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">City</label>
+                      <input 
+                        type="text" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.city || ''} 
+                        onChange={e => setFormData({...formData, city: e.target.value})} 
+                      />
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
-                       <label className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-100 cursor-pointer hover:bg-slate-100 transition-all">
-                          <input type="checkbox" className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500" checked={formData.is_active} onChange={e => setFormData({...formData, is_active: e.target.checked})} />
-                          <div>
-                            <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Active Status</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Visible in whole system</p>
-                          </div>
-                       </label>
-                       <label className="flex items-center gap-4 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 cursor-pointer hover:bg-indigo-100 transition-all">
-                          <input type="checkbox" className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500" checked={formData.is_delivery_available} onChange={e => setFormData({...formData, is_delivery_available: e.target.checked})} />
-                          <div>
-                            <p className="text-xs font-black text-indigo-700 uppercase tracking-widest">Delivery Option</p>
-                            <p className="text-[10px] text-indigo-400 font-bold uppercase mt-0.5">Allow door delivery</p>
-                          </div>
-                       </label>
-                       <label className="flex items-center gap-4 p-4 rounded-2xl bg-amber-50 border border-amber-100 cursor-pointer hover:bg-amber-100 transition-all">
-                          <input type="checkbox" className="w-5 h-5 rounded text-amber-600 focus:ring-amber-500" checked={formData.is_online_order_available} onChange={e => setFormData({...formData, is_online_order_available: e.target.checked})} />
-                          <div>
-                            <p className="text-xs font-black text-amber-700 uppercase tracking-widest">Online Orders</p>
-                            <p className="text-[10px] text-amber-400 font-bold uppercase mt-0.5">Enable app/web orders</p>
-                          </div>
-                       </label>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">State</label>
+                      <input 
+                        type="text" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.state || ''} 
+                        onChange={e => setFormData({...formData, state: e.target.value})} 
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">PIN Code</label>
+                      <input 
+                        type="text" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.pincode || ''} 
+                        onChange={e => setFormData({...formData, pincode: e.target.value})} 
+                      />
                     </div>
                   </div>
-                )}
 
-                {/* ── TAB: PRICE CONTROL ── */}
-                {activeTab === 'Price Control' && (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                    <div className="bg-indigo-600 p-8 rounded-[40px] text-white shadow-xl shadow-indigo-100 relative overflow-hidden">
-                       {/* Background decorative icons */}
-                       <i className="fas fa-tags absolute -right-4 -bottom-4 text-9xl opacity-10 rotate-12"></i>
-                       
-                       <h4 className="text-xl font-black uppercase tracking-tight mb-4">Price Update Control System</h4>
-                       <p className="text-sm text-indigo-100 font-medium max-w-2xl mb-8 leading-relaxed">
-                          Define how price changes at the Head Office propagate to this specific outlet. Selecting a level ensures synchronization follows the organizational hierarchy.
-                       </p>
-
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {[
-                            { val: 'All Store Level', desc: 'Sync with global pricing updates' },
-                            { val: 'City Level', desc: 'Sync with other stores in same city' },
-                            { val: 'State Level', desc: 'Sync with all stores in this state' },
-                            { val: 'Selective Store', desc: 'Manual multi-store selection enabled' },
-                            { val: 'Store Type Level', desc: 'Sync by Store Type (T1 / T2 / T3)' },
-                          ].map(opt => (
-                            <label key={opt.val} className={`flex items-start gap-4 p-5 rounded-3xl cursor-pointer transition-all border-2 ${
-                              formData.price_update_level === opt.val 
-                                ? 'bg-white border-white text-indigo-600' 
-                                : 'bg-indigo-500/30 border-indigo-400/30 text-white hover:bg-indigo-500/50'
-                            }`}>
-                              <input 
-                                type="radio" 
-                                name="price_lvl" 
-                                className="mt-1 w-5 h-5 text-indigo-600" 
-                                checked={formData.price_update_level === opt.val} 
-                                onChange={() => setFormData({...formData, price_update_level: opt.val})}
-                              />
-                              <div>
-                                <p className="text-sm font-black uppercase tracking-tight">{opt.val}</p>
-                                <p className={`text-[10px] font-bold uppercase mt-1 ${formData.price_update_level === opt.val ? 'text-indigo-400' : 'text-indigo-200'}`}>
-                                  {opt.desc}
-                                </p>
-                              </div>
-                            </label>
-                          ))}
-                       </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Store Manager Name</label>
+                      <input 
+                        type="text" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.manager_name || ''} 
+                        onChange={e => setFormData({...formData, manager_name: e.target.value})} 
+                      />
                     </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Manager Mobile / WhatsApp</label>
+                      <input 
+                        type="text" 
+                        placeholder="+91 98711 00000" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.manager_mobile || ''} 
+                        onChange={e => setFormData({...formData, manager_mobile: e.target.value, whatsapp_number: e.target.value})} 
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Store Email</label>
+                      <input 
+                        type="email" 
+                        placeholder="store@geom365.com" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={formData.manager_email || ''} 
+                        onChange={e => setFormData({...formData, manager_email: e.target.value})} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+              {activeTab === 'Operations & Database' && (
+                <div className="space-y-4 text-xs">
+                  <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-100 space-y-3">
+                    <p className="font-bold text-[#8c2785] text-xs">Database Connection Settings</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Store Type Class</label>
-                        <div className="flex gap-2">
-                           {['T1', 'T2', 'T3'].map(t => (
-                             <button key={t} type="button" onClick={() => setFormData({...formData, store_type: t})} className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${formData.store_type === t ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
-                               {t}
-                             </button>
-                           ))}
-                        </div>
+                        <label className="text-slate-600 block mb-1">Database Server / IP</label>
+                        <input 
+                          type="text" 
+                          placeholder="localhost or remote IP" 
+                          className="w-full p-2 bg-white border border-slate-200 rounded-lg font-mono text-xs"
+                          value={formData.server_name || ''} 
+                          onChange={e => setFormData({...formData, server_name: e.target.value})} 
+                        />
                       </div>
                       <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Store Size (Sq Ft)</label>
-                        <input type="text" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm font-bold text-slate-700" value={formData.store_size} onChange={e => setFormData({...formData, store_size: e.target.value})} />
+                        <label className="text-slate-600 block mb-1">Database Name</label>
+                        <input 
+                          type="text" 
+                          placeholder="outlet_db" 
+                          className="w-full p-2 bg-white border border-slate-200 rounded-lg font-mono text-xs"
+                          value={formData.database_name || ''} 
+                          onChange={e => setFormData({...formData, database_name: e.target.value})} 
+                        />
                       </div>
                     </div>
                   </div>
-                )}
 
-              </div>
+                  <div className="flex items-center gap-6 pt-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={formData.is_active} 
+                        onChange={e => setFormData({...formData, is_active: e.target.checked})} 
+                        className="rounded text-[#8c2785] focus:ring-[#8c2785]"
+                      />
+                      <span className="font-bold text-slate-700">Active Operational Store</span>
+                    </label>
 
-              {/* Modal Footer */}
-              <div className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4 sticky bottom-0">
-                <button type="button" onClick={() => { setShowModal(false); setEditId(null); }} className="px-8 py-4 text-slate-400 font-black uppercase tracking-widest text-[10px] hover:text-slate-600 transition-all">
-                  Discard Changes
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={formData.is_delivery_available} 
+                        onChange={e => setFormData({...formData, is_delivery_available: e.target.checked})} 
+                        className="rounded text-[#8c2785] focus:ring-[#8c2785]"
+                      />
+                      <span className="font-medium text-slate-700">Delivery Available</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button 
+                  type="button" 
+                  onClick={() => setShowModal(false)}
+                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50"
+                >
+                  Cancel
                 </button>
-                <button type="submit" className="flex-1 bg-indigo-600 text-white font-black py-4 px-8 rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all uppercase tracking-widest text-[10px]">
-                  {editId ? 'Apply Updated Details' : 'Initialize Outlet Location'}
+                <button 
+                  type="submit" 
+                  className="px-6 py-2.5 rounded-xl bg-[#8c2785] hover:bg-[#731f6d] text-white font-bold text-xs shadow-md"
+                >
+                  {editId ? 'Save Store Changes' : 'Register Store'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-      {/* Bulk Import Modal */}
-      {showImportModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="bg-amber-500 p-6 text-white flex justify-between items-center">
+
+      {/* ── MODAL: ADD REGION ── */}
+      {showRegionModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <h3 className="text-base font-black text-slate-800">Add Operational Region</h3>
+            <form onSubmit={handleSaveRegion} className="space-y-3 text-xs">
               <div>
-                <h3 className="text-xl font-black uppercase tracking-tight">Bulk Location Import</h3>
-                <p className="text-[10px] font-bold text-amber-100 uppercase tracking-widest mt-1">Import multiple outlets from Excel</p>
+                <label className="font-bold text-slate-700 block mb-1">Region Code *</label>
+                <input required type="text" placeholder="e.g. NCR02" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl uppercase font-mono" value={regionForm.code} onChange={e => setRegionForm({...regionForm, code: e.target.value.toUpperCase()})} />
               </div>
-              <button onClick={() => { setShowImportModal(false); setImportResult(null); }} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all">
-                <i className="fas fa-times text-lg"></i>
-              </button>
-            </div>
-            
-            <div className="p-8 space-y-6">
-              {!importResult ? (
-                <div className="space-y-6 text-center">
-                  <div className="p-10 border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50 flex flex-col items-center justify-center group hover:border-amber-400 transition-all">
-                    <i className="fas fa-cloud-upload-alt text-5xl text-slate-300 group-hover:text-amber-500 transition-all mb-4"></i>
-                    <p className="text-sm font-bold text-slate-600 mb-2">Click to select or drag Excel file</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Excel (.xlsx / .xls) supported</p>
-                    <input 
-                      type="file" 
-                      accept=".xlsx, .xls" 
-                      className="absolute inset-0 opacity-0 cursor-pointer" 
-                      onChange={handleImport}
-                      disabled={importing}
-                    />
-                  </div>
-                  <button 
-                    onClick={downloadTemplate}
-                    className="text-[10px] font-black text-amber-600 hover:text-amber-700 uppercase tracking-widest flex items-center justify-center mx-auto"
-                  >
-                    <i className="fas fa-download mr-2"></i> Download Excel Template
-                  </button>
-                  {importing && (
-                    <div className="flex items-center justify-center gap-3 text-amber-600 animate-pulse">
-                      <i className="fas fa-spinner fa-spin"></i>
-                      <span className="text-xs font-black uppercase tracking-widest">Processing Data...</span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
-                    <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Import Summary</p>
-                      <p className="text-sm font-black text-slate-700 mt-1">{importResult.success} Outlets Imported Successfully</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Rows</p>
-                      <p className="text-sm font-black text-slate-700 mt-1">{importResult.total}</p>
-                    </div>
-                  </div>
-                  
-                  {importResult.errors.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest flex items-center">
-                        <i className="fas fa-exclamation-circle mr-2"></i> Errors & Warnings
-                      </p>
-                      <div className="max-h-40 overflow-y-auto bg-rose-50 border border-rose-100 rounded-2xl p-4 space-y-1">
-                        {importResult.errors.map((err: string, i: number) => (
-                          <p key={i} className="text-[10px] font-bold text-rose-600 uppercase tracking-widest">• {err}</p>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  
-                  <button 
-                    onClick={() => { setShowImportModal(false); setImportResult(null); }}
-                    className="w-full bg-slate-800 text-white font-black py-4 px-8 rounded-2xl shadow-xl shadow-slate-100 hover:bg-slate-900 transition-all uppercase tracking-widest text-[10px]"
-                  >
-                    Close Report
-                  </button>
-                </div>
-              )}
-            </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Region Name *</label>
+                <input required type="text" placeholder="e.g. Punjab & North" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" value={regionForm.name} onChange={e => setRegionForm({...regionForm, name: e.target.value})} />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Regional Manager</label>
+                <input type="text" placeholder="Manager Name" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" value={regionForm.manager_name} onChange={e => setRegionForm({...regionForm, manager_name: e.target.value})} />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Contact Phone</label>
+                <input type="text" placeholder="+91 ..." className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" value={regionForm.contact_phone} onChange={e => setRegionForm({...regionForm, contact_phone: e.target.value})} />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowRegionModal(false)} className="px-4 py-2 border rounded-xl font-bold">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-[#8c2785] text-white rounded-xl font-bold">Save Region</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: ADD ZONE ── */}
+      {showZoneModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <h3 className="text-base font-black text-slate-800">Add Cluster Zone</h3>
+            <form onSubmit={handleSaveZone} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Parent Region *</label>
+                <select className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium" value={zoneForm.region_id} onChange={e => setZoneForm({...zoneForm, region_id: Number(e.target.value)})}>
+                  {regions.map(r => (
+                    <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Zone Code</label>
+                <input type="text" placeholder="e.g. Z-ND" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase" value={zoneForm.zone_code} onChange={e => setZoneForm({...zoneForm, zone_code: e.target.value.toUpperCase()})} />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Zone Name *</label>
+                <input required type="text" placeholder="e.g. North Delhi Zone" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" value={zoneForm.name} onChange={e => setZoneForm({...zoneForm, name: e.target.value})} />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Area Manager</label>
+                <input type="text" placeholder="Area Manager Name" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" value={zoneForm.manager_name} onChange={e => setZoneForm({...zoneForm, manager_name: e.target.value})} />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Contact Phone</label>
+                <input type="text" placeholder="+91 ..." className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" value={zoneForm.contact_phone} onChange={e => setZoneForm({...zoneForm, contact_phone: e.target.value})} />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowZoneModal(false)} className="px-4 py-2 border rounded-xl font-bold">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-[#2c57a4] text-white rounded-xl font-bold">Save Zone</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

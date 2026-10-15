@@ -1,9 +1,10 @@
+import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,6 +26,8 @@ from app.schemas.purchase import (
 )
 from app.services.auth_service import write_audit
 from app.services.billing_service import _write_stock_ledger
+from app.services import batch_service
+from app.models.product import product as product_model
 
 router = APIRouter(prefix="/purchases", tags=["purchases"])
 
@@ -65,9 +68,16 @@ async def _supplier_details(db: AsyncSession, supplier_id: int) -> dict:
 async def _outlet_details(db: AsyncSession, outlet_id: int | None) -> dict:
     if not outlet_id:
         return {"name": None}
-    row = await db.execute(text("SELECT name, address, city, state, email, phone, gstin FROM outlet_master WHERE id = :id"), {"id": outlet_id})
+    row = await db.execute(text("SELECT outlet_name, address, city, state, manager_email, store_phone, gst_number FROM outlets WHERE id = :id"), {"id": outlet_id})
     r = row.fetchone()
-    if not r: return {"name": None}
+    if not r:
+        row2 = await db.execute(text("SELECT name, address, city, state, email, phone, gstin FROM outlet_master WHERE id = :id"), {"id": outlet_id})
+        r2 = row2.fetchone()
+        if not r2: return {"name": None}
+        return {
+            "name": r2[0], "address": r2[1], "city": r2[2], "state": r2[3],
+            "pincode": None, "email": r2[4], "phone": r2[5], "gst_number": r2[6]
+        }
     return {
         "name": r[0], "address": r[1], "city": r[2], "state": r[3],
         "pincode": None, "email": r[4], "phone": r[5], "gst_number": r[6]
@@ -86,7 +96,7 @@ async def _outlet_name(db: AsyncSession, outlet_id: int | None) -> str | None:
 
 async def _product_info(db: AsyncSession, product_id: int) -> dict:
     row = await db.execute(
-        text("SELECT name, item_code, unit, purchase_price, mrp, gst_percent, hsn_code, cost_price, wsp FROM products WHERE id = :id"),
+        text("SELECT name, item_code, unit, purchase_price, mrp, gst_percent, hsn_code, cost_price, wsp, barcode FROM products WHERE id = :id"),
         {"id": product_id}
     )
     r = row.fetchone()
@@ -99,7 +109,16 @@ async def _product_info(db: AsyncSession, product_id: int) -> dict:
     wsp = r[8] if r[8] is not None else 0
     best_cost = float(pp) if float(pp) > 0 else (float(cp) if float(cp) > 0 else float(wsp))
 
-    return {"name": r[0], "item_code": r[1], "unit": r[2], "purchase_price": best_cost, "mrp": r[4] if r[4] is not None else 0, "gst_percent": r[5] if r[5] is not None else 0, "hsn_code": r[6]}
+    return {
+        "name": r[0],
+        "item_code": r[1],
+        "unit": r[2],
+        "purchase_price": best_cost,
+        "mrp": r[4] if r[4] is not None else 0,
+        "gst_percent": r[5] if r[5] is not None else 0,
+        "hsn_code": r[6],
+        "barcode": r[9] if len(r) > 9 and r[9] is not None else "",
+    }
 
 
 async def _log_audit(db: AsyncSession, po_id: int, action: str, description: str = "",
@@ -796,8 +815,117 @@ async def save_distribution(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PURCHASE (GRN) CRUD
+# PURCHASE (GRN) CRUD & DESKTOP PURCHASE ENTRY
 # ═══════════════════════════════════════════════════════════════════════════════
+
+async def _get_item_purchase_history(
+    db: AsyncSession,
+    product_id: int,
+    current_purchase_id: int | None = None,
+    current_invoice_date: date | None = None,
+    outlet_id: int | None = None,
+) -> dict:
+    """
+    Finds the last purchase (GRN) prior to the current purchase/date and
+    calculates quantity sold since that last purchase date up to the current date.
+    """
+    q_prev = (
+        select(purchase.id, purchase.invoice_date, purchase_item.qty, purchase_item.free_qty)
+        .join(purchase, purchase_item.purchase_id == purchase.id)
+        .where(purchase_item.product_id == product_id)
+    )
+    if current_purchase_id:
+        q_prev = q_prev.where(purchase.id != current_purchase_id)
+    if current_invoice_date:
+        q_prev = q_prev.where(
+            or_(
+                purchase.invoice_date < current_invoice_date,
+                and_(
+                    purchase.invoice_date == current_invoice_date,
+                    purchase.id < (current_purchase_id or 999999999)
+                )
+            )
+        )
+
+    prev_row = None
+    if outlet_id:
+        q_outlet = q_prev.where(purchase.outlet_id == outlet_id).order_by(purchase.invoice_date.desc(), purchase.id.desc()).limit(1)
+        prev_row = (await db.execute(q_outlet)).fetchone()
+
+    if not prev_row:
+        q_any = q_prev.order_by(purchase.invoice_date.desc(), purchase.id.desc()).limit(1)
+        prev_row = (await db.execute(q_any)).fetchone()
+
+    # Fallback if no strictly prior purchase was found
+    if not prev_row and current_purchase_id:
+        q_fallback = (
+            select(purchase.id, purchase.invoice_date, purchase_item.qty, purchase_item.free_qty)
+            .join(purchase, purchase_item.purchase_id == purchase.id)
+            .where(purchase_item.product_id == product_id, purchase.id != current_purchase_id)
+            .order_by(purchase.invoice_date.desc(), purchase.id.desc())
+            .limit(1)
+        )
+        prev_row = (await db.execute(q_fallback)).fetchone()
+
+    if prev_row:
+        lp_date = prev_row[1]
+        lp_qty = float((prev_row[2] or 0) + (prev_row[3] or 0))
+        lp_date_str = lp_date.strftime("%d-%b-%y") if lp_date else "-"
+
+        from app.models.invoice import invoice_item, invoice as invoice_model
+        q_sales = (
+            select(func.coalesce(func.sum(invoice_item.qty), 0))
+            .join(invoice_model, invoice_item.invoice_id == invoice_model.id)
+            .where(
+                invoice_item.product_id == product_id,
+                invoice_model.invoice_date >= lp_date
+            )
+        )
+        if current_invoice_date:
+            q_sales = q_sales.where(invoice_model.invoice_date <= current_invoice_date)
+
+        if outlet_id:
+            sales_val = (await db.execute(q_sales.where(invoice_model.outlet_id == outlet_id))).scalar()
+            if not sales_val or sales_val == 0:
+                sales_val = (await db.execute(q_sales)).scalar()
+        else:
+            sales_val = (await db.execute(q_sales)).scalar()
+
+        sales_since_lp = float(sales_val or 0)
+    else:
+        lp_date_str = "-"
+        lp_qty = 0
+        sales_since_lp = 0
+
+    return {
+        "lp_date": lp_date_str,
+        "lp_qty": lp_qty,
+        "sales_since_lp": sales_since_lp,
+    }
+
+
+@router.get("/get_product_history_ajax")
+@router.get("/product-history")
+async def get_product_history(
+    product_id: int = Query(...),
+    outlet_id: Optional[int] = Query(None),
+    exclude_purchase_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    hist = await _get_item_purchase_history(
+        db,
+        product_id=product_id,
+        current_purchase_id=exclude_purchase_id,
+        current_invoice_date=date.today(),
+        outlet_id=outlet_id,
+    )
+    return {
+        "last_purchase_date": hist["lp_date"],
+        "last_purchase_qty": hist["lp_qty"],
+        "sales_since_lp": hist["sales_since_lp"],
+    }
+
 
 @router.get("/grn")
 async def list_purchases(
@@ -824,77 +952,385 @@ async def list_purchases(
             "id": r.id, "purchase_no": r.purchase_no,
             "supplier_id": r.supplier_id, "supplier_name": sn,
             "invoice_no": r.invoice_no, "invoice_date": str(r.invoice_date),
-            "subtotal": float(r.subtotal), "total_gst": float(r.total_gst),
-            "total_amount": float(r.total_amount), "paid_amount": float(r.paid_amount),
-            "due_amount": float(r.due_amount), "payment_mode": r.payment_mode,
-            "status": r.status, "created_at": str(r.created_at),
+            "subtotal": float(r.subtotal or 0), "total_gst": float(r.total_gst or 0),
+            "total_amount": float(r.total_amount or 0), "paid_amount": float(r.paid_amount or 0),
+            "due_amount": float(r.due_amount or 0), "payment_mode": r.payment_mode or "credit",
+            "status": r.status or "draft", "created_at": str(r.created_at) if r.created_at else "",
         })
 
     return {"data": result, "total": total, "page": page, "per_page": per_page}
 
 
+def _normalize_invoice_no(inv: str | None) -> str:
+    if not inv:
+        return ""
+    return re.sub(r'[\s\-_/\\.]', '', inv).lower()
+
+
+@router.get("/check-invoice")
+async def check_invoice_duplicate(
+    supplier_id: int = Query(...),
+    invoice_no: str = Query(...),
+    exclude_purchase_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    inv_clean = invoice_no.strip()
+    if not inv_clean:
+        return {
+            "is_duplicate": False,
+            "is_blank": True,
+            "message": "Vendor invoice number is mandatory. Blank invoice is not allowed."
+        }
+
+    dup_q = select(purchase.id, purchase.purchase_no, purchase.invoice_no, purchase.invoice_date).where(
+        purchase.supplier_id == supplier_id
+    )
+    if exclude_purchase_id:
+        dup_q = dup_q.where(purchase.id != exclude_purchase_id)
+
+    rows = (await db.execute(dup_q)).all()
+    norm_input = _normalize_invoice_no(inv_clean)
+
+    for ex_id, ex_pur_no, ex_inv, ex_date in rows:
+        if not ex_inv:
+            continue
+        if ex_inv.strip().lower() == inv_clean.lower() or (norm_input and _normalize_invoice_no(ex_inv) == norm_input):
+            return {
+                "is_duplicate": True,
+                "is_blank": False,
+                "existing_purchase_id": ex_id,
+                "existing_purchase_no": ex_pur_no,
+                "existing_invoice_no": ex_inv,
+                "invoice_date": str(ex_date),
+                "message": f'Duplicate Invoice Blocked: Invoice "{inv_clean}" already exists for this supplier in GRN #{ex_pur_no} (Recorded as: "{ex_inv}" on {ex_date}). You cannot enter the same invoice twice.'
+            }
+
+    return {"is_duplicate": False, "is_blank": False, "message": "Invoice number is available."}
+
+
 @router.post("/grn")
+@router.post("/create")
 async def create_purchase(
     body: purchase_create,
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    # 1. Validation: Block blank invoices and required fields
+    if not body.supplier_id:
+        raise HTTPException(400, "Supplier is required.")
+    if not body.invoice_no or not body.invoice_no.strip():
+        raise HTTPException(400, "Vendor invoice number is mandatory. Blank invoices are not allowed.")
+    if not body.invoice_date:
+        raise HTTPException(400, "Invoice date is required.")
+    if not body.items:
+        raise HTTPException(400, "Please add at least one item.")
+
+    inv_clean = body.invoice_no.strip()
+
+    # 2. Strict Duplicate Guard (Exact & Normalized check across supplier's invoices)
+    dup_q = select(purchase.id, purchase.purchase_no, purchase.invoice_no, purchase.invoice_date).where(
+        purchase.supplier_id == body.supplier_id
+    )
+    rows = (await db.execute(dup_q)).all()
+    norm_input = _normalize_invoice_no(inv_clean)
+    for ex_id, ex_pur_no, ex_inv, ex_date in rows:
+        if not ex_inv:
+            continue
+        if ex_inv.strip().lower() == inv_clean.lower() or (norm_input and _normalize_invoice_no(ex_inv) == norm_input):
+            raise HTTPException(
+                status_code=400,
+                detail=f'Duplicate Invoice Blocked: Invoice "{inv_clean}" already exists for this supplier in GRN #{ex_pur_no} (Recorded as: "{ex_inv}" on {ex_date}). You cannot enter the same invoice twice.'
+            )
+
     purchase_no = await _next_purchase_no(db)
 
-    subtotal   = Decimal("0")
-    total_gst  = Decimal("0")
-    item_rows  = []
+    try:
+        subtotal        = Decimal("0")
+        total_taxable   = Decimal("0")
+        total_gst       = Decimal("0")
+        total_qty       = Decimal("0")
+        item_rows       = []
 
-    for it in body.items:
-        basic   = it.qty * it.price - it.disc_val
-        gst_amt = basic * it.gst_percent / 100
-        total   = basic + gst_amt
-        subtotal  += basic
-        total_gst += gst_amt
-        item_rows.append({
-            "product_id": it.product_id, "item_code": it.item_code,
-            "qty": it.qty, "pcs": it.pcs, "unit": it.unit, "price": it.price,
-            "disc_val": it.disc_val, "disc_type": it.disc_type,
-            "basic_amt": basic, "taxable_amt": basic,
-            "gst_percent": it.gst_percent, "gst_amount": gst_amt,
-            "total": total, "hsn_code": it.hsn_code,
-        })
+        # Pre-fetch product configurations for validation
+        prod_ids = [it.product_id for it in body.items if it.product_id]
+        prod_rows = (await db.execute(select(product_model).where(product_model.id.in_(prod_ids)))).scalars().all() if prod_ids else []
+        prod_map = {p.id: p for p in prod_rows}
 
-    taxable    = subtotal - body.discount
-    total_amt  = taxable + total_gst
-    due_amt    = total_amt - body.paid_amount
+        for it in body.items:
+            qty_dec = Decimal(str(it.qty or 0))
+            free_dec = Decimal(str(it.free_qty or 0))
+            if qty_dec <= 0 and free_dec <= 0:
+                continue
 
-    h = purchase(
-        purchase_no=purchase_no, outlet_id=body.outlet_id, supplier_id=body.supplier_id,
-        invoice_no=body.invoice_no, invoice_date=body.invoice_date,
-        subtotal=subtotal, discount=body.discount, taxable_amount=taxable,
-        total_gst=total_gst, total_amount=total_amt,
-        paid_amount=body.paid_amount, due_amount=due_amt,
-        payment_mode=body.payment_mode, notes=body.notes,
-        status="paid" if due_amt <= 0 else ("partial" if body.paid_amount > 0 else "draft"),
-        created_by=user.user_id,
-    )
-    db.add(h)
-    await db.flush()
+            price_dec = Decimal(str(it.price or 0))
+            disc_val_dec = Decimal(str(it.disc_val or 0))
+            gst_pct_dec = Decimal(str(it.gst_percent or 0))
 
-    for it in item_rows:
-        db.add(purchase_item(purchase_id=h.id, **it))
+            p_obj = prod_map.get(it.product_id)
+            code_label = it.item_code or (p_obj.name if p_obj else f"#{it.product_id}")
 
-    # Update product stock + ledger (purchase returns reverse these)
-    for it in body.items:
-        await db.execute(
-            text("UPDATE products SET stock_qty = stock_qty + :q WHERE id = :pid"),
-            {"q": float(it.qty), "pid": it.product_id}
+            # Batch & Expiry Validations
+            batch_str = it.batch_no.strip() if it.batch_no else None
+            mfg_val = it.mfg_date
+            exp_val = it.expiry_date
+
+            if p_obj:
+                # 1. Batch Tracking Required Check
+                if (p_obj.has_batch_tracking or p_obj.is_batch_required) and not batch_str:
+                    raise HTTPException(400, f"Batch number is mandatory for '{code_label}'.")
+
+                # 2. Manufacturing Date Required Check
+                if p_obj.mfg_date_required and not mfg_val:
+                    raise HTTPException(400, f"Manufacturing date is required for '{code_label}'.")
+
+                # 3. Expiry Date Required Check / Auto-calc
+                if (p_obj.has_expiry_tracking or p_obj.exp_date_required) and not exp_val:
+                    if mfg_val and p_obj.shelf_life_days and p_obj.shelf_life_days > 0:
+                        exp_val = batch_service.calculate_expiry_date(mfg_val, p_obj.shelf_life_days)
+                    if not exp_val:
+                        raise HTTPException(400, f"Expiry date is mandatory for '{code_label}'.")
+
+                # 4. Mfg vs Expiry Sequence Check
+                if mfg_val and exp_val and exp_val <= mfg_val:
+                    raise HTTPException(400, f"Expiry date ({exp_val}) must be after manufacturing date ({mfg_val}) for '{code_label}'.")
+
+                # 5. Already Expired Check
+                if exp_val and exp_val < date.today():
+                    raise HTTPException(400, f"Cannot receive already expired stock for '{code_label}' (Expired on {exp_val}).")
+
+                # 6. Minimum Remaining Shelf Life at Purchase Check
+                if exp_val and p_obj.min_shelf_life_purchase_days and p_obj.min_shelf_life_purchase_days > 0:
+                    remaining_days = (exp_val - date.today()).days
+                    if remaining_days < p_obj.min_shelf_life_purchase_days:
+                        raise HTTPException(
+                            400,
+                            f"Remaining shelf life ({remaining_days} days) for '{code_label}' is less than required minimum ({p_obj.min_shelf_life_purchase_days} days)."
+                        )
+
+            # Per unit discount
+            if it.disc_type == "%":
+                capped_pct = min(disc_val_dec, Decimal("100"))
+                unit_disc = price_dec * capped_pct / Decimal("100")
+            else:
+                unit_disc = min(disc_val_dec, price_dec)
+
+            cp_base = price_dec - unit_disc
+            unit_gst = cp_base * (gst_pct_dec / Decimal("100"))
+            
+            basic_total = qty_dec * price_dec
+            cost_value = qty_dec * cp_base  # taxable
+            tax_total = round(qty_dec * unit_gst, 2)
+            line_total = cost_value + tax_total
+
+            subtotal += basic_total
+            total_taxable += cost_value
+            total_gst += tax_total
+            total_qty += (qty_dec + free_dec)
+
+            # Register or update in Central Batch Register if batch_no present
+            created_batch_id = None
+            if batch_str:
+                batch_rec = await batch_service.get_or_create_batch(
+                    db=db,
+                    product_id=it.product_id,
+                    batch_no=batch_str,
+                    supplier_id=body.supplier_id,
+                    supplier_batch_no=getattr(it, "supplier_batch_no", None) or batch_str,
+                    mfg_date=mfg_val,
+                    exp_date=exp_val,
+                    purchase_rate=price_dec,
+                    cost_price=cp_base,
+                    mrp=Decimal(str(it.mrp or 0)),
+                    selling_price=Decimal(str(it.selling_price or 0)),
+                    user_id=user.user_id,
+                )
+                created_batch_id = batch_rec.id
+
+            item_rows.append({
+                "product_id": it.product_id,
+                "item_code": it.item_code,
+                "qty": qty_dec,
+                "free_qty": free_dec,
+                "pcs": Decimal(str(it.pcs or 0)),
+                "unit": it.unit or "PCS",
+                "price": price_dec,
+                "disc_val": disc_val_dec,
+                "disc_type": it.disc_type or "₹",
+                "basic_amt": basic_total,
+                "basic_amount": basic_total,
+                "taxable_amt": cost_value,
+                "taxable_amount": cost_value,
+                "gst_percent": gst_pct_dec,
+                "gst_amount": tax_total,
+                "total": line_total,
+                "hsn_code": it.hsn_code,
+                "mrp": Decimal(str(it.mrp)) if it.mrp is not None else None,
+                "selling_price": Decimal(str(it.selling_price)) if it.selling_price is not None else None,
+                "batch_no": batch_str,
+                "batch_id": created_batch_id,
+                "mfg_date": mfg_val,
+                "expiry_date": exp_val,
+            })
+
+        if not item_rows:
+            raise HTTPException(400, "Please add at least one valid item with qty > 0.")
+
+        # Bill-level totals
+        bill_disc = Decimal(str(body.discount or 0))
+        net = (total_taxable + total_gst) - bill_disc
+
+        # Round Off
+        round_off_in = Decimal(str(body.round_off or 0))
+        if round_off_in == Decimal("0"):
+            # Auto round off
+            grand_total = Decimal(str(round(float(net))))
+            round_off = grand_total - net
+        else:
+            round_off = round_off_in
+            grand_total = net + round_off
+
+        paid_amt = Decimal(str(body.paid_amount or 0))
+        due_amt = grand_total - paid_amt
+
+        is_draft = body.action == "draft"
+        if is_draft:
+            status_str = "draft"
+        elif due_amt <= 0:
+            status_str = "paid"
+        else:
+            status_str = "partial"
+
+        pm = (body.payment_mode or "credit").strip().lower()
+        if pm in ("bank transfer", "bank_transfer", "netbanking"):
+            pm = "neft"
+        if pm not in ("cash", "cheque", "neft", "upi", "credit"):
+            pm = "credit"
+
+        h = purchase(
+            purchase_no=purchase_no,
+            outlet_id=body.outlet_id,
+            supplier_id=body.supplier_id,
+            invoice_no=body.invoice_no,
+            invoice_date=body.invoice_date,
+            total_qty=total_qty,
+            subtotal=subtotal,
+            discount=bill_disc,
+            taxable_amount=total_taxable,
+            total_gst=total_gst,
+            round_off=round_off,
+            total_amount=grand_total,
+            paid_amount=paid_amt,
+            due_amount=due_amt,
+            payment_mode=pm,
+            notes=body.notes,
+            status=status_str,
+            created_by=user.user_id,
         )
-        await _write_stock_ledger(db, it.product_id, "purchase", it.qty, h.id, "grn", body.outlet_id,
-                                  f"GRN {purchase_no}", user.user_id)
+        db.add(h)
+        await db.flush()
 
-    await write_audit(db=db, module="purchases", action="create_grn",
-                      record_id=h.id, record_no=h.purchase_no,
-                      description=f"GRN {h.purchase_no} created for invoice {h.invoice_no}",
-                      user_id=user.user_id, user_name=user.username)
-    await db.commit()
-    return {"success": True, "purchase_id": h.id, "purchase_no": h.purchase_no}
+        for it in item_rows:
+            db.add(purchase_item(
+                purchase_id=h.id,
+                product_id=it["product_id"],
+                item_code=it["item_code"],
+                qty=it["qty"],
+                free_qty=it["free_qty"],
+                pcs=it["pcs"],
+                unit=it["unit"],
+                price=it["price"],
+                disc_val=it["disc_val"],
+                disc_type=it["disc_type"],
+                basic_amt=it["basic_amt"],
+                taxable_amt=it["taxable_amt"],
+                gst_percent=it["gst_percent"],
+                gst_amount=it["gst_amount"],
+                total=it["total"],
+                hsn_code=it["hsn_code"],
+                batch_no=it.get("batch_no"),
+                batch_id=it.get("batch_id"),
+                mfg_date=it.get("mfg_date"),
+                expiry_date=it.get("expiry_date"),
+            ))
+
+        # Update product stock, landed cost, and location stock if not draft
+        if not is_draft:
+            for it in item_rows:
+                in_qty = it["qty"] + it["free_qty"]
+                line_tot = it["total"]
+                new_cp = (line_tot / in_qty) if in_qty > 0 else it["price"]
+                basic_cost = (it["price"] * it["qty"] / in_qty) if in_qty > 0 and it["free_qty"] > 0 else it["price"]
+
+                # Update master product
+                prod_updates = {
+                    "stock_qty": float(in_qty),
+                    "cost_price": float(new_cp),
+                    "basic_cost": float(basic_cost),
+                    "pid": it["product_id"]
+                }
+                update_sql = "UPDATE products SET stock_qty = stock_qty + :stock_qty, cost_price = :cost_price, basic_cost = :basic_cost"
+                if it.get("mrp") is not None and it["mrp"] > 0:
+                    update_sql += ", mrp = :mrp"
+                    prod_updates["mrp"] = float(it["mrp"])
+                if it.get("selling_price") is not None and it["selling_price"] > 0:
+                    update_sql += ", selling_price = :sp"
+                    prod_updates["sp"] = float(it["selling_price"])
+                update_sql += " WHERE id = :pid"
+                await db.execute(text(update_sql), prod_updates)
+
+                loc_id = body.outlet_id or 1
+
+                # Update location stock if outlet specified
+                if body.outlet_id:
+                    await db.execute(
+                        text("""
+                            INSERT INTO outlet_stock (outlet_id, product_id, stock_qty, updated_at)
+                            VALUES (:oid, :pid, :qty, NOW())
+                            ON CONFLICT (outlet_id, product_id)
+                            DO UPDATE SET stock_qty = outlet_stock.stock_qty + EXCLUDED.stock_qty, updated_at = NOW()
+                        """),
+                        {"oid": body.outlet_id, "pid": it["product_id"], "qty": float(in_qty)}
+                    )
+
+                # Update Location-wise Batch Stock Balances
+                if it.get("batch_id"):
+                    await batch_service.record_batch_movement(
+                        db=db,
+                        batch_id=it["batch_id"],
+                        location_id=loc_id,
+                        qty_delta=in_qty,
+                        movement_type="purchase",
+                        product_id=it["product_id"],
+                        allow_negative=False,
+                    )
+
+                # Ledger record
+                await _write_stock_ledger(
+                    db, it["product_id"], "purchase", in_qty, h.id, "grn", body.outlet_id,
+                    f"Purchase Inward {purchase_no}" + (f" (Batch: {it['batch_no']})" if it.get("batch_no") else ""),
+                    user.user_id,
+                    batch_no=it.get("batch_no"),
+                    batch_id=it.get("batch_id"),
+                    expiry_date=it.get("expiry_date"),
+                )
+
+        await write_audit(
+            db=db, module="purchases", action="create_purchase",
+            record_id=h.id, record_no=h.purchase_no,
+            description=f"Purchase {h.purchase_no} ({status_str}) created for invoice {h.invoice_no}",
+            user_id=user.user_id, user_name=user.username
+        )
+        await db.commit()
+        return {"success": True, "purchase_id": h.id, "purchase_no": h.purchase_no, "status": status_str}
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"Database error while saving purchase: {str(e)}")
 
 
 @router.get("/grn/{purchase_id}")
@@ -907,9 +1343,74 @@ async def get_purchase(purchase_id: int, db: AsyncSession = Depends(get_db), _=D
         raise HTTPException(404, "Purchase not found")
 
     sn = await _supplier_name(db, h.supplier_id)
+    sd = await _supplier_details(db, h.supplier_id)
+    od = await _outlet_details(db, h.outlet_id)
+
     items_out = []
     for it in h.items:
         p = await _product_info(db, it.product_id)
-        items_out.append({**it.__dict__, "product_name": p.get("name"), "product_code": p.get("item_code")})
+        hist = await _get_item_purchase_history(
+            db,
+            product_id=it.product_id,
+            current_purchase_id=h.id,
+            current_invoice_date=h.invoice_date,
+            outlet_id=h.outlet_id,
+        )
+        items_out.append({
+            "id": it.id,
+            "product_id": it.product_id,
+            "product_name": p.get("name"),
+            "product_code": p.get("item_code") or it.item_code,
+            "barcode": p.get("barcode") or "",
+            "qty": float(it.qty or 0),
+            "free_qty": float(it.free_qty or 0),
+            "pcs": float(it.pcs or 0),
+            "unit": it.unit or "PCS",
+            "price": float(it.price or 0),
+            "disc_val": float(it.disc_val or 0),
+            "disc_type": it.disc_type or "₹",
+            "basic_amt": float(it.basic_amt or it.basic_amount or 0),
+            "taxable_amt": float(it.taxable_amt or it.taxable_amount or 0),
+            "gst_percent": float(it.gst_percent or 0),
+            "gst_amount": float(it.gst_amount or 0),
+            "total": float(it.total or 0),
+            "hsn_code": it.hsn_code or p.get("hsn_code"),
+            "mrp": float(p.get("mrp") or 0),
+            "cost_price": float(p.get("cost_price") or 0),
+            "batch_no": it.batch_no,
+            "batch_id": it.batch_id,
+            "mfg_date": str(it.mfg_date) if it.mfg_date else None,
+            "expiry_date": str(it.expiry_date) if it.expiry_date else None,
+            "lp_date": hist["lp_date"],
+            "lp_qty": hist["lp_qty"],
+            "sales_since_lp": hist["sales_since_lp"],
+            "sales_lp": hist["sales_since_lp"],
+        })
 
-    return {**h.__dict__, "supplier_name": sn, "items": items_out}
+    return {
+        "id": h.id,
+        "purchase_no": h.purchase_no,
+        "outlet_id": h.outlet_id,
+        "outlet_name": od.get("name"),
+        "outlet_details": od,
+        "supplier_id": h.supplier_id,
+        "supplier_name": sn,
+        "supplier_details": sd,
+        "invoice_no": h.invoice_no,
+        "invoice_date": str(h.invoice_date) if h.invoice_date else None,
+        "total_qty": float(h.total_qty or 0),
+        "subtotal": float(h.subtotal or 0),
+        "discount": float(h.discount or 0),
+        "taxable_amount": float(h.taxable_amount or 0),
+        "total_gst": float(h.total_gst or 0),
+        "round_off": float(h.round_off or 0),
+        "total_amount": float(h.total_amount or 0),
+        "paid_amount": float(h.paid_amount or 0),
+        "due_amount": float(h.due_amount or 0),
+        "payment_mode": h.payment_mode or "credit",
+        "notes": h.notes,
+        "status": h.status or "draft",
+        "created_at": str(h.created_at) if h.created_at else None,
+        "items": items_out,
+    }
+

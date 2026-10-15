@@ -2,7 +2,8 @@ import math
 import uuid
 from datetime import datetime, date as date_type
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import os
+from fastapi import APIRouter, Depends, HTTPException, Query, status, File, UploadFile, Form
 from sqlalchemy import func, select, text, update, delete, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
@@ -18,14 +19,40 @@ from app.models.party import (
     supplier_approval_log,
 )
 from app.models.state import supplier_gstin as supplier_gstin_model
+import secrets
+from datetime import timedelta
+from app.models.user import user as user_model, audit_log as audit_log_model
+from app.core.security import get_password_hash
 from app.schemas.party import (
+    vendor_profile_request_review, vendor_profile_request_out, vendor_item_request_review, vendor_item_request_out, portal_settings_update,
     supplier_create, supplier_update, supplier_out, supplier_list_out,
     supplier_terms_create, supplier_terms_out, ledger_row,
     approval_action_body,
+    vendor_portal_user_create, vendor_portal_user_update, vendor_portal_reset_password_in,
 )
 from app.schemas.common import paginated_response, success_response
 from app.services.auth_service import write_audit
 from app.utils.search import word_match
+
+DEFAULT_PORTAL_PERMISSIONS = {
+    "view_pos": True,
+    "download_po": True,
+    "view_grn": True,
+    "download_grn": True,
+    "view_prn": True,
+    "download_prn": True,
+    "view_sales": False,
+    "view_sales_quantity": True,
+    "view_sales_value": True,
+    "view_outlet_sales": False,
+    "view_cheques": True,
+    "view_payments": True,
+    "view_ledger": True,
+    "download_statement": True,
+    "view_item_requests": True,
+    "submit_item_requests": True,
+    "edit_profile": True,
+}
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 
@@ -848,3 +875,833 @@ async def mark_under_review(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── POs for this Supplier ─────────────────────────────────────────────────────
+@router.get("/{supplier_id}/pos")
+async def get_supplier_pos(
+    supplier_id: int,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=200),
+    status: str | None = None,
+    current_user: current_user_dep = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.purchase import po_header, po_item
+    from app.models.product import product as product_model
+
+    base_q = select(po_header).where(po_header.supplier_id == supplier_id)
+    if status and status != "all":
+        base_q = base_q.where(po_header.status == status)
+
+    total_r = await db.execute(select(func.count()).select_from(base_q.subquery()))
+    total = total_r.scalar_one()
+
+    pos_r = await db.execute(
+        base_q.options(
+            selectinload(po_header.items).selectinload(po_item.dist_items)
+        )
+        .order_by(po_header.po_date.desc(), po_header.id.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    pos = pos_r.scalars().all()
+
+    # Load product names for items
+    p_ids = {it.product_id for p in pos for it in p.items}
+    prod_map = {}
+    if p_ids:
+        prods_r = await db.execute(select(product_model.id, product_model.name, product_model.item_code, product_model.barcode, product_model.unit).where(product_model.id.in_(p_ids)))
+        for pr in prods_r.all():
+            prod_map[pr.id] = {"name": pr.name, "item_code": pr.item_code, "barcode": pr.barcode, "unit": pr.unit}
+
+    items_out = []
+    for p in pos:
+        po_items_list = []
+        tot_ordered = Decimal("0.00")
+        tot_received = Decimal("0.00")
+        for it in p.items:
+            pm = prod_map.get(it.product_id, {})
+            tot_ordered += it.order_qty or it.qty or Decimal("0.00")
+            tot_received += it.received_qty or Decimal("0.00")
+            po_items_list.append({
+                "id": it.id,
+                "product_id": it.product_id,
+                "product_name": pm.get("name", "Product"),
+                "item_code": pm.get("item_code"),
+                "barcode": pm.get("barcode"),
+                "unit": pm.get("unit") or "PCS",
+                "order_qty": float(it.order_qty or it.qty or 0),
+                "received_qty": float(it.received_qty or 0),
+                "pending_qty": float(max(Decimal("0.00"), (it.order_qty or it.qty or Decimal("0.00")) - (it.received_qty or Decimal("0.00")))),
+                "rate": float(it.rate or 0),
+                "gst_percent": float(it.gst_percent or 0),
+                "total": float(it.total or it.amount or 0),
+            })
+
+        items_out.append({
+            "id": p.id,
+            "po_no": p.po_no,
+            "po_date": str(p.po_date),
+            "expected_date": str(p.expected_date) if p.expected_date else None,
+            "status": p.status,
+            "approval_status": p.approval_status,
+            "total_amount": float(p.total_amount or 0),
+            "vendor_ack": p.vendor_ack,
+            "vendor_ack_at": p.vendor_ack_at.isoformat() if p.vendor_ack_at else None,
+            "vendor_expected_delivery": str(p.vendor_expected_delivery) if p.vendor_expected_delivery else None,
+            "vendor_delivery_remarks": p.vendor_delivery_remarks,
+            "total_ordered_qty": float(tot_ordered),
+            "total_received_qty": float(tot_received),
+            "item_count": len(p.items),
+            "items": po_items_list,
+        })
+
+    return {
+        "items": items_out,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": math.ceil(total / per_page) if per_page else 1,
+    }
+
+
+# ── GRNs for this Supplier ────────────────────────────────────────────────────
+@router.get("/{supplier_id}/grns")
+async def get_supplier_grns(
+    supplier_id: int,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=200),
+    current_user: current_user_dep = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.purchase import purchase as purchase_model, purchase_item as purchase_item_model
+    from app.models.product import product as product_model
+
+    base_q = select(purchase_model).where(purchase_model.supplier_id == supplier_id)
+    total_r = await db.execute(select(func.count()).select_from(base_q.subquery()))
+    total = total_r.scalar_one()
+
+    grns_r = await db.execute(
+        base_q.options(selectinload(purchase_model.items))
+        .order_by(purchase_model.invoice_date.desc(), purchase_model.id.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    grns = grns_r.scalars().all()
+
+    p_ids = {it.product_id for g in grns for it in g.items}
+    prod_map = {}
+    if p_ids:
+        prods_r = await db.execute(select(product_model.id, product_model.name, product_model.item_code, product_model.barcode, product_model.unit).where(product_model.id.in_(p_ids)))
+        for pr in prods_r.all():
+            prod_map[pr.id] = {"name": pr.name, "item_code": pr.item_code, "barcode": pr.barcode, "unit": pr.unit}
+
+    res = []
+    for g in grns:
+        item_rows = []
+        for it in g.items:
+            pm = prod_map.get(it.product_id, {})
+            item_rows.append({
+                "id": it.id,
+                "product_id": it.product_id,
+                "product_name": pm.get("name", "Product"),
+                "item_code": it.item_code or pm.get("item_code"),
+                "barcode": pm.get("barcode"),
+                "unit": it.unit or pm.get("unit") or "PCS",
+                "qty": float(it.qty or 0),
+                "free_qty": float(it.free_qty or 0),
+                "price": float(it.price or 0),
+                "taxable_amt": float(it.taxable_amt or it.basic_amt or 0),
+                "gst_percent": float(it.gst_percent or 0),
+                "total": float(it.total or 0),
+                "batch_no": it.batch_no,
+                "mfg_date": str(it.mfg_date) if it.mfg_date else None,
+                "expiry_date": str(it.expiry_date) if it.expiry_date else None,
+            })
+        res.append({
+            "id": g.id,
+            "purchase_no": g.purchase_no,
+            "invoice_no": g.invoice_no,
+            "invoice_date": str(g.invoice_date),
+            "outlet_id": g.outlet_id,
+            "total_qty": float(g.total_qty or 0),
+            "taxable_amount": float(g.taxable_amount or 0),
+            "total_gst": float(g.total_gst or 0),
+            "total_amount": float(g.total_amount or 0),
+            "status": g.status,
+            "notes": g.notes,
+            "items": item_rows,
+        })
+
+    return {
+        "items": res,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": math.ceil(total / per_page) if per_page else 1,
+    }
+
+
+# ── Supplier Sales Analytics ──────────────────────────────────────────────────
+@router.get("/{supplier_id}/sales")
+async def get_supplier_sales(
+    supplier_id: int,
+    from_date: date_type | None = None,
+    to_date: date_type | None = None,
+    current_user: current_user_dep = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.invoice import invoice as invoice_model, invoice_item as invoice_item_model
+    from app.models.product import product as product_model
+
+    # 1. Fetch products linked to this supplier
+    p_r = await db.execute(
+        select(product_model.id, product_model.name, product_model.item_code, product_model.barcode,
+               product_model.brand, product_model.category, product_model.stock_qty, product_model.mrp)
+        .where(product_model.supplier_id == supplier_id)
+    )
+    products = p_r.all()
+    if not products:
+        return {"summary": {"total_qty": 0, "total_value": 0, "product_count": 0}, "products": []}
+
+    prod_ids = [p.id for p in products]
+
+    # 2. Query invoice items for these products
+    q = (
+        select(
+            invoice_item_model.product_id,
+            func.sum(invoice_item_model.qty).label("total_sold_qty"),
+            func.sum(invoice_item_model.total).label("total_sold_value"),
+        )
+        .join(invoice_model, invoice_model.id == invoice_item_model.invoice_id)
+        .where(invoice_item_model.product_id.in_(prod_ids))
+    )
+    if from_date:
+        q = q.where(invoice_model.invoice_date >= from_date)
+    if to_date:
+        q = q.where(invoice_model.invoice_date <= to_date)
+
+    q = q.group_by(invoice_item_model.product_id)
+    sales_r = await db.execute(q)
+    sales_map = {row.product_id: {"qty": float(row.total_sold_qty or 0), "value": float(row.total_sold_value or 0)} for row in sales_r.all()}
+
+    res_products = []
+    tot_qty = 0.0
+    tot_val = 0.0
+
+    for p in products:
+        s = sales_map.get(p.id, {"qty": 0.0, "value": 0.0})
+        tot_qty += s["qty"]
+        tot_val += s["value"]
+        res_products.append({
+            "product_id": p.id,
+            "product_name": p.name,
+            "item_code": p.item_code,
+            "barcode": p.barcode,
+            "brand": p.brand,
+            "category": p.category,
+            "mrp": float(p.mrp or 0),
+            "current_stock": float(p.stock_qty or 0),
+            "sales_qty": s["qty"],
+            "sales_value": s["value"],
+        })
+
+    return {
+        "summary": {
+            "total_qty": tot_qty,
+            "total_value": tot_val,
+            "product_count": len(products),
+        },
+        "products": res_products,
+    }
+
+
+# ── Supplier New Item Requests ────────────────────────────────────────────────
+@router.get("/{supplier_id}/item-requests")
+async def list_supplier_item_requests(
+    supplier_id: int,
+    status: str | None = None,
+    current_user: current_user_dep = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.party import vendor_item_request
+
+    q = select(vendor_item_request).where(vendor_item_request.supplier_id == supplier_id)
+    if status and status != "all":
+        q = q.where(vendor_item_request.status == status)
+
+    q = q.order_by(vendor_item_request.created_at.desc())
+    r = await db.execute(q)
+    return r.scalars().all()
+
+
+@router.post("/{supplier_id}/item-requests/{req_id}/review")
+async def review_supplier_item_request(
+    supplier_id: int,
+    req_id: int,
+    body: vendor_item_request_review,
+    current_user: current_user_dep = Depends(require_role("admin", "manager")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.party import vendor_item_request
+    from app.models.product import product as product_model
+
+    req = (await db.execute(
+        select(vendor_item_request)
+        .where(vendor_item_request.id == req_id, vendor_item_request.supplier_id == supplier_id)
+    )).scalar_one_or_none()
+
+    if not req:
+        raise HTTPException(404, "Item request not found")
+
+    new_status = body.action.lower()  # approve / reject / correction_requested
+    if new_status == "approve":
+        target_status = "approved"
+    elif new_status == "reject":
+        target_status = "rejected"
+    elif new_status in ("correction_requested", "correction"):
+        target_status = "correction_requested"
+    else:
+        target_status = new_status
+
+    created_prod_id = None
+    if target_status == "approved" and body.create_product:
+        # Check if already created or existing barcode
+        if req.barcode:
+            existing = (await db.execute(select(product_model.id).where(product_model.barcode == req.barcode))).scalar_one_or_none()
+            if existing:
+                created_prod_id = existing
+
+        if not created_prod_id:
+            # Generate item code if not given
+            code = req.vendor_item_code
+            if not code:
+                code = f"ITM-{datetime.now().strftime('%y%m%d%H%M%S')}"
+
+            new_prod = product_model(
+                name=req.product_name,
+                item_code=code,
+                barcode=req.barcode,
+                category=req.category_name or "General",
+                category_id=req.category_id,
+                brand=req.brand_name,
+                brand_id=req.brand_id,
+                unit=req.unit or "PCS",
+                purchase_price=req.purchase_rate,
+                selling_price=req.proposed_selling_price or req.mrp,
+                mrp=req.mrp,
+                gst_percent=req.gst_percent,
+                hsn_code=req.hsn_code,
+                supplier_id=supplier_id,
+                description=req.description,
+                image_path=req.image_url,
+            )
+            db.add(new_prod)
+            await db.flush()
+            created_prod_id = new_prod.id
+
+    req.status = target_status
+    req.review_notes = body.review_notes
+    req.reviewed_by = current_user.user_id
+    req.reviewed_at = datetime.now()
+    if created_prod_id:
+        req.created_product_id = created_prod_id
+    req.updated_at = datetime.now()
+
+    await write_audit(
+        db=db, module="suppliers", action=f"item_request_{target_status}",
+        record_id=req.id, description=f"New item request {req.request_no} {target_status} by {current_user.username}",
+        user_id=current_user.user_id, user_name=current_user.username
+    )
+    await db.commit()
+    await db.refresh(req)
+    return req
+
+
+# ── Supplier Profile Requests ─────────────────────────────────────────────────
+@router.get("/{supplier_id}/profile-requests")
+async def list_supplier_profile_requests(
+    supplier_id: int,
+    status: str | None = None,
+    current_user: current_user_dep = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.party import vendor_profile_request
+
+    q = select(vendor_profile_request).where(vendor_profile_request.supplier_id == supplier_id)
+    if status and status != "all":
+        q = q.where(vendor_profile_request.status == status)
+
+    q = q.order_by(vendor_profile_request.created_at.desc())
+    r = await db.execute(q)
+    return r.scalars().all()
+
+
+@router.post("/{supplier_id}/profile-requests/{req_id}/review")
+async def review_supplier_profile_request(
+    supplier_id: int,
+    req_id: int,
+    body: vendor_profile_request_review,
+    current_user: current_user_dep = Depends(require_role("admin", "manager")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.party import vendor_profile_request, supplier_financial, supplier_legal
+
+    req = (await db.execute(
+        select(vendor_profile_request)
+        .where(vendor_profile_request.id == req_id, vendor_profile_request.supplier_id == supplier_id)
+    )).scalar_one_or_none()
+
+    if not req:
+        raise HTTPException(404, "Profile change request not found")
+
+    target_status = "approved" if body.action.lower() == "approve" else "rejected"
+
+    if target_status == "approved" and req.changes:
+        # Apply field changes to supplier
+        supp = (await db.execute(select(supplier_model).where(supplier_model.id == supplier_id))).scalar_one_or_none()
+        if supp:
+            # Flatten or inspect changes
+            # changes format: {"field_name": {"old": ..., "new": ...}} or {"field_name": "new_val"}
+            for k, val in req.changes.items():
+                new_v = val.get("new") if isinstance(val, dict) and "new" in val else val
+                if hasattr(supp, k):
+                    setattr(supp, k, new_v)
+                elif k in ("bank_name", "account_no", "ifsc_code", "branch"):
+                    # Check or update supplier_financial
+                    fin = (await db.execute(select(supplier_financial).where(supplier_financial.supplier_id == supplier_id))).scalar_one_or_none()
+                    if not fin:
+                        fin = supplier_financial(supplier_id=supplier_id)
+                        db.add(fin)
+                    setattr(fin, k, new_v)
+                elif k in ("cin_no", "pan_no", "tan_no"):
+                    leg = (await db.execute(select(supplier_legal).where(supplier_legal.supplier_id == supplier_id))).scalar_one_or_none()
+                    if not leg:
+                        leg = supplier_legal(supplier_id=supplier_id)
+                        db.add(leg)
+                    setattr(leg, k, new_v)
+
+            supp.updated_at = datetime.now()
+
+    req.status = target_status
+    req.review_notes = body.review_notes
+    req.reviewed_by = current_user.user_id
+    req.reviewed_at = datetime.now()
+    req.updated_at = datetime.now()
+
+    await write_audit(
+        db=db, module="suppliers", action=f"profile_request_{target_status}",
+        record_id=req.id, description=f"Vendor profile change request #{req.id} {target_status} by {current_user.username}",
+        user_id=current_user.user_id, user_name=current_user.username
+    )
+    await db.commit()
+    await db.refresh(req)
+    return req
+
+
+# ── Portal Settings ───────────────────────────────────────────────────────────
+@router.put("/{supplier_id}/portal-settings")
+async def update_supplier_portal_settings(
+    supplier_id: int,
+    body: portal_settings_update,
+    current_user: current_user_dep = Depends(require_role("admin", "manager")),
+    db: AsyncSession = Depends(get_db),
+):
+    supp = (await db.execute(select(supplier_model).where(supplier_model.id == supplier_id))).scalar_one_or_none()
+    if not supp:
+        raise HTTPException(404, "Supplier not found")
+
+    supp.portal_sales_enabled = body.portal_sales_enabled
+    supp.portal_sales_config = body.portal_sales_config
+    supp.updated_at = datetime.now()
+
+    await write_audit(
+        db=db, module="suppliers", action="update_portal_settings",
+        record_id=supplier_id, description=f"Updated portal settings for supplier {supp.name} (sales enabled: {supp.portal_sales_enabled})",
+        user_id=current_user.user_id, user_name=current_user.username
+    )
+    await db.commit()
+    return {
+        "success": True,
+        "portal_sales_enabled": supp.portal_sales_enabled,
+        "portal_sales_config": supp.portal_sales_config,
+    }
+
+
+# ── Supplier Documents Upload & Delete ────────────────────────────────────────
+@router.post("/{supplier_id}/documents")
+async def upload_supplier_document(
+    supplier_id: int,
+    file: UploadFile = File(...),
+    document_type: str = Form(...),
+    start_date: str | None = Form(None),
+    end_date: str | None = Form(None),
+    notes: str | None = Form(None),
+    current_user: current_user_dep = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    supp = (await db.execute(select(supplier_model).where(supplier_model.id == supplier_id))).scalar_one_or_none()
+    if not supp:
+        raise HTTPException(404, "Supplier not found")
+
+    folder = "supplier_docs"
+    upload_dir = os.path.join("uploads", folder)
+    os.makedirs(upload_dir, exist_ok=True)
+
+    orig_ext = os.path.splitext(file.filename or "")[1].lower()
+    if not orig_ext:
+        content_map = {
+            "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"
+        }
+        orig_ext = content_map.get(file.content_type or "", ".pdf")
+
+    unique_filename = f"{supplier_id}_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}{orig_ext}"
+    saved_disk_path = os.path.join(upload_dir, unique_filename)
+
+    file_bytes = await file.read()
+    with open(saved_disk_path, "wb") as f_out:
+        f_out.write(file_bytes)
+
+    public_file_url = f"/uploads/{folder}/{unique_filename}"
+
+    s_date = None
+    e_date = None
+    if start_date and start_date.strip():
+        try:
+            s_date = datetime.strptime(start_date.strip(), "%Y-%m-%d").date()
+        except Exception:
+            pass
+    if end_date and end_date.strip():
+        try:
+            e_date = datetime.strptime(end_date.strip(), "%Y-%m-%d").date()
+        except Exception:
+            pass
+
+    doc_obj = supplier_document(
+        supplier_id=supplier_id,
+        document_type=document_type,
+        file_path=public_file_url,
+        start_date=s_date,
+        end_date=e_date,
+        notes=notes or None,
+    )
+    db.add(doc_obj)
+    await db.commit()
+    await db.refresh(doc_obj)
+
+    await write_audit(
+        db=db, module="suppliers", action="document_upload", record_id=doc_obj.id,
+        description=f"Uploaded '{document_type}' for supplier {supp.name}",
+        user_id=current_user.user_id, user_name=current_user.username,
+    )
+
+    return {
+        "id": doc_obj.id,
+        "supplier_id": doc_obj.supplier_id,
+        "document_type": doc_obj.document_type,
+        "file_path": doc_obj.file_path,
+        "start_date": str(doc_obj.start_date) if doc_obj.start_date else None,
+        "end_date": str(doc_obj.end_date) if doc_obj.end_date else None,
+        "notes": doc_obj.notes,
+    }
+
+
+@router.delete("/{supplier_id}/documents/{doc_id}")
+async def delete_supplier_document(
+    supplier_id: int,
+    doc_id: int,
+    current_user: current_user_dep = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    doc_obj = (await db.execute(
+        select(supplier_document).where(supplier_document.id == doc_id, supplier_document.supplier_id == supplier_id)
+    )).scalar_one_or_none()
+
+    if not doc_obj:
+        raise HTTPException(404, "Document not found")
+
+    await db.delete(doc_obj)
+    await db.commit()
+    return {"success": True, "message": "Document deleted"}
+
+
+# ── VENDOR PORTAL ACCESS MANAGEMENT ──────────────────────────────────────────
+
+@router.get("/{supplier_id}/portal-access")
+async def get_supplier_portal_access(
+    supplier_id: int,
+    current_user: current_user_dep = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    supp = await db.get(supplier_model, supplier_id)
+    if not supp:
+        raise HTTPException(404, "Supplier not found")
+
+    # Find linked user
+    u_res = await db.execute(
+        select(user_model).where(
+            user_model.supplier_id == supplier_id,
+            user_model.role.in_(["vendor", "supplier"])
+        )
+    )
+    v_user = u_res.scalar_one_or_none()
+
+    perms = {**DEFAULT_PORTAL_PERMISSIONS}
+    if supp.portal_permissions:
+        perms.update(supp.portal_permissions)
+    perms["view_sales"] = supp.portal_sales_enabled
+
+    # Login audit history
+    login_history = []
+    if v_user:
+        logs_res = await db.execute(
+            select(audit_log_model)
+            .where(
+                (audit_log_model.user_id == v_user.id) | (audit_log_model.record_id == v_user.id),
+                audit_log_model.module.in_(["auth", "vendor_portal"]),
+                audit_log_model.action.in_(["login", "vendor_login", "logout"])
+            )
+            .order_by(audit_log_model.created_at.desc())
+            .limit(10)
+        )
+        for log in logs_res.scalars().all():
+            login_history.append({
+                "id": log.id,
+                "action": log.action,
+                "description": log.description,
+                "ip_address": log.ip_address,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            })
+
+    # Prepare portal link and invitation text
+    activation_token = v_user.reset_token if (v_user and v_user.reset_token) else supp.onboarding_token
+    portal_link = f"/vendor/activate/{activation_token}" if activation_token else "/vendor-portal"
+
+    invitation_text = f"""Subject: Your Supplier Portal Access - GEOM365
+
+Dear {supp.name},
+
+Your official Supplier Portal account for GEOM365 (Geomett Box Private Limited) has been created.
+
+Login Username: {v_user.username if v_user else (supp.supplier_code or 'pending')}
+Portal Access URL: {portal_link}
+
+Through this secure portal, you can:
+- View and acknowledge purchase orders (PO)
+- Track Goods Received Notes (GRN) and receiving status
+- View Purchase Return Notes (PRN)
+- Check payment history, cheque clearing status, and supplier ledger
+- Submit proposals for new item listings
+- Update your company profile, bank, and GST details
+
+For security, please set a strong password upon your first login and do not share your credentials.
+
+Regards,
+Purchase & Accounts Department
+GEOM365 — Geomett Box Private Limited"""
+
+    return {
+        "supplier_id": supp.id,
+        "supplier_code": supp.supplier_code,
+        "supplier_name": supp.name,
+        "has_account": v_user is not None,
+        "user": {
+            "id": v_user.id,
+            "username": v_user.username,
+            "email": v_user.email,
+            "name": v_user.name,
+            "role": v_user.role,
+            "status": v_user.status,
+            "last_login": v_user.last_login.isoformat() if v_user.last_login else None,
+            "created_at": v_user.created_at.isoformat() if v_user.created_at else None,
+            "has_reset_token": bool(v_user.reset_token),
+        } if v_user else None,
+        "portal_permissions": perms,
+        "portal_link": portal_link,
+        "invitation_text": invitation_text,
+        "login_history": login_history,
+    }
+
+
+@router.post("/{supplier_id}/portal-access/create")
+async def create_or_update_supplier_portal_user(
+    supplier_id: int,
+    body: vendor_portal_user_create,
+    current_user: current_user_dep = Depends(require_role("admin", "manager")),
+    db: AsyncSession = Depends(get_db),
+):
+    supp = await db.get(supplier_model, supplier_id)
+    if not supp:
+        raise HTTPException(404, "Supplier not found")
+
+    clean_username = body.username.strip()
+    # Check if username is taken by another user
+    existing_user_by_name = (await db.execute(
+        select(user_model).where(
+            func.lower(user_model.username) == clean_username.lower(),
+            user_model.supplier_id != supplier_id
+        )
+    )).scalar_one_or_none()
+    if existing_user_by_name:
+        raise HTTPException(400, f"Username '{clean_username}' is already taken by another account.")
+
+    # Find existing vendor user for this supplier if any
+    existing_v_user = (await db.execute(
+        select(user_model).where(
+            user_model.supplier_id == supplier_id,
+            user_model.role.in_(["vendor", "supplier"])
+        )
+    )).scalar_one_or_none()
+
+    # If no password provided, create temporary password or activation token
+    temp_password = body.password.strip() if body.password else None
+    activation_token = secrets.token_urlsafe(32)
+    now = datetime.utcnow()
+
+    if not existing_v_user:
+        hashed_pwd = get_password_hash(temp_password or secrets.token_urlsafe(16))
+        v_user = user_model(
+            name=supp.name,
+            username=clean_username,
+            email=body.email or supp.email,
+            password=hashed_pwd,
+            role="vendor",
+            supplier_id=supplier_id,
+            status=True,
+            reset_token=activation_token if not temp_password else None,
+            reset_token_expiry=now + timedelta(days=7) if not temp_password else None,
+        )
+        db.add(v_user)
+        action_desc = f"Created vendor login '{clean_username}' for supplier '{supp.name}'"
+    else:
+        v_user = existing_v_user
+        v_user.username = clean_username
+        v_user.email = body.email or supp.email or v_user.email
+        v_user.status = True
+        if temp_password:
+            v_user.password = get_password_hash(temp_password)
+            v_user.reset_token = None
+            v_user.reset_token_expiry = None
+        else:
+            v_user.reset_token = activation_token
+            v_user.reset_token_expiry = now + timedelta(days=7)
+        action_desc = f"Updated vendor login '{clean_username}' for supplier '{supp.name}'"
+
+    # Update portal permissions on supplier if provided
+    if body.portal_permissions:
+        cur_perms = supp.portal_permissions or {}
+        cur_perms.update(body.portal_permissions)
+        supp.portal_permissions = cur_perms
+        if "view_sales" in body.portal_permissions:
+            supp.portal_sales_enabled = bool(body.portal_permissions["view_sales"])
+
+    await db.flush()
+    await write_audit(
+        db=db, module="suppliers", action="portal_user_save",
+        record_id=supp.id, description=action_desc,
+        user_id=current_user.user_id, user_name=current_user.username
+    )
+    await db.commit()
+
+    return await get_supplier_portal_access(supplier_id, current_user, db)
+
+
+@router.post("/{supplier_id}/portal-access/toggle-status")
+async def toggle_supplier_portal_status(
+    supplier_id: int,
+    current_user: current_user_dep = Depends(require_role("admin", "manager")),
+    db: AsyncSession = Depends(get_db),
+):
+    v_user = (await db.execute(
+        select(user_model).where(
+            user_model.supplier_id == supplier_id,
+            user_model.role.in_(["vendor", "supplier"])
+        )
+    )).scalar_one_or_none()
+
+    if not v_user:
+        raise HTTPException(404, "No vendor login account exists for this supplier.")
+
+    v_user.status = not v_user.status
+    action_type = "activated" if v_user.status else "suspended"
+    await write_audit(
+        db=db, module="suppliers", action=f"portal_user_{action_type}",
+        record_id=v_user.id, description=f"Vendor account '{v_user.username}' was {action_type} by admin",
+        user_id=current_user.user_id, user_name=current_user.username
+    )
+    await db.commit()
+    return {"success": True, "status": v_user.status, "message": f"Account {action_type} successfully"}
+
+
+@router.post("/{supplier_id}/portal-access/reset-password")
+async def reset_supplier_portal_password(
+    supplier_id: int,
+    body: vendor_portal_reset_password_in,
+    current_user: current_user_dep = Depends(require_role("admin", "manager")),
+    db: AsyncSession = Depends(get_db),
+):
+    v_user = (await db.execute(
+        select(user_model).where(
+            user_model.supplier_id == supplier_id,
+            user_model.role.in_(["vendor", "supplier"])
+        )
+    )).scalar_one_or_none()
+
+    if not v_user:
+        raise HTTPException(404, "No vendor login account exists for this supplier.")
+
+    if body.new_password and body.new_password.strip():
+        v_user.password = get_password_hash(body.new_password.strip())
+        v_user.reset_token = None
+        v_user.reset_token_expiry = None
+        msg = "Password updated directly."
+        reset_link = None
+    else:
+        token = secrets.token_urlsafe(32)
+        v_user.reset_token = token
+        v_user.reset_token_expiry = datetime.utcnow() + timedelta(hours=48)
+        reset_link = f"/vendor/reset-password/{token}"
+        msg = "Password reset link generated (valid for 48 hours)."
+
+    await write_audit(
+        db=db, module="suppliers", action="portal_password_reset",
+        record_id=v_user.id, description=f"Admin initiated password reset for vendor '{v_user.username}'",
+        user_id=current_user.user_id, user_name=current_user.username
+    )
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": msg,
+        "reset_link": reset_link,
+        "reset_token": v_user.reset_token,
+    }
+
+
+@router.put("/{supplier_id}/portal-access/permissions")
+async def update_supplier_portal_permissions(
+    supplier_id: int,
+    body: dict,
+    current_user: current_user_dep = Depends(require_role("admin", "manager")),
+    db: AsyncSession = Depends(get_db),
+):
+    supp = await db.get(supplier_model, supplier_id)
+    if not supp:
+        raise HTTPException(404, "Supplier not found")
+
+    cur_perms = supp.portal_permissions or {}
+    cur_perms.update(body.get("permissions", body))
+    supp.portal_permissions = cur_perms
+
+    if "view_sales" in cur_perms:
+        supp.portal_sales_enabled = bool(cur_perms["view_sales"])
+
+    await write_audit(
+        db=db, module="suppliers", action="portal_permissions_update",
+        record_id=supp.id, description=f"Updated portal permissions for supplier '{supp.name}'",
+        user_id=current_user.user_id, user_name=current_user.username
+    )
+    await db.commit()
+    return {"success": True, "permissions": supp.portal_permissions, "portal_sales_enabled": supp.portal_sales_enabled}
+

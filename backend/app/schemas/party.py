@@ -375,6 +375,18 @@ class supplier_create(BaseModel):
     notes: str | None = None
     registration_status: str = "approved"
     onboarding_token: str | None = None
+    trade_name: str | None = None
+    designation: str | None = None
+    alt_phone: str | None = None
+    alt_email: str | None = None
+    msme_number: str | None = None
+    fssai_number: str | None = None
+    tan_number: str | None = None
+    business_constitution: str | None = None
+    product_categories: list[str] | dict | None = None
+    company_description: str | None = None
+    portal_sales_enabled: bool = False
+    portal_sales_config: dict | None = None
 
     # Nested data
     addresses: list[supplier_address_schema] = []
@@ -454,21 +466,41 @@ class supplier_create(BaseModel):
 
 class supplier_update(BaseModel):
     name: str | None = None
+    trade_name: str | None = None
     phone: str | None = None
+    alt_phone: str | None = None
+    email: str | None = None
+    alt_email: str | None = None
     supplier_code: str | None = None
     supplier_type: str | None = None
     company_type: str | None = None
     category: str | None = None
-    email: str | None = None
+    contact_name: str | None = None
+    designation: str | None = None
     address: str | None = None
     city: str | None = None
     state: str | None = None
+    state_code: str | None = None
+    pincode: str | None = None
+    district: str | None = None
+    country: str | None = None
     gst_number: str | None = None
     pan_number: str | None = None
+    cin_number: str | None = None
+    msme_number: str | None = None
+    fssai_number: str | None = None
+    tan_number: str | None = None
+    business_constitution: str | None = None
+    product_categories: list[str] | dict | None = None
+    company_description: str | None = None
+    website: str | None = None
     credit_limit_days: int | None = None
+    opening_balance: Decimal | None = None
     notes: str | None = None
     registration_status: str | None = None
     status: bool | None = None
+    portal_sales_enabled: bool | None = None
+    portal_sales_config: dict | None = None
 
 
 class supplier_out(BaseModel):
@@ -504,6 +536,19 @@ class supplier_out(BaseModel):
     approved_at: datetime | None = None
     rejection_reason: str | None = None
     correction_notes: str | None = None
+    trade_name: str | None = None
+    designation: str | None = None
+    alt_phone: str | None = None
+    alt_email: str | None = None
+    msme_number: str | None = None
+    fssai_number: str | None = None
+    tan_number: str | None = None
+    business_constitution: str | None = None
+    product_categories: list[str] | dict | None = None
+    company_description: str | None = None
+    portal_sales_enabled: bool = False
+    portal_sales_config: dict | None = None
+    portal_permissions: dict | None = None
 
     # Nested fields
     addresses: list[supplier_address_schema] = []
@@ -547,6 +592,138 @@ class supplier_terms_out(BaseModel):
     is_active: bool
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+# ── Vendor Requests & Portal Schemas ──────────────────────────────────────────
+
+class vendor_profile_request_create(BaseModel):
+    changes: dict
+
+class vendor_profile_request_review(BaseModel):
+    action: str  # approve / reject
+    review_notes: str | None = None
+
+class vendor_profile_request_out(BaseModel):
+    id: int
+    supplier_id: int
+    requested_by_user_id: int | None = None
+    status: str
+    changes: dict
+    reviewed_by: int | None = None
+    reviewed_at: datetime | None = None
+    review_notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+class vendor_item_request_create(BaseModel):
+    product_name: str
+    brand_name: str | None = None
+    brand_id: int | None = None
+    category_name: str | None = None
+    category_id: int | None = None
+    manufacturer: str | None = None
+    vendor_item_code: str | None = None
+    barcode: str | None = None
+    description: str | None = None
+    unit: str = "PCS"
+    pack_size: str | None = None
+    purchase_rate: Decimal = Decimal("0.00")
+    mrp: Decimal = Decimal("0.00")
+    proposed_selling_price: Decimal = Decimal("0.00")
+    gst_percent: Decimal = Decimal("0.00")
+    hsn_code: str | None = None
+    moq: Decimal = Decimal("1.00")
+    lead_time_days: int = 7
+    country_of_origin: str = "India"
+    image_url: str | None = None
+    brochure_url: str | None = None
+    vendor_remarks: str | None = None
+
+class vendor_item_request_review(BaseModel):
+    action: str  # approve / reject / correction_requested
+    review_notes: str | None = None
+    create_product: bool = True
+
+class vendor_item_request_out(BaseModel):
+    id: int
+    request_no: str
+    supplier_id: int
+    product_name: str
+    brand_name: str | None = None
+    brand_id: int | None = None
+    category_name: str | None = None
+    category_id: int | None = None
+    manufacturer: str | None = None
+    vendor_item_code: str | None = None
+    barcode: str | None = None
+    description: str | None = None
+    unit: str
+    pack_size: str | None = None
+    purchase_rate: Decimal
+    mrp: Decimal
+    proposed_selling_price: Decimal
+    gst_percent: Decimal
+    hsn_code: str | None = None
+    moq: Decimal
+    lead_time_days: int
+    country_of_origin: str
+    image_url: str | None = None
+    brochure_url: str | None = None
+    vendor_remarks: str | None = None
+    status: str
+    review_notes: str | None = None
+    reviewed_by: int | None = None
+    reviewed_at: datetime | None = None
+    created_product_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+class portal_settings_update(BaseModel):
+    portal_sales_enabled: bool
+    portal_sales_config: dict = Field(default_factory=dict)
+    portal_permissions: dict = Field(default_factory=dict)
+
+class po_vendor_ack_in(BaseModel):
+    vendor_expected_delivery: date | None = None
+    vendor_delivery_remarks: str | None = None
+
+class vendor_portal_user_create(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    email: str | None = None
+    password: str | None = None
+    require_password_change: bool = False
+    portal_permissions: dict | None = None
+
+class vendor_portal_user_update(BaseModel):
+    username: str | None = None
+    email: str | None = None
+    status: bool | None = None
+    portal_permissions: dict | None = None
+
+class vendor_portal_reset_password_in(BaseModel):
+    new_password: str | None = None
+    generate_reset_link: bool = True
+
+class vendor_login_in(BaseModel):
+    username: str
+    password: str
+
+class vendor_activate_in(BaseModel):
+    token: str
+    password: str = Field(..., min_length=6)
+
+class vendor_forgot_password_in(BaseModel):
+    username_or_email: str
+
+class vendor_reset_password_in(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=6)
+
+class prn_vendor_ack_in(BaseModel):
+    vendor_remarks: str | None = None
+
 
 
 # ── Ledger ────────────────────────────────────────────────────────────────────

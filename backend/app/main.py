@@ -9,7 +9,8 @@ from app.routers import (
     auth, users, roles, masters, products, customers, suppliers,
     billing, estimates, outlets, sync, reports, company, states,
     warehouse, packaging, import_export, wms, purchases, channels,
-    audit_logs, inventory, logistic, stock_reports, shop, returns, purchase_returns, dashboard, shifts, cash, accounts
+    audit_logs, inventory, logistic, stock_reports, shop, returns, purchase_returns, dashboard, shifts, cash, accounts,
+    stock_take, batches, vendor_portal, dashboard_builder
 )
 
 _settings = get_settings()
@@ -35,6 +36,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_settings.origins_list,
+    allow_origin_regex=r"https?://.*sverpsolutions\.com.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -81,6 +83,11 @@ app.include_router(dashboard.router,     prefix=API_PREFIX)
 app.include_router(shifts.router,        prefix=API_PREFIX)
 app.include_router(cash.router,          prefix=API_PREFIX)
 app.include_router(accounts.router,      prefix=API_PREFIX)
+app.include_router(stock_take.router,    prefix=API_PREFIX)
+app.include_router(batches.router,       prefix=API_PREFIX)
+app.include_router(vendor_portal.router, prefix=API_PREFIX)
+app.include_router(dashboard_builder.router, prefix=API_PREFIX)
+
 
 from fastapi.staticfiles import StaticFiles
 if not os.path.exists("uploads"):
@@ -91,6 +98,22 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 @app.get("/health", tags=["health"])
 async def health_check():
     return {"status": "ok", "app": _settings.app_name, "version": _settings.app_version}
+
+
+from fastapi import UploadFile, File
+import uuid
+
+@app.post(f"{API_PREFIX}/upload/supplier-doc")
+async def upload_supplier_doc_generic(file: UploadFile = File(...)):
+    folder = "supplier_docs"
+    upload_dir = os.path.join("uploads", folder)
+    os.makedirs(upload_dir, exist_ok=True)
+    orig_ext = os.path.splitext(file.filename or "")[1].lower() or ".pdf"
+    unique_filename = f"doc_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}{orig_ext}"
+    saved_disk_path = os.path.join(upload_dir, unique_filename)
+    with open(saved_disk_path, "wb") as f_out:
+        f_out.write(await file.read())
+    return {"file_path": f"/uploads/{folder}/{unique_filename}"}
 
 
 from fastapi import Request
@@ -109,9 +132,10 @@ async def global_exception_handler(request: Request, exc: Exception):
         f.write(traceback.format_exc())
         f.write(f"{'='*50}\n")
     
+    detail_msg = f"Internal Server Error: {str(exc)}" if _settings.debug else "Internal Server Error. Please contact administrator."
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Internal Server Error: {str(exc)}"}
+        content={"detail": detail_msg}
     )
 
 from fastapi.exceptions import RequestValidationError

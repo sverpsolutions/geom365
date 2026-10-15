@@ -31,8 +31,8 @@ export default function estimate_create_page() {
 
   useEffect(() => {
     customers_api.list({ per_page: 200 }).then(r => set_customers(r.data.data))
-    products_api.list({ per_page: 1000, status: true }).then(r => {
-      const rows = r.data.items ?? r.data
+    products_api.list({ per_page: 1000, is_active: true }).then(r => {
+      const rows = r.data.data ?? []
       set_products(rows.map((p: any) => ({
         id: p.id, name: p.name, item_code: p.item_code,
         sale_price: Number(p.sale_price), gst_percent: Number(p.gst_percent),

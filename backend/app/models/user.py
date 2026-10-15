@@ -81,6 +81,8 @@ class user(base):
     role: Mapped[str] = mapped_column(String(30), default="staff")
     role_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("roles.id"))
     outlet_id: Mapped[int | None] = mapped_column(Integer)
+    supplier_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True)
+    default_dashboard_template_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("dashboard_templates.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[bool] = mapped_column(Boolean, default=True)
     
     # HHT / WMS Permissions
@@ -91,6 +93,8 @@ class user(base):
     rack_transfer_rights: Mapped[bool] = mapped_column(Boolean, default=False)
 
     last_login: Mapped[datetime | None] = mapped_column(DateTime)
+    reset_token: Mapped[str | None] = mapped_column(String(100))
+    reset_token_expiry: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

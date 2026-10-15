@@ -337,9 +337,17 @@ async def void(eid: int, b: reason_in, db: AsyncSession = Depends(get_db), user:
 
 # ── masters (admin) ───────────────────────────────────────────────────────────
 
+ALLOWED_UPSERT_TABLES = {"cash_categories", "bank_accounts"}
+
 async def _upsert(db, table: str, data: dict, rid: Optional[int], user):
     from sqlalchemy.exc import IntegrityError
+    import re
+    if table not in ALLOWED_UPSERT_TABLES:
+        raise HTTPException(400, "Invalid target table")
     cols = list(data)
+    for c in cols:
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", c):
+            raise HTTPException(400, f"Invalid column name: {c}")
     try:
         if rid:
             await db.execute(text(f"UPDATE {table} SET {', '.join(f'{c} = :{c}' for c in cols)} WHERE id = :id"), {**data, "id": rid})

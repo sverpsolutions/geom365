@@ -85,6 +85,7 @@ const NAV_SECTIONS = [
       { label: 'PO List', to: '/purchases/po', icon: 'fas fa-file-invoice' },
       { label: 'Create New PO', to: '/purchases/po/create', icon: 'fas fa-plus-circle' },
       { label: 'GRN — Inward', to: '/purchases/grn', icon: 'fas fa-truck-loading' },
+      { label: 'New Purchase Entry', to: '/purchases/grn/new', icon: 'fas fa-cart-plus' },
       { label: 'Purchase Return', to: '/purchase-returns/create', icon: 'fas fa-undo' },
       { label: 'Debit Notes', to: '/purchase-returns', icon: 'fas fa-file-invoice' },
     ],
@@ -94,9 +95,11 @@ const NAV_SECTIONS = [
     icon: 'fas fa-warehouse',
     color: '#a855f7', // Purple
     children: [
+      { label: 'Expiry & Batches', to: '/inventory/expiry-dashboard', icon: 'fas fa-calendar-times' },
+      { label: 'Batch Master Register', to: '/inventory/batches', icon: 'fas fa-cubes' },
       { label: 'Stock Status', to: '/inventory/status', icon: 'fas fa-list' },
       { label: 'Rack / Location', to: '/masters/warehouse-racking', icon: 'fas fa-th-large' },
-      { label: 'Physical Audit', to: '/inventory/audit', icon: 'fas fa-boxes' },
+      { label: 'Stock Take / Audit', to: '/inventory/stock-take', icon: 'fas fa-boxes' },
       { label: 'Barcode Printing', to: '/inventory/barcode', icon: 'fas fa-barcode' },
       { label: 'Stock Transfer OUT', to: '/inventory/transfer/out', icon: 'fas fa-sign-out-alt' },
       { label: 'New Transfer Out', to: '/inventory/transfer/multi', icon: 'fas fa-plus-circle' },
@@ -193,6 +196,7 @@ const NAV_SECTIONS = [
     children: [
       { label: 'Company Profile', to: '/settings/company', icon: 'fas fa-building' },
       { label: 'Users & Locations', to: '/settings/users', icon: 'fas fa-user-shield' },
+      { label: 'Dashboard Builder', to: '/settings/dashboard-builder', icon: 'fas fa-th-large' },
       { label: 'Theme & Styling', to: '/settings/theme', icon: 'fas fa-palette' },
       { label: 'System Help', to: '/help', icon: 'fas fa-question-circle' },
     ],
@@ -248,17 +252,20 @@ export default function Sidebar({ collapsed, onToggle, isPinned, onPinToggle }: 
     >
       <div className={`${showFull ? 'w-[248px]' : 'w-[64px]'} flex flex-col h-full shrink-0 transition-all duration-300`}>
         {/* ── Brand Header ── */}
-        <div className="h-[64px] flex items-center px-4 gap-3 shrink-0">
-          <div className="w-9 h-9 rounded-lg bg-[#14A3A8] text-[#06222A] flex items-center justify-center shrink-0 overflow-hidden font-bold text-[15px]">
-            {logo_path && logo_path !== '/logo.jpg' ? (
-              <img src={logo_path} alt="Logo" className="w-full h-full object-cover" />
-            ) : 'MB'}
+        <div className="h-[64px] flex items-center px-4 gap-3 shrink-0 border-b border-white/5">
+          <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0 overflow-hidden p-1 shadow-inner">
+            <img 
+              src={logo_path || "/geom365_logo.png"} 
+              alt="GEOM365" 
+              className="w-full h-full object-contain" 
+              onError={(e) => { e.currentTarget.src = "/geom365_logo.png"; }}
+            />
           </div>
           
           {showFull && (
             <div className="min-w-0 flex-1 animate-in fade-in slide-in-from-left-2 duration-300">
-              <p className="text-white text-[15px] font-semibold m-0 leading-tight truncate" title={brand_name}>{brand_name}</p>
-              <span className="block text-[12px] text-[#8A9AA5] leading-tight mt-0.5">Head Office ERP</span>
+              <p className="text-white text-[15px] font-bold tracking-tight m-0 leading-tight truncate" title={brand_name || 'geom365'}>{brand_name || 'geom365'}</p>
+              <span className="block text-[11px] text-purple-200/60 font-medium leading-tight mt-0.5">Geomett Box • Retail ERP</span>
             </div>
           )}
           

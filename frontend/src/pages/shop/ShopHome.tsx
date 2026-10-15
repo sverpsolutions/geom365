@@ -6,8 +6,8 @@ import { shopService } from '../../services/shopService';
 
 
 const ShopHome: React.FC = () => {
-  const [categories, setCategories] = useState([]);
-  const [featured, setFeatured] = useState([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [featured, setFeatured] = useState<any[]>([]);
   const [banners, setBanners] = useState<any[]>([]);
   const [currentBanner, setCurrentBanner] = useState(0);
   const [loading, setLoading] = useState(true);

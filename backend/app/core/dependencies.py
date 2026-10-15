@@ -9,12 +9,13 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class current_user_dep:
-    def __init__(self, user_id: int, role: str, username: str, role_id: int | None = None):
+    def __init__(self, user_id: int, role: str, username: str, role_id: int | None = None, supplier_id: int | None = None):
         self.user_id = user_id
         self.id = user_id  # billing/estimates routers read .id
         self.role = role
         self.username = username
         self.role_id = role_id
+        self.supplier_id = supplier_id
 
 
 async def get_current_user(
@@ -38,7 +39,7 @@ async def get_current_user(
         raise exc
 
     row = await db.execute(
-        text("SELECT id, role, role_id, username, status FROM users WHERE id = :uid"),
+        text("SELECT id, role, role_id, username, status, supplier_id FROM users WHERE id = :uid"),
         {"uid": int(user_id)},
     )
     user = row.fetchone()
@@ -50,6 +51,7 @@ async def get_current_user(
         role=user.role,
         username=user.username,
         role_id=user.role_id,
+        supplier_id=user.supplier_id,
     )
 
 

@@ -16,8 +16,9 @@ from typing import List
 
 from app.models.sync import unit_wise_stock_transfer, unit_wise_stock_transfer_item
 from app.models.product import product
+from app.core.dependencies import get_current_user
 
-router = APIRouter(prefix="/logistics", tags=["logistics"])
+router = APIRouter(prefix="/logistics", tags=["logistics"], dependencies=[Depends(get_current_user)])
 
 async def generate_transfer_number(db: AsyncSession):
     # Format: TRF-LOG-YYYYMMDD-XXXX
@@ -110,7 +111,11 @@ async def get_source_transfer_details(id: int, db: AsyncSession = Depends(get_db
             "item_code": p_code,
             "barcode": p_barcode,
             "quantity": row.qty,
-            "unit": row.unit
+            "unit": row.unit,
+            "batch_id": row.batch_id,
+            "batch_no": row.batch_no,
+            "expiry_date": str(row.expiry_date) if row.expiry_date else None,
+            "mfg_date": str(row.mfg_date) if row.mfg_date else None,
         })
         
     return {

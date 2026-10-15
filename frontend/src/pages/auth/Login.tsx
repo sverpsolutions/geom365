@@ -44,21 +44,15 @@ export default function LoginPage() {
       <div className={`login-card${shake ? ' shake' : ''}`}>
         {/* header */}
         <div className="login-header">
-          <div className="login-logo">
-            <svg viewBox="0 0 48 48" fill="none" className="logo-icon">
-              <rect width="48" height="48" rx="12" fill="url(#grad1)" />
-              <path d="M14 34V18l10-6 10 6v16l-10 6-10-6Z" stroke="#fff" strokeWidth="2.5" strokeLinejoin="round" fill="rgba(255,255,255,0.15)" />
-              <path d="M24 24v16M14 18l10 6 10-6" stroke="#fff" strokeWidth="2" strokeLinejoin="round" />
-              <defs>
-                <linearGradient id="grad1" x1="0" y1="0" x2="48" y2="48">
-                  <stop stopColor="#1E8489" />
-                  <stop offset="1" stopColor="#8b5cf6" />
-                </linearGradient>
-              </defs>
-            </svg>
+          <div className="login-logo" style={{ background: 'transparent', boxShadow: 'none' }}>
+            <img 
+              src="/geom365_logo.png" 
+              alt="GEOM365 Logo" 
+              style={{ maxHeight: '68px', width: 'auto', margin: '0 auto', filter: 'drop-shadow(0 4px 12px rgba(140, 39, 133, 0.4))' }} 
+            />
           </div>
-          <h1 className="login-title">ModernBazaar</h1>
-          <p className="login-subtitle">Head Office Management System</p>
+          <h1 className="login-title" style={{ marginTop: '0.75rem', letterSpacing: '-0.02em' }}>geom365</h1>
+          <p className="login-subtitle">Geomett Box Private Limited • Enterprise Retail ERP</p>
         </div>
 
         {/* form */}
@@ -172,7 +166,7 @@ export default function LoginPage() {
 
         {/* footer */}
         <p className="login-footer">
-          ModernBazaarHO v1.0 &copy; {new Date().getFullYear()}
+          Geomett Box Private Limited • geom365 Enterprise Retail ERP &copy; {new Date().getFullYear()}
         </p>
       </div>
 
@@ -186,7 +180,7 @@ export default function LoginPage() {
           justify-content: center;
           position: relative;
           overflow: hidden;
-          background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+          background: linear-gradient(135deg, #100816 0%, #200d28 50%, #0c1224 100%);
           font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
         }
 
@@ -199,10 +193,10 @@ export default function LoginPage() {
           opacity: 0.45;
           animation: float 20s ease-in-out infinite;
         }
-        .orb-1 { width: 420px; height: 420px; top: -10%; left: -8%;  background: #1E8489; animation-delay: 0s; }
-        .orb-2 { width: 350px; height: 350px; bottom: -12%; right: -6%; background: #8b5cf6; animation-delay: -5s; }
-        .orb-3 { width: 280px; height: 280px; top: 50%; left: 60%;   background: #a78bfa; animation-delay: -10s; }
-        .orb-4 { width: 200px; height: 200px; top: 20%; right: 25%;  background: #c084fc; animation-delay: -15s; opacity: 0.3; }
+        .orb-1 { width: 420px; height: 420px; top: -10%; left: -8%;  background: #8c2785; animation-delay: 0s; }
+        .orb-2 { width: 350px; height: 350px; bottom: -12%; right: -6%; background: #2c57a4; animation-delay: -5s; }
+        .orb-3 { width: 280px; height: 280px; top: 50%; left: 60%;   background: #a56aa1; animation-delay: -10s; }
+        .orb-4 { width: 200px; height: 200px; top: 20%; right: 25%;  background: #6d1f67; animation-delay: -15s; opacity: 0.3; }
 
         @keyframes float {
           0%, 100% { transform: translate(0, 0) scale(1); }
@@ -351,7 +345,7 @@ export default function LoginPage() {
           font-size: 0.95rem;
           font-weight: 700;
           color: #fff;
-          background: linear-gradient(135deg, #1E8489, #8b5cf6);
+          background: linear-gradient(135deg, #8c2785, #2c57a4);
           border: none;
           border-radius: 0.75rem;
           cursor: pointer;
@@ -370,7 +364,7 @@ export default function LoginPage() {
         }
         .submit-btn:hover:not(:disabled) {
           transform: translateY(-1px);
-          box-shadow: 0 8px 25px rgba(99, 102, 241, 0.35);
+          box-shadow: 0 8px 25px rgba(140, 39, 133, 0.45);
         }
         .submit-btn:hover:not(:disabled)::before { opacity: 1; }
         .submit-btn:active:not(:disabled) { transform: translateY(0); }

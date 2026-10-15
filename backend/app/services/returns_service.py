@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.invoice import invoice, invoice_item, stock_ledger
 from app.models.product import product
 from app.services.billing_service import _write_stock_ledger, _update_product_stock
-from app.services import shift_service
+from app.services import shift_service, batch_service
 
 CN_PREFIX = "CN-HO-"
 ZERO = Decimal("0")
@@ -86,42 +86,44 @@ async def _original(db: AsyncSession, invoice_no: str, lock: bool = False) -> in
 
 
 async def returnable_lines(db: AsyncSession, inv: invoice) -> list[dict]:
-    """One row per product: sold, already returned (non-cancelled HO credit
-    notes), returnable qty, and the GST-inclusive amount paid for that product."""
+    """One row per product/batch: sold, already returned (non-cancelled HO credit
+    notes), returnable qty, and the GST-inclusive amount paid for that product/batch."""
     items = (await db.execute(select(invoice_item).where(invoice_item.invoice_id == inv.id))).scalars().all()
     weights = [max(line_value(inv.invoice_no, it), ZERO) for it in items]
     total_w = sum(weights) or Decimal(1)
     bill_total = Decimal(inv.total_amount or 0)
 
-    lines: dict[int, dict] = {}
+    lines: dict[tuple, dict] = {}
     for it, w in zip(items, weights):
-        row = lines.setdefault(it.product_id, {
+        k = (it.product_id, (it.batch_no or "").strip())
+        row = lines.setdefault(k, {
             "product_id": it.product_id, "item_code": it.item_code, "name": it.name,
             "unit": it.unit, "hsn_code": it.hsn_code, "gst_percent": Decimal(it.gst_percent or 0),
+            "batch_no": it.batch_no, "batch_id": it.batch_id,
+            "expiry_date": it.expiry_date,
             "sold_qty": ZERO, "paid": ZERO,
         })
         row["sold_qty"] += Decimal(it.qty or 0)
         row["paid"] += bill_total * w / total_w
 
     done = (await db.execute(
-        select(invoice_item.product_id, func.sum(invoice_item.qty), func.sum(invoice_item.total))
+        select(invoice_item.product_id, func.coalesce(invoice_item.batch_no, ''), func.sum(invoice_item.qty), func.sum(invoice_item.total))
         .join(invoice, invoice.id == invoice_item.invoice_id)
         .where(invoice.ref_invoice_no == inv.invoice_no, invoice.status != "cancelled")
-        .group_by(invoice_item.product_id)
+        .group_by(invoice_item.product_id, invoice_item.batch_no)
     )).all()
-    returned = {pid: (Decimal(q or 0), Decimal(t or 0)) for pid, q, t in done}
+    returned = {(pid, (b or '').strip()): (Decimal(q or 0), Decimal(t or 0)) for pid, b, q, t in done}
 
-    # Outlet POS lines carry the outlet item code in product_id; HO stock needs
-    # the HO product, resolved by item_code. HO bills (INV-*) already hold it.
     codes = {r["item_code"] for r in lines.values() if r["item_code"]}
     by_code = dict((await db.execute(select(product.item_code, product.id).where(product.item_code.in_(codes)))).all()) if codes else {}
     ho_bill = inv.invoice_no.startswith("INV-")
 
     out = []
-    for pid, row in lines.items():
-        rq, rt = returned.get(pid, (ZERO, ZERO))
+    for (pid, b_no), row in lines.items():
+        rq, rt = returned.get((pid, b_no), (ZERO, ZERO))
         out.append({
             **row,
+            "expiry_date": str(row["expiry_date"]) if row["expiry_date"] else None,
             "paid": _two(row["paid"]),
             "unit_price": _two(row["paid"] / row["sold_qty"]) if row["sold_qty"] else ZERO,
             "returned_qty": rq,
@@ -149,19 +151,22 @@ async def _next_cn_no(db: AsyncSession) -> str:
 
 
 async def create_return(db: AsyncSession, data, user_id: Optional[int]) -> invoice:
-    """data: invoice_no, items [{product_id, qty}], reason, refund_method, return_date."""
+    """data: invoice_no, items [{product_id, qty, batch_no?, batch_id?}], reason, refund_method, return_date."""
     if data.refund_method not in ("cash", "adjust"):
         raise ValueError("refund_method must be 'cash' or 'adjust'")
     orig = await _original(db, data.invoice_no, lock=True)  # serialises returns on one bill
     shift_id = await shift_service.guard(db, orig.outlet_id, user_id, data.return_date or date.today())
-    lines = {l["product_id"]: l for l in await returnable_lines(db, orig)}
+    raw_lines = await returnable_lines(db, orig)
+    lines_by_batch = {(l["product_id"], (l.get("batch_no") or "").strip()): l for l in raw_lines}
+    lines_by_pid = {l["product_id"]: l for l in raw_lines}
 
     rows, totals = [], {"taxable_amt": ZERO, "cgst_amount": ZERO, "sgst_amount": ZERO, "igst_amount": ZERO, "total": ZERO}
     for req in data.items:
         qty = Decimal(str(req.qty))
         if qty <= 0:
             continue
-        line = lines.get(req.product_id)
+        req_bno = (getattr(req, "batch_no", None) or "").strip()
+        line = lines_by_batch.get((req.product_id, req_bno)) or lines_by_pid.get(req.product_id)
         if not line:
             raise ValueError(f"Product {req.product_id} is not on bill {orig.invoice_no}")
         if qty > line["returnable_qty"]:
@@ -170,10 +175,18 @@ async def create_return(db: AsyncSession, data, user_id: Optional[int]) -> invoi
         calc = split_gst(amount, line["gst_percent"], orig.is_interstate)
         for k in totals:
             totals[k] += calc[k]
+        
+        batch_no = getattr(req, "batch_no", None) or line.get("batch_no")
+        batch_id = getattr(req, "batch_id", None) or line.get("batch_id")
+        exp_d = line.get("expiry_date")
+        exp_date_val = date.fromisoformat(exp_d) if exp_d and isinstance(exp_d, str) else exp_d
+
         rows.append(invoice_item(
             product_id=line["product_id"], item_code=line["item_code"], name=line["name"],
             qty=qty, unit=line["unit"], rate=_two(amount / qty), disc_val=ZERO, disc_type="₹",
-            gst_percent=line["gst_percent"], hsn_code=line["hsn_code"], **calc,
+            gst_percent=line["gst_percent"], hsn_code=line["hsn_code"],
+            batch_no=batch_no, batch_id=batch_id, expiry_date=exp_date_val,
+            **calc,
         ))
     if not rows:
         raise ValueError("Enter a return quantity for at least one item")
@@ -205,11 +218,30 @@ async def create_return(db: AsyncSession, data, user_id: Optional[int]) -> invoi
                 raise
 
     for r in rows:
-        ho_pid = lines[r.product_id]["ho_product_id"]
+        line_ref = lines_by_batch.get((r.product_id, (r.batch_no or "").strip())) or lines_by_pid.get(r.product_id)
+        ho_pid = line_ref["ho_product_id"] if line_ref else None
         if ho_pid:  # line not in HO item master -> credit note only, no stock
-            await _write_stock_ledger(db, ho_pid, "sale_return", r.qty, cn.id, "sales_return", None,
-                                      f"Credit note {cn.invoice_no} against {orig.invoice_no}", user_id)
+            await _write_stock_ledger(
+                db, ho_pid, "sale_return", r.qty, cn.id, "sales_return", orig.outlet_id,
+                f"Credit note {cn.invoice_no} against {orig.invoice_no}" + (f" (Batch: {r.batch_no})" if r.batch_no else ""),
+                user_id,
+                batch_no=r.batch_no,
+                batch_id=r.batch_id,
+                expiry_date=r.expiry_date,
+            )
             await _update_product_stock(db, ho_pid, r.qty)
+
+            # Restore location batch stock
+            if r.batch_id:
+                await batch_service.record_batch_movement(
+                    db=db,
+                    batch_id=r.batch_id,
+                    location_id=orig.outlet_id or 1,
+                    qty_delta=r.qty,
+                    movement_type="sale_return",
+                    product_id=ho_pid,
+                    allow_negative=True,
+                )
 
     if adjusted:
         orig.due_amount = Decimal(orig.due_amount) - adjusted
@@ -235,9 +267,23 @@ async def cancel_return(db: AsyncSession, return_id: int, reason: str, user_id: 
         .where(stock_ledger.ref_id == cn.id, stock_ledger.txn_type == "sale_return")
     )).all()
     for pid, qty in posted:
-        await _write_stock_ledger(db, pid, "sale_return_cancel", -qty, cn.id, "sales_return_cancel", None,
+        await _write_stock_ledger(db, pid, "sale_return_cancel", -qty, cn.id, "sales_return_cancel", cn.outlet_id,
                                   f"Cancel {cn.invoice_no}: {reason}", user_id)
         await _update_product_stock(db, pid, -qty)
+
+    # Revert location batch stock
+    cn_items = (await db.execute(select(invoice_item).where(invoice_item.invoice_id == cn.id))).scalars().all()
+    for it in cn_items:
+        if it.batch_id:
+            await batch_service.record_batch_movement(
+                db=db,
+                batch_id=it.batch_id,
+                location_id=cn.outlet_id or 1,
+                qty_delta=-it.qty,
+                movement_type="sale",
+                product_id=it.product_id,
+                allow_negative=True,
+            )
 
     if cn.adjusted_amount:
         orig = (await db.execute(select(invoice).where(invoice.invoice_no == cn.ref_invoice_no).with_for_update())).scalar_one_or_none()
