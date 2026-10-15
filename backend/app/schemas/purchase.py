@@ -303,6 +303,7 @@ class purchase_item_in(BaseModel):
     supplier_batch_no: str | None = None
     mfg_date: date | None = None
     expiry_date: date | None = None
+    po_item_id: int | None = None
 
 
 class purchase_create(BaseModel):
@@ -316,6 +317,7 @@ class purchase_create(BaseModel):
     payment_mode: str = "credit"
     notes: str | None = None
     action: str = "update"  # draft | update
+    po_id: int | None = None  # GRN against PO
     items: list[purchase_item_in]
 
     @field_validator("invoice_no")

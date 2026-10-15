@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { purchases_api, type purchase_detail } from '../../api/purchases'
+import { purchases_api, type purchase_detail, type po_list_item } from '../../api/purchases'
 import { products_api, type product_search_item } from '../../api/products'
 import { masters_api } from '../../api/masters'
 import { suppliers_api } from '../../api/suppliers'
@@ -41,6 +41,8 @@ interface PurchaseRow {
   has_batch_tracking?: boolean
   has_expiry_tracking?: boolean
   batches?: SubBatch[]
+  po_item_id?: number      // GRN against PO: linked PO line
+  po_pending?: number      // PO qty still to receive
 }
 
 const COMMON_TAX_RATES = [0, 3, 5, 12, 18, 28, 40]
@@ -96,6 +98,8 @@ export default function PurchaseEntry() {
 
   // Grid Items State
   const [rows, setRows] = useState<PurchaseRow[]>([])
+  const [poId, setPoId] = useState<number | ''>('')
+  const [openPos, setOpenPos] = useState<po_list_item[]>([])
   const [hsnList, setHsnList] = useState<{ hsn_code: string; gst_percent: number }[]>([])
 
   // Totals State
@@ -167,6 +171,7 @@ export default function PurchaseEntry() {
   /* ── 2. Supplier Details Auto-fill ──────────────────────────────────────── */
   const handleSupplierChange = (supId: number | '') => {
     setSelectedSupplierId(supId)
+    unlinkPO()
     if (!supId) {
       setSupplierGstin('')
       setSupplierAddress('')
@@ -199,6 +204,7 @@ export default function PurchaseEntry() {
             setAdditionalDiscount(Number(parsed.additionalDiscount || 0))
             setAmountPaid(Number(parsed.amountPaid || 0))
             setNotes(parsed.notes || '')
+            setPoId(parsed.poId || '')
             setDraftStatus(`Draft resumed (${parsed.timeStr || 'recently'})`)
             return
           }
@@ -226,6 +232,7 @@ export default function PurchaseEntry() {
         additionalDiscount,
         amountPaid,
         notes,
+        poId,
         timestamp: now.toLocaleDateString(),
         timeStr: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }
@@ -237,7 +244,7 @@ export default function PurchaseEntry() {
       }
     }, 2500)
     return () => clearTimeout(timer)
-  }, [selectedSupplierId, selectedOutletId, paymentMode, invoiceNo, invoiceDate, rows, additionalDiscount, amountPaid, notes])
+  }, [selectedSupplierId, selectedOutletId, paymentMode, invoiceNo, invoiceDate, rows, additionalDiscount, amountPaid, notes, poId])
 
   /* ── 4. Load from Approved PO ───────────────────────────────────────────── */
   const loadFromPO = async (poId: number) => {
@@ -252,9 +259,11 @@ export default function PurchaseEntry() {
       if (po.vendor_invoice_no) setInvoiceNo(po.vendor_invoice_no)
       if (po.vendor_invoice_date) setInvoiceDate(po.vendor_invoice_date)
       setNotes(`Purchase against PO #${po.po_no}`)
+      setPoId(po.id)
 
-      const mappedRows: PurchaseRow[] = (po.items || []).map(it => {
-        const pendingQty = Math.max(0, Number(it.order_qty) - Number(it.received_qty || 0)) || Number(it.order_qty) || 1
+      const pendingOf = (it: any) => Math.max(0, Number(it.order_qty || it.qty || 0) - Number(it.received_qty || 0))
+      const mappedRows: PurchaseRow[] = (po.items || []).filter(it => pendingOf(it) > 0).map(it => {
+        const pendingQty = pendingOf(it)
         return {
           product_id: it.product_id,
           product_name: it.product_name,
@@ -263,7 +272,6 @@ export default function PurchaseEntry() {
           basic_cost: Number(it.rate || 0),
           disc_val: 0,
           disc_type: '₹',
-          hsn_code: '',
           tax_percent: Number(it.gst_percent || 0),
           mrp: Number(it.mrp || 0),
           selling_price: Number(it.rate || 0) * 1.15,
@@ -273,6 +281,9 @@ export default function PurchaseEntry() {
           sales_lp: 0,
           qty: pendingQty,
           free_qty: 0,
+          hsn_code: it.hsn_code || '',
+          po_item_id: it.id,
+          po_pending: pendingQty,
         }
       })
       setRows(mappedRows)
@@ -280,6 +291,20 @@ export default function PurchaseEntry() {
     } catch (err: any) {
       toast.error('Failed to load PO details')
     }
+  }
+
+  // Open (approved / part-received) POs of the selected supplier
+  useEffect(() => {
+    setOpenPos([])
+    if (!selectedSupplierId) return
+    purchases_api.list_pos({ supplier_id: Number(selectedSupplierId), status: 'approved', per_page: 100 })
+      .then(r => setOpenPos((r.data.data || []).filter(p => p.status === 'approved' || p.status === 'partial')))
+      .catch(() => {})
+  }, [selectedSupplierId])
+
+  const unlinkPO = () => {
+    setPoId('')
+    setRows(prev => prev.map(({ po_item_id, po_pending, ...r }) => r))
   }
 
   /* ── 5. Product Search & Scanner Logic ──────────────────────────────────── */
@@ -707,6 +732,7 @@ export default function PurchaseEntry() {
     setRows([])
     setInvoiceNo('')
     setSelectedSupplierId('')
+    setPoId('')
     setSupplierGstin('')
     setSupplierAddress('')
     setAdditionalDiscount(0)
@@ -841,6 +867,7 @@ export default function PurchaseEntry() {
             batch_no: b.batch_no?.trim() || undefined,
             mfg_date: b.mfg_date || undefined,
             expiry_date: b.expiry_date || undefined,
+            po_item_id: r.po_item_id,
           })
         }
       } else {
@@ -861,6 +888,7 @@ export default function PurchaseEntry() {
           batch_no: (r.batches?.[0]?.batch_no || r.batch_no)?.trim() || undefined,
           mfg_date: r.batches?.[0]?.mfg_date || r.mfg_date || undefined,
           expiry_date: r.batches?.[0]?.expiry_date || r.expiry_date || undefined,
+          po_item_id: r.po_item_id,
         })
       }
     }
@@ -876,6 +904,7 @@ export default function PurchaseEntry() {
       payment_mode: cleanPaymentMode,
       notes: notes.trim() || undefined,
       action: action,
+      po_id: poId || undefined,
       items: flatItems,
     }
 
@@ -1014,6 +1043,35 @@ export default function PurchaseEntry() {
                   title={`GST: ${s.gst_number || s.gstin || 'None'} | ${s.address || ''}, ${s.city || ''}, ${s.state || ''}`}
                 >
                   {s.name} {s.city ? `(${s.city})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center">
+            <label style={{ width: '60px', textAlign: 'right', color: '#555', marginRight: '6px' }}>
+              Against PO:
+            </label>
+            <select
+              value={poId}
+              onChange={e => (e.target.value ? loadFromPO(Number(e.target.value)) : unlinkPO())}
+              disabled={!selectedSupplierId}
+              style={{
+                width: '220px',
+                height: '24px',
+                border: '1px solid #ccc',
+                borderRadius: '2px',
+                padding: '2px 6px',
+                fontSize: '12px',
+                backgroundColor: poId ? '#ecfdf5' : '#fff',
+              }}
+              className="focus:border-blue-500 focus:outline-hidden"
+            >
+              <option value="">{selectedSupplierId ? (openPos.length ? '-- Direct (no PO) --' : '-- No open PO --') : '-- Select supplier first --'}</option>
+              {poId && !openPos.some(p => p.id === poId) && <option value={poId}>PO #{poId}</option>}
+              {openPos.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.po_no} | {p.po_date} | {p.status === 'partial' ? 'Part received' : 'Approved'} | {p.item_count} items
                 </option>
               ))}
             </select>
@@ -1410,6 +1468,14 @@ export default function PurchaseEntry() {
                       <span style={{ color: '#1e40af', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {r.product_name}
                       </span>
+                      {r.po_item_id && (
+                        <span
+                          title="Qty pending on the PO"
+                          className={`text-[10px] px-1 rounded shrink-0 font-bold ${Number(r.qty || 0) > Number(r.po_pending || 0) ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}
+                        >
+                          PO bal {r.po_pending}
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => openBatchModal(index)}

@@ -121,6 +121,10 @@ async def _product_info(db: AsyncSession, product_id: int) -> dict:
     }
 
 
+def _po_ordered(pi) -> Decimal:
+    return Decimal(str(pi.order_qty or pi.qty or 0))
+
+
 async def _log_audit(db: AsyncSession, po_id: int, action: str, description: str = "",
                      old_status: str | None = None, new_status: str | None = None,
                      user_id: int | None = None):
@@ -1057,6 +1061,34 @@ async def create_purchase(
         prod_rows = (await db.execute(select(product_model).where(product_model.id.in_(prod_ids)))).scalars().all() if prod_ids else []
         prod_map = {p.id: p for p in prod_rows}
 
+        # GRN against PO: lock the PO, check supplier/status, and never receive more than pending qty
+        po_h, po_rows, po_recv = None, [], {}
+        if body.po_id:
+            po_h = (await db.execute(select(po_header).where(po_header.id == body.po_id).with_for_update())).scalar_one_or_none()
+            if not po_h:
+                raise HTTPException(404, "Purchase order not found.")
+            if po_h.supplier_id != body.supplier_id:
+                raise HTTPException(400, f"PO {po_h.po_no} belongs to a different supplier.")
+            if po_h.status not in ("approved", "partial"):
+                raise HTTPException(400, f"PO {po_h.po_no} is '{po_h.status}'. Only approved or partially received POs can be received.")
+            po_rows = (await db.execute(select(po_item).where(po_item.po_id == po_h.id))).scalars().all()
+            po_map = {pi.id: pi for pi in po_rows}
+            for it in body.items:
+                if it.po_item_id is None:
+                    continue
+                pi = po_map.get(it.po_item_id)
+                if not pi or pi.product_id != it.product_id:
+                    raise HTTPException(400, f"Item #{it.product_id} is not part of PO {po_h.po_no}.")
+                po_recv[pi.id] = po_recv.get(pi.id, Decimal("0")) + Decimal(str(it.qty or 0))
+            for pid, q in po_recv.items():
+                pi = po_map[pid]
+                pending = _po_ordered(pi) - Decimal(str(pi.received_qty or 0))
+                if q > pending:
+                    p_obj = prod_map.get(pi.product_id)
+                    raise HTTPException(400, f"'{p_obj.name if p_obj else pi.product_id}': received qty {q} is more than PO pending qty {pending}.")
+        elif any(it.po_item_id for it in body.items):
+            raise HTTPException(400, "PO lines sent without a PO.")
+
         for it in body.items:
             qty_dec = Decimal(str(it.qty or 0))
             free_dec = Decimal(str(it.free_qty or 0))
@@ -1171,6 +1203,7 @@ async def create_purchase(
                 "batch_id": created_batch_id,
                 "mfg_date": mfg_val,
                 "expiry_date": exp_val,
+                "po_item_id": it.po_item_id if po_h else None,
             })
 
         if not item_rows:
@@ -1225,6 +1258,7 @@ async def create_purchase(
             payment_mode=pm,
             notes=body.notes,
             status=status_str,
+            po_id=po_h.id if po_h else None,
             created_by=user.user_id,
         )
         db.add(h)
@@ -1252,7 +1286,19 @@ async def create_purchase(
                 batch_id=it.get("batch_id"),
                 mfg_date=it.get("mfg_date"),
                 expiry_date=it.get("expiry_date"),
+                po_item_id=it.get("po_item_id"),
             ))
+
+        # Update PO received qty + status (drafts do not move stock, so they do not count as received)
+        if po_h and not is_draft:
+            for pi in po_rows:
+                if pi.id in po_recv:
+                    pi.received_qty = Decimal(str(pi.received_qty or 0)) + po_recv[pi.id]
+            old_status = po_h.status
+            po_h.status = "completed" if all(Decimal(str(pi.received_qty or 0)) >= _po_ordered(pi) for pi in po_rows) else "partial"
+            po_h.updated_at = datetime.now()
+            await _log_audit(db, po_h.id, f"GRN {purchase_no}", f"Received against invoice {inv_clean}",
+                             old_status=old_status, new_status=po_h.status, user_id=user.user_id)
 
         # Update product stock, landed cost, and location stock if not draft
         if not is_draft:
