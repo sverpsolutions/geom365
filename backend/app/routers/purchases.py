@@ -96,7 +96,7 @@ async def _outlet_name(db: AsyncSession, outlet_id: int | None) -> str | None:
 
 async def _product_info(db: AsyncSession, product_id: int) -> dict:
     row = await db.execute(
-        text("SELECT name, item_code, unit, purchase_price, mrp, gst_percent, hsn_code, cost_price, wsp, barcode FROM products WHERE id = :id"),
+        text("SELECT name, item_code, unit, purchase_price, mrp, gst_percent, hsn_code, cost_price, wsp, barcode, shelf_life_days, has_batch_tracking, is_batch_required, has_expiry_tracking FROM products WHERE id = :id"),
         {"id": product_id}
     )
     r = row.fetchone()
@@ -118,6 +118,9 @@ async def _product_info(db: AsyncSession, product_id: int) -> dict:
         "gst_percent": r[5] if r[5] is not None else 0,
         "hsn_code": r[6],
         "barcode": r[9] if len(r) > 9 and r[9] is not None else "",
+        "shelf_life_days": r[10],
+        "has_batch_tracking": bool(r[11] or r[12]),
+        "has_expiry_tracking": bool(r[13]),
     }
 
 
@@ -614,6 +617,8 @@ async def get_po(po_id: int, db: AsyncSession = Depends(get_db)):
             "sale_7d": float(it.sale_7d or 0), "sale_30d": float(it.sale_30d or 0),
             "avg_daily_sale": float(it.avg_daily_sale or 0), "suggested_qty": float(it.suggested_qty or 0),
             "mrp": float(it.mrp or 0), "markdown_percent": float(it.markdown_percent or 0),
+            "shelf_life_days": p.get("shelf_life_days"), "has_batch_tracking": p.get("has_batch_tracking"),
+            "has_expiry_tracking": p.get("has_expiry_tracking"),
         })
 
     # Distributions with outlet names

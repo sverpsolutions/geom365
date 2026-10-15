@@ -2147,6 +2147,15 @@ const ProductAdd = () => {
                     <label key={key} className="flex items-center gap-2 cursor-pointer text-sm font-medium">
                       <input type="checkbox" {...register(key as any)} className="w-4 h-4 accent-blue-600 rounded" />
                       {label}
+                      {key === 'is_batch_required' && watch('is_batch_required') && (
+                        <span className="flex items-center gap-1 ml-1" title="GRN: Expiry = Mfg Date + these days">
+                          <input type="number" min="0" placeholder="Shelf days"
+                            value={watch('shelf_life_days') ?? ''}
+                            onChange={e => setValue('shelf_life_days', e.target.value as any, { shouldDirty: true })}
+                            className="w-24 h-7 px-2 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-mono bg-white dark:bg-slate-800" />
+                          <span className="text-[10px] text-slate-400">days (Mfg + days = Expiry)</span>
+                        </span>
+                      )}
                     </label>
                   ))}
                 </div>

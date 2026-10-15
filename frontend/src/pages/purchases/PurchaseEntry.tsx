@@ -284,6 +284,12 @@ export default function PurchaseEntry() {
           hsn_code: it.hsn_code || '',
           po_item_id: it.id,
           po_pending: pendingQty,
+          batch_no: '',
+          mfg_date: '',
+          expiry_date: '',
+          shelf_life_days: (it as any).shelf_life_days,
+          has_batch_tracking: !!(it as any).has_batch_tracking,
+          has_expiry_tracking: !!(it as any).has_expiry_tracking,
         }
       })
       setRows(mappedRows)
