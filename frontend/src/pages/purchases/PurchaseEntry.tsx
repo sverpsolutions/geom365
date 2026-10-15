@@ -297,7 +297,7 @@ export default function PurchaseEntry() {
   useEffect(() => {
     setOpenPos([])
     if (!selectedSupplierId) return
-    purchases_api.list_pos({ supplier_id: Number(selectedSupplierId), status: 'approved', per_page: 100 })
+    purchases_api.list_pos({ supplier_id: Number(selectedSupplierId), per_page: 100 })
       .then(r => setOpenPos((r.data.data || []).filter(p => p.status === 'approved' || p.status === 'partial')))
       .catch(() => {})
   }, [selectedSupplierId])

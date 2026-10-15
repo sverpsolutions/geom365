@@ -412,7 +412,7 @@ async def create_po(
             po_no=po_no, supplier_id=body.supplier_id, outlet_id=body.outlet_id,
             po_date=body.po_date, expected_date=body.expected_date,
             delivery_days=body.delivery_days, total_amount=body.total_amount,
-            status=body.status, approval_status="draft" if body.status == "draft" else "pending_approval",
+            status=body.status, approval_status="draft" if body.status == "draft" else ("approved" if body.status == "approved" else "pending_approval"),
             markdown_enabled=body.markdown_enabled, terms=body.terms, notes=body.notes,
             created_by=user.user_id,
         )
@@ -481,7 +481,7 @@ async def create_multi_po(
             po_no=master_po_no, supplier_id=body.supplier_id, outlet_id=None,
             po_date=body.po_date, expected_date=body.expected_date,
             delivery_days=body.delivery_days, total_amount=body.total_amount,
-            status=body.status, approval_status="draft" if body.status == "draft" else "pending_approval",
+            status=body.status, approval_status="draft" if body.status == "draft" else ("approved" if body.status == "approved" else "pending_approval"),
             markdown_enabled=body.markdown_enabled, terms=body.terms, notes=body.notes,
             created_by=user.user_id, is_master=True
         )
@@ -530,7 +530,7 @@ async def create_multi_po(
                 po_no=child_po_no, supplier_id=body.supplier_id, outlet_id=oid,
                 po_date=body.po_date, expected_date=body.expected_date,
                 delivery_days=body.delivery_days, total_amount=Decimal("0"),
-                status=body.status, approval_status="draft" if body.status == "draft" else "pending_approval",
+                status=body.status, approval_status="draft" if body.status == "draft" else ("approved" if body.status == "approved" else "pending_approval"),
                 markdown_enabled=body.markdown_enabled, terms=body.terms, notes=body.notes,
                 created_by=user.user_id, is_master=False, parent_po_id=h.id
             )
