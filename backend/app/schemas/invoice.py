@@ -103,6 +103,8 @@ class invoice_create(BaseModel):
     round_off: bool = False  # round grand total to nearest rupee
     # split payment: when given, replaces payment_mode/paid_amount (one payment row per entry)
     payments: list[split_payment_in] = []
+    # POS: run the scheme engine server-side and add its discounts / free lines (client never sends them)
+    apply_schemes: bool = False
 
 
 class invoice_update(BaseModel):

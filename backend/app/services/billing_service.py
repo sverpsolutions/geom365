@@ -16,7 +16,7 @@ from app.models.invoice import (
 )
 from app.models.product import product as product_model
 from app.models.outlet import outlet as outlet_model
-from app.services import shift_service, batch_service
+from app.services import shift_service, batch_service, scheme_service
 from app.schemas.invoice import (
     invoice_create, payment_in,
     estimate_create, estimate_item_in, invoice_item_in,
@@ -207,6 +207,25 @@ async def create_invoice(
     items_data = []
     location_id = data.outlet_id or 1
 
+    schemes = None
+    if data.apply_schemes and data.items:
+        modes = {p.payment_mode for p in data.payments} if data.payments else {data.payment_mode}
+        pay_mode = "cash" if modes <= scheme_service.CASH_LIKE else next(iter(modes))
+        schemes = await scheme_service.evaluate(
+            db, customer_id=data.customer_id, outlet_id=data.outlet_id, payment_mode=pay_mode, bill_date=data.invoice_date,
+            at=(data.invoice_datetime or datetime.now()).time(),
+            items=[{"product_id": it.product_id, "qty": it.qty, "gst": it.gst_percent,
+                    "rate": _two(it.rate * (1 + it.gst_percent / Decimal("100")))} for it in data.items])
+        for it, dv in zip(data.items, schemes["line_disc_val"]):
+            if dv > 0 and not (it.disc_type == "%" and it.disc_val > 0):  # a manual % discount wins over the scheme
+                it.disc_type, it.disc_val = "₹", it.disc_val + dv
+        for f in schemes["free_items"]:
+            data.items.append(invoice_item_in(product_id=f["product_id"], name=f["name"], qty=f["qty"], rate=Decimal("0"),
+                                              gst_percent=f["gst_percent"]))
+        if schemes["applied"]:
+            data.notes = ((data.notes + "\n") if data.notes else "") + "Schemes: " + ", ".join(
+                f"{a['scheme_name']}" + (f" (-₹{a['discount']})" if a["discount"] > 0 else "") for a in schemes["applied"])
+
     for item_in in data.items:
         # Fetch product to check lifecycle status and batch tracking flags
         prod_q = await db.execute(select(product_model).where(product_model.id == item_in.product_id))
@@ -360,6 +379,10 @@ async def create_invoice(
             shift_id=shift_id,
         ))
         await db.flush()  # next _next_payment_no must count this row
+
+    if schemes and schemes["applied"]:
+        await scheme_service.log_applied(db, invoice_id=inv.id, invoice_no=invoice_no, outlet_id=data.outlet_id,
+                                         customer_id=data.customer_id, result=schemes, user_id=user_id)
 
     await db.commit()
     await db.refresh(inv)

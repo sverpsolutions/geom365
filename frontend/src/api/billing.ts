@@ -105,6 +105,7 @@ export interface invoice_create {
   paid_amount?: number
   round_off?: boolean
   payments?: { payment_mode: string; amount: number }[]  // split payment
+  apply_schemes?: boolean  // POS: server applies active schemes
 }
 
 export interface estimate_item_in {

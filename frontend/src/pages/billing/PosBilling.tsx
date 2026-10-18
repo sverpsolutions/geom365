@@ -14,6 +14,7 @@ import { masters_api } from '../../api/masters'
 import { shifts_api, type shift_status } from '../../api/shifts'
 import { useAuthStore } from '../../store/authStore'
 import { printReceipt } from '../../utils/printReceipt'
+import { schemes_api, type eval_result } from '../../api/schemes'
 
 interface Line { key: number; product_id: number; name: string; item_code: string | null; barcode: string | null
   hsn_code: string | null; unit: string; mrp: number; rate: number; qty: number; gst: number }
@@ -95,21 +96,37 @@ export default function PosBilling() {
 
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 30000); return () => clearInterval(t) }, [])
 
+  // ── schemes: the server engine decides (and re-decides at save); the screen only shows its answer ──
+  const schPay = mode === 'split' ? 'cash' : mode  // split = cash + card + UPI, all paid now
+  const schKey = JSON.stringify([lines.map(l => [l.product_id, l.qty, l.rate]), customer.id, outletId, schPay, invDate])
+  const [sch, setSch] = useState<{ key: string; res: eval_result } | null>(null)
+  useEffect(() => {
+    if (!lines.length) { setSch(null); return }
+    const key = schKey
+    const h = setTimeout(() => schemes_api.evaluate({
+      items: lines.map(l => ({ product_id: l.product_id, qty: l.qty, rate: l.rate, gst: l.gst })),
+      customer_id: customer.id, outlet_id: outletId, payment_mode: schPay, bill_date: invDate,
+    }).then(r => setSch({ key, res: r.data })).catch(() => setSch(null)), 300)
+    return () => clearTimeout(h)
+  }, [schKey])
+  const schRes = sch?.key === schKey ? sch.res : null
+
   // ── totals: same rounding steps as billing_service._calc_item so screen == saved bill ──
   // GST is inside the shelf price; CD % comes off each line before GST, i.e. CD % off the selling price
   const t = useMemo(() => {
-    let gross = 0, taxable = 0, mrpTotal = 0, qty = 0, net = 0, cd = 0
+    let gross = 0, taxable = 0, mrpTotal = 0, qty = 0, net = 0, cd = 0, scheme = 0
     const gstBy = { cgst: 0, sgst: 0 }
-    for (const l of lines) {
-      const ex = r2(l.qty * exRate(l)), cdTx = r2(ex * cdPct / 100), tx = r2(ex - cdTx), half = r2(r2(l.gst / 2) * tx / 100)
-      gross += l.qty * l.rate; taxable += tx; mrpTotal += l.qty * (l.mrp || l.rate); qty += l.qty
+    lines.forEach((l, i) => {
+      const sd = r2(Number(schRes?.line_disc_val[i] || 0) * l.qty)   // scheme discount, GST-excl., as the server books it
+      const ex = r2(r2(l.qty * exRate(l)) - sd), cdTx = r2(ex * cdPct / 100), tx = r2(ex - cdTx), half = r2(r2(l.gst / 2) * tx / 100)
+      gross += l.qty * l.rate; taxable += tx; mrpTotal += l.qty * (l.mrp || l.rate); qty += l.qty; scheme += r2(sd * (1 + l.gst / 100))
       gstBy.cgst += half; gstBy.sgst += half; net += r2(tx + 2 * half); cd += r2(cdTx * (1 + l.gst / 100))
-    }
+    })
     const beforeRound = r2(net)
     const grand = roundOff ? Math.round(beforeRound) : beforeRound
     return { gross: r2(gross), taxable: r2(taxable), cgst: r2(gstBy.cgst), sgst: r2(gstBy.sgst), cd: r2(cd), roundOffAmt: r2(grand - beforeRound),
-             grand, mrpTotal: r2(mrpTotal), itemDisc: r2(mrpTotal - gross), save: r2(mrpTotal - grand), qty }
-  }, [lines, cdPct, roundOff])
+             grand, mrpTotal: r2(mrpTotal), itemDisc: r2(mrpTotal - gross), save: r2(mrpTotal - grand), qty, scheme: r2(scheme) }
+  }, [lines, cdPct, roundOff, schRes])
 
   // split: 2nd amount defaults to whatever the 1st leaves of the bill
   const splitAmts = [Number(split[0].amt || 0), split[1].amt === '' ? Math.max(0, r2(t.grand - Number(split[0].amt || 0))) : Number(split[1].amt)]
@@ -242,12 +259,13 @@ export default function PosBilling() {
     if (mode === 'credit' && customer.id === WALK_IN.id) return toast.error('Credit bills need a customer (not Walk-in)')
     if (!outletId) return toast.error('Select the billing location first')
     if (mode === 'split' && paid > t.grand) return toast.error(`Split total ${inr(paid)} is more than the bill ${inr(t.grand)}`)
+    if (!schRes) return toast('Checking schemes… press Save again in a moment')
     const payments = mode === 'split' ? split.map((p, i) => ({ payment_mode: p.mode, amount: r2(splitAmts[i]) })).filter(p => p.amount > 0) : undefined
     setSaving(true)
     try {
       const res = await billing_api.create_invoice({
         outlet_id: outletId ?? undefined, customer_id: customer.id, invoice_type: invType, invoice_date: invDate, payment_mode: mode,
-        cd_percent: cdPct, round_off: roundOff, notes: notes.trim() || undefined, paid_amount: paid, payments,
+        cd_percent: cdPct, round_off: roundOff, notes: notes.trim() || undefined, paid_amount: paid, payments, apply_schemes: true,
         items: lines.map(l => ({
           product_id: l.product_id, item_code: l.item_code ?? undefined, name: l.name, qty: l.qty, unit: l.unit,
           rate: exRate(l), disc_val: 0, disc_type: '₹',
@@ -418,7 +436,8 @@ export default function PosBilling() {
                 return (
                   <tr key={l.key} onClick={() => setActive(l.key)} className={active === l.key ? 'bg-sky-50' : ''}>
                     <td className="border border-black/15 px-2">{i + 1}</td>
-                    <td className="border border-black/15 px-2 py-1"><div className="font-semibold">{l.name}</div><div className="text-[11px] text-gray-400">{l.unit}{l.hsn_code ? ` · HSN ${l.hsn_code}` : ''}</div></td>
+                    <td className="border border-black/15 px-2 py-1"><div className="font-semibold">{l.name}</div><div className="text-[11px] text-gray-400">{l.unit}{l.hsn_code ? ` · HSN ${l.hsn_code}` : ''}</div>
+                      {Number(schRes?.line_discount[i] || 0) > 0 && <div className="text-[11px] font-semibold text-green-700"><i className="fas fa-tag mr-1" />Scheme − {inr(Number(schRes!.line_discount[i]))}</div>}</td>
                     <td className="border border-black/15 px-1 text-right">
                       <input id={`pos-qty-${l.key}`} type="number" min={0} step="0.001" value={l.qty} onFocus={() => setActive(l.key)}
                         onChange={e => update(l.key, { qty: Number(e.target.value) })} onKeyDown={e => e.key === 'Enter' && searchRef.current?.focus()}
@@ -446,6 +465,15 @@ export default function PosBilling() {
                   </tr>
                 )
               })}
+              {schRes?.free_items.map((f, i) => (
+                <tr key={`free-${i}`} className="bg-purple-50 text-purple-800">
+                  <td className="border border-black/15 px-2"><i className="fas fa-gift" /></td>
+                  <td className="border border-black/15 px-2 py-1 font-semibold">{f.name} <span className="text-[11px] font-normal">— FREE ({f.scheme_name})</span></td>
+                  <td className="border border-black/15 px-2 text-right">{Number(f.qty)}</td>
+                  <td colSpan={5} className="border border-black/15 px-2 text-[11px]">Added to the bill at ₹0 on save</td>
+                  <td className="border border-black/15 px-2 text-right font-bold">0.00</td><td className="border border-black/15" />
+                </tr>
+              ))}
             </tbody>
             {lines.length > 0 && (
               <tfoot className="bg-[#E7E7EA] font-bold"><tr>
@@ -499,6 +527,8 @@ export default function PosBilling() {
                 <div className="px-4 py-2 space-y-1 bg-gray-50">
                   <Row l="MRP Total" v={inr(t.mrpTotal)} />
                   <Row l="Item Discount (MRP→SP)" v={inr(t.itemDisc)} c="text-green-700" />
+                  {t.scheme > 0 && <Row l={`Scheme Discount (${schRes?.applied.filter(a => Number(a.discount) > 0).map(a => a.scheme_name).join(', ')})`} v={'- ' + inr(t.scheme)} c="text-green-700" />}
+                  {schRes?.credit_notes.map((c, i) => <Row key={i} l={`Credit note earned — ${c.scheme_name}`} v={inr(Number(c.amount))} c="text-blue-700" />)}
                   <Row l="CGST (incl.)" v={inr(t.cgst)} /><Row l="SGST (incl.)" v={inr(t.sgst)} />
                   <div className="flex justify-between pt-1 border-t border-dashed border-green-600 font-bold text-green-700"><span>🎉 Total Saving</span><span>{inr(Math.max(0, t.save))}</span></div>
                 </div>

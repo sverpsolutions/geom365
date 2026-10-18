@@ -13,6 +13,7 @@ import VendorPortal from '../pages/suppliers/VendorPortal';
 import VendorRegistration from '../pages/suppliers/VendorRegistration';
 import HsnMaster from '../pages/masters/HsnMaster';
 import PosBilling from '../pages/billing/PosBilling';
+import Schemes from '../pages/promotions/Schemes';
 import InvoiceList from '../pages/billing/InvoiceList';
 import InvoiceCreate from '../pages/billing/InvoiceCreate';
 import InvoiceView from '../pages/billing/InvoiceView';
@@ -213,7 +214,7 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '410', path: '/purchases/grn/:id', component: Purchases, title: 'GRN Detail' },
   { id: '411', path: '/purchases/grn/print/:id', component: GRNPrint, title: 'GRN Print' },
   { id: '603', path: '/accounts/bills', component: BillEntry, title: 'Bill Entry (SPS)' },
-  { id: '1101', path: '/schemes', component: () => <ComingSoon name="Schemes" />, title: 'Schemes' },
+  { id: '1101', path: '/schemes', component: Schemes, title: 'Schemes' },
   { id: '1102', path: '/bulk-pricing', component: () => <ComingSoon name="Bulk Discount" />, title: 'Bulk Discount' },
   { id: '1201', path: '/processing', component: () => <ComingSoon name="Processing" />, title: 'Processing' },
   { id: '1202', path: '/processing/receive', component: () => <ComingSoon name="Receive New Lot" />, title: 'Receive New Lot' },
