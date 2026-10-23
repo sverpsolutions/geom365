@@ -1,6 +1,6 @@
 import api from './axios'
 
-export type scheme_type = 'QTY_SLAB' | 'VALUE_DISC' | 'FREE_ITEM' | 'MIX_MATCH' | 'CARTON' | 'TARGET' | 'CASH_DISC' | 'CREDIT_NOTE' | 'CHEAPEST_FREE'
+export type scheme_type = 'QTY_SLAB' | 'VALUE_DISC' | 'FREE_ITEM' | 'MIX_MATCH' | 'CARTON' | 'TARGET' | 'CASH_DISC' | 'CREDIT_NOTE' | 'CHEAPEST_FREE' | 'BULK_TIER'
 
 export interface scheme_slab { min_qty: number; max_qty: number; min_value: number; free_qty: number
   discount_percent: number; discount_percent2: number; discount_value: number; free_item_id: number | null }
@@ -10,6 +10,7 @@ export interface scheme_form {
   name: string; scheme_type: scheme_type; apply_on: string; priority: number
   start_date: string; end_date: string; start_time: string | null; end_time: string | null
   is_active: boolean; outlet_ids: number[]; customer_ids: number[]; product_ids: number[]
+  customer_types: string[]; qty_basis: 'line' | 'total'
   brand_id: number | null; category_id: number | null
   min_qty: number; min_value: number; discount_percent: number; discount_percent2: number; discount_value: number
   free_qty: number; free_item_id: number | null; is_recursive: boolean; is_combination_allowed: boolean
@@ -25,6 +26,7 @@ export interface scheme_row {
   discount_percent: string; discount_percent2: string; discount_value: string; free_qty: string; min_qty: string; min_value: string
   outlet_ids: number[] | null; brand_name: string | null; category_name: string | null; item_count: number
   bills: number; discount_given: string
+  slabs: scheme_slab[]; customer_types: string[] | null; qty_basis: 'line' | 'total'; max_benefit_per_invoice: string
 }
 
 export interface scheme_detail extends scheme_form {
@@ -47,7 +49,7 @@ export interface eval_payload {
 
 export const schemes_api = {
   types: () => api.get<{ code: scheme_type; label: string }[]>('/schemes/types'),
-  list: (params: { status?: string; search?: string }) => api.get<scheme_row[]>('/schemes', { params }),
+  list: (params: { status?: string; search?: string; kind?: 'scheme' | 'bulk' }) => api.get<scheme_row[]>('/schemes', { params }),
   get: (id: number) => api.get<scheme_detail>(`/schemes/${id}`),
   create: (data: scheme_form) => api.post<{ id: number }>('/schemes', data),
   update: (id: number, data: scheme_form) => api.put(`/schemes/${id}`, data),

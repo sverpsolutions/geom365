@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 D0 = Decimal("0")
 CASH_LIKE = {"cash", "upi", "card", "neft", "cheque"}
-TYPES = ("QTY_SLAB", "VALUE_DISC", "FREE_ITEM", "MIX_MATCH", "CARTON", "TARGET", "CASH_DISC", "CREDIT_NOTE", "CHEAPEST_FREE")
+TYPES = ("QTY_SLAB", "VALUE_DISC", "FREE_ITEM", "MIX_MATCH", "CARTON", "TARGET", "CASH_DISC", "CREDIT_NOTE", "CHEAPEST_FREE", "BULK_TIER")
 
 
 def _d(v) -> Decimal:
@@ -256,6 +256,39 @@ def _cheapest_free(s, lines, m):
                     note=f"Buy {group - free_each} get {free_each} free — {groups * free_each} cheapest free: {names}")
 
 
+def _bulk_tier(s, lines, m):
+    """Bulk discount: qty tiers (10-24 = 5%, 25+ = 8% / Rs x per unit). Tier is picked by each line's own qty,
+    or by the total qty of all matching lines (qty_basis = 'total': any 25 frozen items)."""
+    tiers = sorted(s["slabs"] or [], key=lambda x: _d(x.get("min_qty")))
+    if not tiers or not m:
+        return None
+    total = sum((lines[i]["qty"] for i in m), D0)
+    alloc, notes, flat = {}, [], False
+    for i in m:
+        ln = lines[i]
+        q = total if s.get("qty_basis") == "total" else ln["qty"]
+        hit = None
+        for t in tiers:
+            mx = _d(t.get("max_qty"))
+            if q >= _d(t.get("min_qty")) and (mx <= 0 or q <= mx):
+                hit = t
+        if not hit:
+            continue
+        pct, pct2, per_unit = _d(hit.get("discount_percent")), _d(hit.get("discount_percent2")), _d(hit.get("discount_value"))
+        d, lbl = cascade(ln["value"], pct, pct2) if pct > 0 else (D0, "")
+        if per_unit > 0:
+            d += min(_two(per_unit * ln["qty"]), ln["value"] - d)
+            lbl = (lbl + " + " if lbl else "") + f"₹{per_unit:f}/unit"
+            flat = True
+        if d > 0:
+            alloc[i] = d
+            notes.append(f"{ln['name']} ({q:f} → {lbl})")
+    if not alloc:
+        return None
+    return _benefit(sum(alloc.values(), D0), benefit="discount_value" if flat else "discount_percent",
+                    alloc=alloc, note="Bulk: " + "; ".join(notes[:4]) + ("…" if len(notes) > 4 else ""))
+
+
 # ── main entry ───────────────────────────────────────────────────────────────
 
 async def evaluate(db: AsyncSession, *, items: list[dict], customer_id: int | None, outlet_id: int | None,
@@ -274,6 +307,9 @@ async def evaluate(db: AsyncSession, *, items: list[dict], customer_id: int | No
         "AND (customer_ids IS NULL OR cardinality(customer_ids) = 0 OR :c = ANY(customer_ids)) "
         "ORDER BY priority, id"), {"d": bill_date, "o": outlet_id or 0, "c": customer_id or 0})).mappings()]
     schemes = [s for s in schemes if _in_time(s, at)]
+    if any(s.get("customer_types") for s in schemes):
+        ctype = (await db.execute(text("SELECT type FROM customers WHERE id = :c"), {"c": customer_id or 0})).scalar() or "retail"
+        schemes = [s for s in schemes if not s.get("customer_types") or ctype in s["customer_types"]]
     if not schemes:
         return result
 
@@ -309,7 +345,7 @@ async def evaluate(db: AsyncSession, *, items: list[dict], customer_id: int | No
             b = _cash_disc(s, lines, m, bill_total, payment_mode)
         else:
             b = {"QTY_SLAB": _qty_slab, "VALUE_DISC": _value_disc, "FREE_ITEM": _free_item, "MIX_MATCH": _mix_match,
-                 "CARTON": _carton, "CREDIT_NOTE": _credit_note, "CHEAPEST_FREE": _cheapest_free}[t](s, lines, m)
+                 "CARTON": _carton, "CREDIT_NOTE": _credit_note, "CHEAPEST_FREE": _cheapest_free, "BULK_TIER": _bulk_tier}[t](s, lines, m)
         if not b:
             continue
         if b["discount"] <= 0 and not b["free"] and not b["credit"]:
@@ -402,4 +438,15 @@ if __name__ == "__main__":  # pure-logic self-check: python -m app.services.sche
     L2 = [{"product_id": 7, "name": "X", "qty": Decimal(25), "rate": Decimal(10), "value": Decimal(250)}]
     assert _qty_slab(S2, L2, [0])["free"] == [(7, Decimal(2))]
     assert _in_time({"start_time": time(22), "end_time": time(2)}, time(1)) and not _in_time({"start_time": time(22), "end_time": time(2)}, time(12))
+    S3 = {"slabs": [{"min_qty": 10, "max_qty": 24, "discount_percent": 5}, {"min_qty": 25, "max_qty": 0, "discount_percent": 8}],
+          "qty_basis": "line"}
+    L3 = [{"product_id": 1, "name": "A", "qty": Decimal(30), "rate": Decimal(10), "value": Decimal(300)},
+          {"product_id": 2, "name": "B", "qty": Decimal(12), "rate": Decimal(10), "value": Decimal(120)},
+          {"product_id": 3, "name": "C", "qty": Decimal(5), "rate": Decimal(10), "value": Decimal(50)}]
+    b = _bulk_tier(S3, L3, [0, 1, 2])           # A 8% = 24, B 5% = 6, C below every tier
+    assert b["alloc"] == {0: Decimal("24.00"), 1: Decimal("6.00")}, b["alloc"]
+    b = _bulk_tier({**S3, "qty_basis": "total"}, L3, [0, 1, 2])  # 47 total -> 8% on all three
+    assert b["alloc"] == {0: Decimal("24.00"), 1: Decimal("9.60"), 2: Decimal("4.00")}, b["alloc"]
+    b = _bulk_tier({"slabs": [{"min_qty": 10, "max_qty": 0, "discount_value": 2}], "qty_basis": "line"}, L3, [0])
+    assert b["discount"] == Decimal("60.00") and b["benefit"] == "discount_value"
     print("scheme_service OK")

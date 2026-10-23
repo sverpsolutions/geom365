@@ -22,20 +22,21 @@ const TYPES: { code: scheme_type; label: string; help: string }[] = [
   { code: 'CREDIT_NOTE', label: 'Credit Note Scheme', help: 'No discount on the bill — records a credit note % earned, for settlement later.' },
 ]
 const APPLY_ON = [['item', 'Selected items'], ['brand', 'Brand'], ['category', 'Category'], ['brand_category', 'Brand + Category'], ['invoice', 'Whole bill (all items)']]
-const STATE_CLS: Record<string, string> = {
+export const STATE_CLS: Record<string, string> = {
   active: 'bg-green-100 text-green-700', upcoming: 'bg-blue-100 text-blue-700', expired: 'bg-slate-100 text-slate-500', inactive: 'bg-red-100 text-red-600',
 }
 const today = () => new Date().toISOString().slice(0, 10)
-const inr = (v: string | number) => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const errMsg = (e: any): string => {
+export const inr = (v: string | number) => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+export const errMsg = (e: any): string => {
   const d = e?.response?.data?.detail
   if (typeof d !== 'string') return e?.message || 'Something went wrong'
   const msgs = [...d.matchAll(/'msg': ["'](?:Value error, )?(.*?)["'], 'input'/g)].map(m => m[1])
   return msgs.length ? msgs.join(' • ') : d
 }
-const EMPTY: scheme_form = {
+export const EMPTY: scheme_form = {
   name: '', scheme_type: 'VALUE_DISC', apply_on: 'item', priority: 5, start_date: today(), end_date: today(),
   start_time: null, end_time: null, is_active: true, outlet_ids: [], customer_ids: [], product_ids: [],
+  customer_types: [], qty_basis: 'line',
   brand_id: null, category_id: null, min_qty: 0, min_value: 0, discount_percent: 0, discount_percent2: 0, discount_value: 0,
   free_qty: 0, free_item_id: null, is_recursive: false, is_combination_allowed: true, max_benefit_per_invoice: 0,
   expiry_days_trigger: null, target_amount: 0, credit_note_percent: 0, credit_note_timing: 'immediate', carton_size: 1,
@@ -206,21 +207,21 @@ type FormProps = {
   outlets: { id: number; outlet_name: string; unit_code: string }[]; brands: { id: number; name: string }[]; cats: { id: number; name: string }[]
 }
 
-const Sec = ({ title, children }: { title: string; children: React.ReactNode }) => (
+export const Sec = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <div className="border border-border rounded-lg p-3 space-y-3">
     <div className="text-[12px] font-bold uppercase tracking-wide text-text-secondary">{title}</div>{children}
   </div>
 )
-const Num = ({ label, value, onChange, step = '0.01', hint }: { label: string; value: number | null; onChange: (v: number) => void; step?: string; hint?: string }) => (
+export const Num = ({ label, value, onChange, step = '0.01', hint }: { label: string; value: number | null; onChange: (v: number) => void; step?: string; hint?: string }) => (
   <div><label className="form-label">{label}</label>
     <input className="form-input" type="number" min="0" step={step} value={value ?? ''} onChange={e => onChange(Number(e.target.value || 0))} />
     {hint && <div className="text-[11px] text-text-muted mt-0.5">{hint}</div>}</div>
 )
-const Chk = ({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) => (
+export const Chk = ({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) => (
   <label className="flex items-center gap-2 text-[13px] cursor-pointer"><input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />{label}</label>
 )
 
-function Chips({ ids, names, onRemove }: { ids: number[]; names: Record<string, string>; onRemove: (id: number) => void }) {
+export function Chips({ ids, names, onRemove }: { ids: number[]; names: Record<string, string>; onRemove: (id: number) => void }) {
   if (!ids.length) return null
   return <div className="flex flex-wrap gap-1.5">{ids.map(id => (
     <span key={id} className="text-[12px] bg-primary-light text-primary rounded-full pl-2.5 pr-1 py-0.5 flex items-center gap-1">
@@ -284,6 +285,7 @@ function SchemeFormBody({ form: f, set, names, nameOf, custNames, setCustNames, 
               onChange={v => set('outlet_ids', v ? [...f.outlet_ids, o.id] : f.outlet_ids.filter(x => x !== o.id))} />)}
           </div>
         </div>
+        <CustTypes value={f.customer_types} onChange={v => set('customer_types', v)} />
         <div>
           <label className="form-label">Customers — none = every customer (incl. walk-in)</label>
           <Chips ids={f.customer_ids} names={custNames} onRemove={id => set('customer_ids', f.customer_ids.filter(x => x !== id))} />
@@ -438,9 +440,16 @@ function SchemeFormBody({ form: f, set, names, nameOf, custNames, setCustNames, 
   )
 }
 
+export const CUSTOMER_TYPES = [['retail', 'Retail'], ['wholesale', 'Wholesale'], ['hotel', 'Hotel / HoReCa'], ['institution', 'Institution']]
+export function CustTypes({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  return <div><label className="form-label">Customer types — none ticked = all types</label>
+    <div className="flex flex-wrap gap-x-4">{CUSTOMER_TYPES.map(([k, l]) => <Chk key={k} label={l} checked={value.includes(k)}
+      onChange={v => onChange(v ? [...value, k] : value.filter(x => x !== k))} />)}</div></div>
+}
+
 // ── simulator: try a cart against live schemes ──────────────────────────────
 
-function Simulator({ outlets }: { outlets: { id: number; outlet_name: string }[] }) {
+export function Simulator({ outlets }: { outlets: { id: number; outlet_name: string }[] }) {
   const [items, setItems] = useState<{ id: number; name: string; qty: number; rate: number; mrp: number; gst: number }[]>([])
   const [outletId, setOutletId] = useState<number | ''>('')
   const [mode, setMode] = useState('cash')
@@ -515,7 +524,7 @@ function Simulator({ outlets }: { outlets: { id: number; outlet_name: string }[]
 
 // ── report ──────────────────────────────────────────────────────────────────
 
-function Report({ outlets, rows }: { outlets: { id: number; outlet_name: string }[]; rows: scheme_row[] }) {
+export function Report({ outlets, rows }: { outlets: { id: number; outlet_name: string }[]; rows: scheme_row[] }) {
   const first = today().slice(0, 8) + '01'
   const [p, setP] = useState({ from_date: first, to_date: today(), scheme_id: '', outlet_id: '' })
   const [data, setData] = useState<{ summary: any[]; detail: any[] } | null>(null)

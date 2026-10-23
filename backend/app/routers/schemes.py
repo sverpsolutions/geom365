@@ -20,8 +20,9 @@ TYPE_LABELS = {
     "QTY_SLAB": "Quantity Slab (Buy X Get Y Free)", "VALUE_DISC": "Value-Based Discount",
     "FREE_ITEM": "Free Item (Same/Different)", "MIX_MATCH": "Mix and Match", "CARTON": "Carton-Based",
     "TARGET": "Customer Target Bonus", "CASH_DISC": "Cash Discount", "CREDIT_NOTE": "Credit Note Scheme",
-    "CHEAPEST_FREE": "Buy N — Cheapest Free (2+1)",
+    "CHEAPEST_FREE": "Buy N — Cheapest Free (2+1)", "BULK_TIER": "Bulk Discount (qty tiers)",
 }
+CUSTOMER_TYPES = ("retail", "wholesale", "hotel", "institution")
 
 
 class slab_in(BaseModel):
@@ -58,6 +59,8 @@ class scheme_in(BaseModel):
     is_active: bool = True
     outlet_ids: list[int] = []
     customer_ids: list[int] = []
+    customer_types: list[str] = []
+    qty_basis: str = "line"
     product_ids: list[int] = []
     brand_id: int | None = None
     category_id: int | None = None
@@ -143,13 +146,29 @@ def _validate(b: scheme_in):
         fq = b.free_qty or Decimal(1)
         if fq >= b.min_qty or fq != fq.to_integral_value():
             raise HTTPException(400, "Cheapest free: Free Qty must be a whole number smaller than Min Qty.")
+    if t == "BULK_TIER":
+        tiers = sorted(b.slabs, key=lambda x: x.min_qty)
+        if not tiers:
+            raise HTTPException(400, "Bulk discount: add at least one quantity tier.")
+        for i, x in enumerate(tiers):
+            if x.min_qty <= 0 or (x.discount_percent <= 0 and x.discount_value <= 0):
+                raise HTTPException(400, f"Tier {i + 1}: set 'from qty' and a discount % or ₹ per unit.")
+            if x.max_qty and x.max_qty < x.min_qty:
+                raise HTTPException(400, f"Tier {i + 1}: 'to qty' is below 'from qty'.")
+            if i and (not tiers[i - 1].max_qty or tiers[i - 1].max_qty >= x.min_qty):
+                raise HTTPException(400, f"Tiers overlap: tier {i} must end below {x.min_qty:f} (only the last tier can be open-ended).")
+        b.slabs = tiers
+    if b.qty_basis not in ("line", "total"):
+        raise HTTPException(400, "Unknown quantity basis.")
+    if any(c not in CUSTOMER_TYPES for c in b.customer_types):
+        raise HTTPException(400, "Unknown customer type.")
     if b.credit_note_timing not in ("immediate", "end_of_month", "end_of_quarter"):
         raise HTTPException(400, "Unknown credit note timing.")
 
 
 def _params(b: scheme_in) -> dict:
     p = b.model_dump(exclude={"slabs", "free_items", "mix_groups"})
-    for k in ("outlet_ids", "customer_ids", "product_ids"):
+    for k in ("outlet_ids", "customer_ids", "product_ids", "customer_types"):
         p[k] = p[k] or None
     p["slabs"] = json.dumps([s.model_dump(mode="json") for s in b.slabs])
     p["free_items"] = json.dumps([f.model_dump(mode="json") for f in b.free_items])
@@ -167,16 +186,17 @@ async def scheme_types(_=Depends(get_current_user)):
 
 @router.get("")
 async def list_schemes(status: str = Query("all", pattern="^(all|active|inactive|expired|upcoming)$"),
-                       search: str = "", db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+                       search: str = "", kind: str = Query("scheme", pattern="^(scheme|bulk)$"), db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     where, p = ["TRUE"], {"q": f"%{search.strip()}%", "d": date.today()}
     if search.strip():
         where.append("s.name ILIKE :q")
+    where.append("s.scheme_type " + ("= 'BULK_TIER'" if kind == "bulk" else "<> 'BULK_TIER'"))
     where.append({"all": "TRUE", "active": "s.is_active AND :d BETWEEN s.start_date AND s.end_date",
                   "inactive": "NOT s.is_active", "expired": "s.end_date < :d", "upcoming": "s.start_date > :d"}[status])
     rows = (await db.execute(text(f"""
         SELECT s.id, s.name, s.scheme_type, s.apply_on, s.priority, s.start_date, s.end_date, s.start_time, s.end_time,
                s.is_active, s.is_combination_allowed, s.discount_percent, s.discount_percent2, s.discount_value, s.free_qty,
-               s.min_qty, s.min_value, s.outlet_ids, b.name AS brand_name, c.name AS category_name,
+               s.min_qty, s.min_value, s.outlet_ids, s.slabs, s.customer_types, s.qty_basis, s.max_benefit_per_invoice, b.name AS brand_name, c.name AS category_name,
                COALESCE(cardinality(s.product_ids), 0) AS item_count,
                COALESCE(l.bills, 0) AS bills, COALESCE(l.given, 0) AS discount_given
         FROM schemes s
