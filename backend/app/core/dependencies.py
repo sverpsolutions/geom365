@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
@@ -56,7 +56,14 @@ async def get_current_user(
 
 
 def require_role(*roles: str):
-    async def _check(user: current_user_dep = Depends(get_current_user)):
+    """Role guard. On paths the central access check controls (core/access.py) the user's module/action
+    permission has already been verified for this request, so it decides instead of the fixed role list —
+    except User Management, whose legacy endpoints stay administrator-only."""
+    async def _check(request: Request, user: current_user_dep = Depends(get_current_user)):
+        from app.core.access import classify
+        cls = classify(request.url.path, request.method)
+        if cls and cls[0] not in ("users", "*"):
+            return user
         if user.role not in roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient role")
         return user

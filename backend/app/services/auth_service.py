@@ -21,6 +21,9 @@ async def login(username: str, password: str, db: AsyncSession, request: Request
 
     if not db_user.status:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account is inactive")
+    today = datetime.now().date()
+    if (db_user.valid_from and db_user.valid_from > today) or (db_user.valid_until and db_user.valid_until < today):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account is outside its validity period")
 
     await db.execute(
         update(user_model)

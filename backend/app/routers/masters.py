@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
+from app.core import access
 from app.core.dependencies import get_current_user, require_role, current_user_dep
 from app.models.product import (
     brand, category, manufacturer, product, unit_master, gst_master, hsn_master,
@@ -643,6 +644,9 @@ async def list_item_categories(
         joinedload(item_category.creator),
         joinedload(item_category.subgroup_rel)
     ).where(item_category.is_active == True)
+    sc = access.scope()  # a category-limited user sees only their categories
+    if sc and sc["categories"] is not None:
+        q = q.where(item_category.id.in_(sorted(sc["categories"]) or [0]))
     
     if subgroup_id:
         q = q.where(item_category.subgroup_id == subgroup_id)
@@ -873,6 +877,11 @@ async def list_item_subcategories(
         joinedload(item_subcategory.category_rel),
         joinedload(item_subcategory.default_hsn_rel)
     ).where(item_subcategory.is_active == True)
+    sc = access.scope()
+    if sc and sc["categories"] is not None:
+        q = q.where(item_subcategory.category_id.in_(sorted(sc["categories"]) or [0]))
+    if sc and sc["groups"]:
+        q = q.where(item_subcategory.id.in_(sorted(sc["groups"])))
     if category_id:
         q = q.where(item_subcategory.category_id == category_id)
     rows = await db.execute(q)

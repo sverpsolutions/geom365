@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.invoice import invoice, invoice_item, stock_ledger
 from app.models.product import product
 from app.services.billing_service import _write_stock_ledger, _update_product_stock
+from app.core import access
 from app.services import shift_service, batch_service
 
 CN_PREFIX = "CN-HO-"
@@ -155,6 +156,7 @@ async def create_return(db: AsyncSession, data, user_id: Optional[int]) -> invoi
     if data.refund_method not in ("cash", "adjust"):
         raise ValueError("refund_method must be 'cash' or 'adjust'")
     orig = await _original(db, data.invoice_no, lock=True)  # serialises returns on one bill
+    access.check_outlet(orig.outlet_id)
     shift_id = await shift_service.guard(db, orig.outlet_id, user_id, data.return_date or date.today())
     raw_lines = await returnable_lines(db, orig)
     lines_by_batch = {(l["product_id"], (l.get("batch_no") or "").strip()): l for l in raw_lines}
@@ -261,6 +263,7 @@ async def cancel_return(db: AsyncSession, return_id: int, reason: str, user_id: 
         raise LookupError("Credit note not found (outlet returns are cancelled at the outlet)")
     if cn.status == "cancelled":
         return cn  # idempotent
+    access.check_outlet(cn.outlet_id)
     await shift_service.guard(db, cn.outlet_id, user_id)
     posted = (await db.execute(
         select(stock_ledger.product_id, stock_ledger.qty)

@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core import access
 from app.utils.search import word_match_sql
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(get_current_user)])
@@ -34,7 +35,8 @@ def _d(s: Optional[str], fallback: date) -> date:
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 async def _outlets(db: AsyncSession):
-    r = await db.execute(text("SELECT id, outlet_name FROM outlets ORDER BY id"))
+    params: dict = {}
+    r = await db.execute(text("SELECT id, outlet_name FROM outlets WHERE TRUE" + access.outlet_filter("id", params) + " ORDER BY id"), params)
     return [{"id": row[0], "name": row[1]} for row in r.fetchall()]
 
 
@@ -48,6 +50,7 @@ async def sales_report(
     outlet_id: Optional[int] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_whole_bill_access()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
 
@@ -56,6 +59,7 @@ async def sales_report(
     if outlet_id:
         where += " AND i.outlet_id = :oid"
         params["oid"] = outlet_id
+    where += access.outlet_filter("i.outlet_id", params)
 
     # summary
     sumq = await db.execute(text(f"""
@@ -113,6 +117,7 @@ async def purchase_report(
     outlet_id: Optional[int] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_whole_bill_access()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
 
@@ -121,6 +126,7 @@ async def purchase_report(
     if outlet_id:
         where += " AND p.outlet_id = :oid"
         params["oid"] = outlet_id
+    where += access.outlet_filter("p.outlet_id", params)
 
     sumq = await db.execute(text(f"""
         SELECT
@@ -164,9 +170,11 @@ async def stock_report(
 ):
     where = "WHERE os.stock_qty > 0"
     params: dict = {}
+    where += " AND os.product_id IN (SELECT p.id FROM products p WHERE TRUE" + access.product_filter("p", params) + ")"
     if outlet_id:
         where += " AND os.outlet_id = :oid"
         params["oid"] = outlet_id
+    where += access.outlet_filter("os.outlet_id", params)
 
     sumq = await db.execute(text(f"""
         SELECT
@@ -212,6 +220,7 @@ async def pl_report(
     outlet_id: Optional[int] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_unrestricted()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
 
@@ -282,6 +291,7 @@ async def gst_report(
     outlet_id: Optional[int] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_whole_bill_access()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
 
@@ -290,6 +300,7 @@ async def gst_report(
     if outlet_id:
         where += " AND outlet_id = :oid"
         params["oid"] = outlet_id
+    where += access.outlet_filter("outlet_id", params)
 
     # item-level GST slab breakdown
     slab_q = await db.execute(text(f"""
@@ -353,11 +364,13 @@ async def outstanding_report(
     outlet_id: Optional[int] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_whole_bill_access()
     where = "WHERE i.due_amount > 0 AND i.status != 'cancelled'"
     params: dict = {}
     if outlet_id:
         where += " AND i.outlet_id = :oid"
         params["oid"] = outlet_id
+    where += access.outlet_filter("i.outlet_id", params)
 
     sumq = await db.execute(text(f"""
         SELECT
@@ -405,6 +418,7 @@ async def payment_collection_report(
     outlet_id: Optional[int] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_whole_bill_access()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
 
@@ -413,6 +427,7 @@ async def payment_collection_report(
     if outlet_id:
         where += " AND b.outlet_id = :oid"
         params["oid"] = outlet_id
+    where += access.outlet_filter("b.outlet_id", params)
 
     # by paymode
     modeq = await db.execute(text(f"""
@@ -492,6 +507,7 @@ async def payment_matrix_report(
     to_date:   str  = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_unrestricted()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
     params: dict = {"fd": fd, "td": td}
@@ -560,6 +576,7 @@ async def hourly_sales_report(
     outlet_id: Optional[int] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_whole_bill_access()
     fd = _d(from_date, date.today())
     td = _d(to_date,   date.today())
 
@@ -568,6 +585,7 @@ async def hourly_sales_report(
     if outlet_id:
         where += " AND outlet_id = :oid"
         params["oid"] = outlet_id
+    where += access.outlet_filter("outlet_id", params)
 
     hourq = await db.execute(text(f"""
         SELECT
@@ -588,6 +606,7 @@ async def hourly_sales_report(
     where_matrix = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.invoice_datetime IS NOT NULL"
     if outlet_id:
         where_matrix += " AND i.outlet_id = :oid"
+    where_matrix += access.outlet_filter("i.outlet_id", params)
 
     matrixq = await db.execute(text(f"""
         SELECT
@@ -663,6 +682,7 @@ async def hierarchy_report(
     to_date:   str  = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_unrestricted()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
     params: dict = {"fd": fd, "td": td}
@@ -735,6 +755,7 @@ async def stock_ledger_report(
     if outlet_id:
         where += " AND os.outlet_id = :oid"
         params["oid"] = outlet_id
+    where += access.outlet_filter("os.outlet_id", params) + access.product_filter("p", params)
     if search:
         sql, sp = word_match_sql(search, ["p.item_code", "p.name"])
         where += f" AND {sql}"
@@ -789,6 +810,7 @@ async def stock_ledger_report(
 async def hsn_mismatch_report(
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_unrestricted()
     rowq = await db.execute(text("""
         SELECT
             p.id, p.item_code, p.name AS item_name,
@@ -824,6 +846,7 @@ async def hsn_mismatch_report(
 async def hsn_mapping_report(
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_unrestricted()
     rowq = await db.execute(text("""
         SELECT
             sc.id, sc.name AS subcategory_name,
@@ -856,6 +879,7 @@ async def hsn_exceptions_report(
     to_date: str = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_unrestricted()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
     
@@ -899,6 +923,7 @@ async def channel_margin_report(
     partner_id : Optional[int] = Query(default=None),
     db         : AsyncSession  = Depends(get_db),
 ):
+    access.require_unrestricted()
     """
     Channel-wise margin per product.
     Shows: Product | Partner | MRP | Base Cost | Selling Price | Commission% |
@@ -982,6 +1007,7 @@ async def channel_margin_report(
 # ── 2. Channel Profitability Report ──────────────────────────────────────────
 @router.get("/channel-profitability")
 async def channel_profitability_report(db: AsyncSession = Depends(get_db)):
+    access.require_unrestricted()
     """Partner-level P&L: total items, avg margin, total settlement."""
     rowq = await db.execute(text("""
         SELECT
@@ -1018,6 +1044,7 @@ async def low_margin_report(
     category_id: Optional[int] = Query(default=None),
     db         : AsyncSession  = Depends(get_db),
 ):
+    access.require_unrestricted()
     """
     Products whose SP margin is below the threshold.
     Highlights negative-profit items separately.
@@ -1077,6 +1104,7 @@ async def markdown_items_report(
     category_id: Optional[int] = Query(default=None),
     db         : AsyncSession  = Depends(get_db),
 ):
+    access.require_unrestricted()
     """Products with pricing_mode = MARKDOWN or FIXED_MARGIN."""
     where  = "WHERE p.is_active = true AND p.pricing_mode IN ('MARKDOWN','FIXED_MARGIN')"
     params: dict = {}
@@ -1123,6 +1151,7 @@ async def markdown_items_report(
 # ── 5. Negative Profit Alert ──────────────────────────────────────────────────
 @router.get("/negative-profit")
 async def negative_profit_report(db: AsyncSession = Depends(get_db)):
+    access.require_unrestricted()
     """Channel prices where settlement < cost (net_profit < 0)."""
     rowq = await db.execute(text("""
         SELECT
@@ -1157,6 +1186,7 @@ async def channel_pricing_grid(
     search     : Optional[str] = Query(default=None),
     db         : AsyncSession  = Depends(get_db),
 ):
+    access.require_unrestricted()
     """Item-wise all channel prices in a grid (product × partner matrix view)."""
     pwhere  = "WHERE p.is_active AND p.online_partner_enabled"
     pparams: dict = {}
@@ -1218,6 +1248,7 @@ async def channel_settlement_report(
     partner_id: Optional[int] = Query(default=None),
     db        : AsyncSession  = Depends(get_db),
 ):
+    access.require_unrestricted()
     """
     Settlement timeline per partner based on settlement_days.
     Shows expected settlement dates for online orders.
@@ -1258,6 +1289,7 @@ async def channel_settlement_report(
 
 @router.get("/unit-dashboard")
 async def unit_dashboard(db: AsyncSession = Depends(get_db)):
+    access.require_unrestricted()
     today_q = await db.execute(text("""
         SELECT o.outlet_name, COUNT(i.id) AS bills,
                COALESCE(SUM(i.total_amount), 0) AS sales,
@@ -1304,11 +1336,13 @@ async def sales_trend_report(
     from_date: str = Query(default=None), to_date: str = Query(default=None),
     outlet_id: Optional[int] = Query(default=None), db: AsyncSession = Depends(get_db),
 ):
+    access.require_whole_bill_access()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date, date.today())
     w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'"
     p: dict = {"fd": fd, "td": td}
     if outlet_id: w += " AND i.outlet_id = :oid"; p["oid"] = outlet_id
+    w += access.outlet_filter("i.outlet_id", p)
     q = await db.execute(text(f"""
         SELECT i.invoice_date, TRIM(TO_CHAR(i.invoice_date,'Day')),
                COUNT(i.id), COALESCE(SUM(i.total_amount),0),
@@ -1332,6 +1366,7 @@ async def top_items_report(
     w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'"
     p: dict = {"fd": fd, "td": td, "topn": top_n}
     if outlet_id: w += " AND i.outlet_id = :oid"; p["oid"] = outlet_id
+    w += access.outlet_filter("i.outlet_id", p) + access.product_filter("p", p)
     q = await db.execute(text(f"""
         SELECT p.item_code, p.name, p.category, p.brand,
                COUNT(DISTINCT i.id), COALESCE(SUM(ii.qty),0),
@@ -1358,6 +1393,7 @@ async def category_sales_report(
     w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'"
     p: dict = {"fd": fd, "td": td}
     if outlet_id: w += " AND i.outlet_id = :oid"; p["oid"] = outlet_id
+    w += access.outlet_filter("i.outlet_id", p) + access.product_filter("p", p)
     q = await db.execute(text(f"""
         SELECT COALESCE(p.category,'Uncategorized'), COUNT(DISTINCT i.id),
                COALESCE(SUM(ii.qty),0), COALESCE(SUM(ii.total),0),
@@ -1384,6 +1420,7 @@ async def profitability_analysis(
     w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'"
     p: dict = {"fd": fd, "td": td}
     if outlet_id: w += " AND i.outlet_id = :oid"; p["oid"] = outlet_id
+    w += access.outlet_filter("i.outlet_id", p) + access.product_filter("p", p)
     if group_by == "item":
         sel, grp = "p.item_code, p.name AS dimension", "p.item_code, p.name"
     else:
@@ -1410,6 +1447,7 @@ async def profitability_analysis(
 async def sales_vs_purchase_report(
     year: int = Query(default=None), db: AsyncSession = Depends(get_db),
 ):
+    access.require_unrestricted()
     yr = year or date.today().year
     sq = await db.execute(text("""
         SELECT EXTRACT(MONTH FROM i.invoice_date)::int, TO_CHAR(i.invoice_date,'Mon'),
@@ -1443,13 +1481,16 @@ async def item_velocity_report(
 ):
     ow = ""; p: dict = {}
     if outlet_id: ow = "AND os.outlet_id = :oid"; p["oid"] = outlet_id
+    ow += access.outlet_filter("outlet_id", p)
+    sw = access.outlet_filter("i.outlet_id", p)
+    pw = access.product_filter("p", p)
     q = await db.execute(text(f"""
         WITH item_sales AS (
             SELECT ii.product_id, SUM(ii.qty) AS qty_90d,
                    COUNT(DISTINCT i.id) AS bills_90d, SUM(ii.total) AS sales_90d,
                    MAX(i.invoice_date) AS last_sold
             FROM unit_wise_invoice_items ii JOIN unit_wise_invoices i ON i.id=ii.invoice_id
-            WHERE i.invoice_date >= CURRENT_DATE - INTERVAL '90 days' AND i.invoice_type!='return'
+            WHERE i.invoice_date >= CURRENT_DATE - INTERVAL '90 days' AND i.invoice_type!='return' {sw}
             GROUP BY ii.product_id
         )
         SELECT p.item_code, p.name, p.category, p.brand,
@@ -1462,7 +1503,7 @@ async def item_velocity_report(
         FROM products p LEFT JOIN item_sales s ON s.product_id=p.id
         LEFT JOIN (SELECT product_id, SUM(stock_qty) AS stk FROM outlet_stock
                    WHERE stock_qty>0 {ow} GROUP BY product_id) os_a ON os_a.product_id=p.id
-        WHERE p.is_active=true ORDER BY COALESCE(s.sales_90d,0) DESC LIMIT 500
+        WHERE p.is_active=true {pw} ORDER BY COALESCE(s.sales_90d,0) DESC LIMIT 500
     """), p)
     all_rows = [{"item_code": r[0], "item_name": r[1], "category": r[2], "brand": r[3],
                  "stock_qty": _fmt(r[4]), "qty_sold_90d": _fmt(r[5]), "bills_90d": int(r[6] or 0),
@@ -1480,6 +1521,7 @@ async def customer_analytics_report(
     from_date: str = Query(default=None), to_date: str = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    access.require_unrestricted()
     fd = _d(from_date, date.today() - timedelta(days=90))
     td = _d(to_date, date.today())
     q = await db.execute(text("""
@@ -1503,6 +1545,7 @@ async def tax_breakup_report(
     view_mode: str = Query(default="details"),
     db: AsyncSession = Depends(get_db)
 ):
+    access.require_unrestricted()
     fd = _d(from_date, date.today().replace(day=1))
     td = _d(to_date, date.today())
     

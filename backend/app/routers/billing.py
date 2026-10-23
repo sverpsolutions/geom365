@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from app.core import access
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -68,6 +69,7 @@ async def get_invoice(
     inv = await billing_service.get_invoice(db, invoice_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    access.check_outlet(inv.outlet_id)
     return inv
 
 

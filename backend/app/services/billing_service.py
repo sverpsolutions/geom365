@@ -18,6 +18,7 @@ from app.models.invoice import (
 from app.models.product import product as product_model
 from app.models.outlet import outlet as outlet_model
 from app.services import shift_service, batch_service, scheme_service
+from app.core import access
 from app.schemas.invoice import (
     invoice_create, payment_in,
     estimate_create, estimate_item_in, invoice_item_in,
@@ -221,6 +222,8 @@ async def create_invoice(
     data: invoice_create,
     user_id: Optional[int],
 ) -> invoice:
+    access.check_outlet(data.outlet_id)
+    await access.check_products(db, [it.product_id for it in data.items])
     shift_id = await shift_service.guard(db, data.outlet_id, user_id, data.invoice_date)
     invoice_no = await _next_invoice_no(db, data.outlet_id)
 
@@ -450,7 +453,7 @@ async def list_invoices(
     per_page: int = 25,
     outlet_id: Optional[int] = None,
 ):
-    q = select(invoice).order_by(invoice.id.desc())
+    q = select(invoice).where(*access.outlet_where(invoice.outlet_id)).order_by(invoice.id.desc())
     if outlet_id:
         q = q.where(invoice.outlet_id == outlet_id)
     if customer_id:
@@ -490,6 +493,7 @@ async def add_payment(
     inv = await db.get(invoice, invoice_id)
     if not inv:
         raise ValueError("Invoice not found")
+    access.check_outlet(inv.outlet_id)
     if inv.status == "cancelled":
         raise ValueError("Cannot collect payment on a cancelled invoice")
     shift_id = await shift_service.guard(db, inv.outlet_id, user_id, data.payment_date)
@@ -549,6 +553,7 @@ async def cancel_invoice(
     inv = await db.get(invoice, invoice_id)
     if not inv:
         raise ValueError("Invoice not found")
+    access.check_outlet(inv.outlet_id)
     if inv.status == "cancelled":
         raise ValueError("Invoice already cancelled")
     await shift_service.guard(db, inv.outlet_id, user_id)

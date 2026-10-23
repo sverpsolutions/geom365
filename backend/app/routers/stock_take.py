@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core import access
 from app.core.dependencies import get_current_user, require_role, current_user_dep
 from app.models.stock_take import stock_take, stock_take_item, stock_take_item_batch
 from app.models.product import product as product_model, product_barcode
@@ -90,7 +91,7 @@ async def list_stock_takes(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    q = select(stock_take).order_by(stock_take.id.desc())
+    q = select(stock_take).where(*access.outlet_where(stock_take.location_id)).order_by(stock_take.id.desc())
     if location_id:
         q = q.where(stock_take.location_id == location_id)
     if status:
@@ -101,7 +102,7 @@ async def list_stock_takes(
 
     # Check for in_progress take for user/location alert
     in_progress_alert = None
-    ip_q = select(stock_take).where(stock_take.status == "in_progress")
+    ip_q = select(stock_take).where(stock_take.status == "in_progress", *access.outlet_where(stock_take.location_id))
     if location_id:
         ip_q = ip_q.where(stock_take.location_id == location_id)
     ip_take = (await db.execute(ip_q.order_by(stock_take.id.desc()).limit(1))).scalar_one_or_none()
@@ -155,6 +156,7 @@ async def create_stock_take(
     user=Depends(get_current_user),
 ):
     # 1. Resolve Location Name
+    access.check_outlet(body.location_id)
     loc_res = await db.execute(text("SELECT outlet_name FROM outlets WHERE id = :id"), {"id": body.location_id})
     loc_row = loc_res.fetchone()
     loc_name = loc_row[0] if loc_row else f"Outlet #{body.location_id}"
@@ -230,6 +232,8 @@ async def get_stock_take(
 ):
     st_res = await db.execute(select(stock_take).where(stock_take.id == id))
     st = st_res.scalar_one_or_none()
+    if st:
+        access.check_outlet(st.location_id)   # only stock takes at your locations
     if not st:
         raise HTTPException(404, "Stock take not found")
 
@@ -361,6 +365,8 @@ async def lookup_product_for_stock_take(
     # Verify take is active
     st_res = await db.execute(select(stock_take).where(stock_take.id == body.stock_take_id))
     st = st_res.scalar_one_or_none()
+    if st:
+        access.check_outlet(st.location_id)   # only stock takes at your locations
     if not st:
         raise HTTPException(404, "Stock take not found")
 
@@ -514,6 +520,8 @@ async def scan_save(
 ):
     st_res = await db.execute(select(stock_take).where(stock_take.id == body.stock_take_id))
     st = st_res.scalar_one_or_none()
+    if st:
+        access.check_outlet(st.location_id)   # only stock takes at your locations
     if not st:
         raise HTTPException(404, "Stock take not found")
     if st.status != "in_progress":
@@ -596,6 +604,8 @@ async def edit_count(
 ):
     st_res = await db.execute(select(stock_take).where(stock_take.id == body.stock_take_id))
     st = st_res.scalar_one_or_none()
+    if st:
+        access.check_outlet(st.location_id)   # only stock takes at your locations
     if not st:
         raise HTTPException(404, "Stock take not found")
     if st.status != "in_progress":
@@ -659,6 +669,8 @@ async def save_stock_take_batches(
 ):
     st_res = await db.execute(select(stock_take).where(stock_take.id == body.stock_take_id))
     st = st_res.scalar_one_or_none()
+    if st:
+        access.check_outlet(st.location_id)   # only stock takes at your locations
     if not st:
         raise HTTPException(404, "Stock take not found")
     if st.status != "in_progress":
@@ -813,6 +825,8 @@ async def zero_uncounted(
 ):
     st_res = await db.execute(select(stock_take).where(stock_take.id == stock_take_id))
     st = st_res.scalar_one_or_none()
+    if st:
+        access.check_outlet(st.location_id)   # only stock takes at your locations
     if not st:
         raise HTTPException(404, "Stock take not found")
     if st.status != "in_progress":
@@ -846,6 +860,8 @@ async def finalize_stock_take(
 ):
     st_res = await db.execute(select(stock_take).where(stock_take.id == id))
     st = st_res.scalar_one_or_none()
+    if st:
+        access.check_outlet(st.location_id)   # only stock takes at your locations
     if not st:
         raise HTTPException(404, "Stock take not found")
     if st.status != "in_progress":
@@ -1006,6 +1022,8 @@ async def cancel_stock_take(
 ):
     st_res = await db.execute(select(stock_take).where(stock_take.id == id))
     st = st_res.scalar_one_or_none()
+    if st:
+        access.check_outlet(st.location_id)   # only stock takes at your locations
     if not st:
         raise HTTPException(404, "Stock take not found")
     if st.status != "in_progress":
@@ -1060,6 +1078,8 @@ async def import_counts(
 ):
     st_res = await db.execute(select(stock_take).where(stock_take.id == id))
     st = st_res.scalar_one_or_none()
+    if st:
+        access.check_outlet(st.location_id)   # only stock takes at your locations
     if not st:
         raise HTTPException(404, "Stock take not found")
     if st.status != "in_progress":

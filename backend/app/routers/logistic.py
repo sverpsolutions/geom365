@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 from app.core.database import get_db
+from app.core import access
 from app.models.logistic import (
     logistic_transfer, logistic_transfer_item, logistic_box, 
     logistic_box_item, logistic_dispatch_detail, logistic_timeline
@@ -45,6 +46,7 @@ async def add_timeline_event(db: AsyncSession, transfer_id: int, event: str, des
 
 @router.post("/transfers", response_model=logistic_transfer_out)
 async def create_transfer(transfer_in: logistic_transfer_create, db: AsyncSession = Depends(get_db)):
+    access.check_outlet(transfer_in.source_location_id)
     transfer_number = await generate_transfer_number(db)
     
     new_transfer = logistic_transfer(
@@ -129,7 +131,11 @@ async def get_source_transfer_details(id: int, db: AsyncSession = Depends(get_db
 
 @router.get("/transfers", response_model=List[logistic_transfer_out])
 async def list_transfers(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(logistic_transfer).order_by(logistic_transfer.created_at.desc()))
+    q = select(logistic_transfer).order_by(logistic_transfer.created_at.desc())
+    if access.allowed_outlets() is not None:
+        mine = access.allowed_outlets() or [0]
+        q = q.where(logistic_transfer.source_location_id.in_(mine) | logistic_transfer.destination_location_id.in_(mine))
+    result = await db.execute(q)
     return result.scalars().all()
 
 @router.get("/transfers/{id}", response_model=logistic_transfer_out)
@@ -138,6 +144,8 @@ async def get_transfer(id: int, db: AsyncSession = Depends(get_db)):
     transfer = result.scalar_one_or_none()
     if not transfer:
         raise HTTPException(status_code=404, detail="Transfer not found")
+    if access.allowed_outlets() is not None and not {transfer.source_location_id, transfer.destination_location_id} & set(access.allowed_outlets()):
+        raise HTTPException(status_code=403, detail="Access denied: this transfer is between locations not assigned to you.")
     
     # Attach source number
     if transfer.source_transfer_id:

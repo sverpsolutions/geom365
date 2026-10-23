@@ -1,427 +1,423 @@
-// Users & Locations: who works where and with which role. Location drives the POS counter, day/shift and
-// cash rules (branch managers accept cash into their own branch safe). Server blocks moving or deactivating
-// anyone with an open shift or cash in hand.
-import { useEffect, useState } from 'react'
+// Administration → User Management: users, their outlets / categories / groups and module / report permissions.
+// Everything shown here is enforced by the server (core/access.py); the screen only edits it.
+import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { masters_api } from '../../api/masters'
-import { users_api, USER_ROLES, type user_row } from '../../api/users'
-import { dashboardBuilderApi, type DashboardTemplate } from '../../api/dashboardBuilder'
+import { access_api, type access_catalog, type access_form, type access_user_row } from '../../api/access'
 import { useAuthStore } from '../../store/authStore'
 import PageHeader from '../../components/ui/PageHeader'
 import Modal from '../../components/ui/Modal'
-import StatusBadge from '../../components/ui/StatusBadge'
+import UsersClassic from './UsersClassic'
 
-const PER_PAGE = 50
-const ROLE_HELP: Record<string, string> = {
-  admin: 'Full administrative access across all stores and modules',
-  superadmin: 'Complete system control, template configuration, and unrestricted access',
-  manager: 'Day open/close, approves expenses, safe handovers & deposits at their location',
-  category_manager: 'Assigned product categories: sales, margins, purchases, inventory, and expiry',
-  area_sales_manager: 'Assigned multi-store cluster: sales, targets, transfers, and store stock',
-  store_manager: 'Store-level cockpit: day operations, cashier shifts, local GRN & stock',
-  purchase_manager: 'Vendor PO approvals, price revisions, and incoming procurement',
-  accounts_manager: 'Vendor bills, cheque registers, bank reconciliations, and receivables',
-  staff: 'Billing — must open their own shift at their location',
-  viewer: 'Read-only access across authorized modules',
-}
-const errMsg = (e: any) => {
+const errMsg = (e: any): string => {
   const d = e?.response?.data?.detail
   if (typeof d !== 'string') return e?.message || 'Something went wrong'
-  const m = [...d.matchAll(/'msg': ["'](?:Value error, )?(.*?)["'], 'input'/g)].map(x => x[1])
-  return m.length ? m.join(' • ') : d
+  const msgs = [...d.matchAll(/'msg': ["'](?:Value error, )?(.*?)["'], 'input'/g)].map(m => m[1])
+  return msgs.length ? msgs.join(' • ') : d
 }
-const dt = (v?: string | null) => v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Never'
-
-type Form = { id?: number; name: string; username: string; email: string; role: string; outlet_id: string; password: string; status: boolean }
-const EMPTY: Form = { name: '', username: '', email: '', role: 'staff', outlet_id: '0', password: '', status: true }
+const dt = (v: string | null) => v ? new Date(v).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+const ADMIN = ['admin', 'superadmin']
+const EMPTY: access_form = {
+  name: '', username: '', password: '', email: null, mobile: null, employee_code: null, department: null, designation: null,
+  role: 'staff', outlet_id: null, status: true, valid_from: null, valid_until: null,
+  all_outlets: false, outlet_ids: [], all_categories: false, category_ids: [], group_ids: [], permissions: [],
+}
+const STEPS = ['Basic information', 'Outlets', 'Categories', 'Groups', 'Module permissions', 'Report permissions', 'Review & save'] as const
 
 export default function UserManagement() {
-  const me = useAuthStore(s => s.user)
-  const isAdmin = me?.role === 'admin' || me?.role === 'superadmin'
-  const [outlets, setOutlets] = useState<{ id: number; outlet_name: string }[]>([])
-  const [rows, setRows] = useState<user_row[]>([])
-  const [total, setTotal] = useState(0)
-  const [q, setQ] = useState<{ page: number; search: string; role: string; outlet: string; status: string }>({ page: 1, search: '', role: '', outlet: '', status: 'true' })
-  const [search, setSearch] = useState('')
-  const [form, setForm] = useState<Form | null>(null)
-  const [pwd, setPwd] = useState<{ u: user_row; p: string } | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  // Data Scope & Assignments states
-  const [scopeUser, setScopeUser] = useState<user_row | null>(null)
-  const [allCategories, setAllCategories] = useState<{ id: number; name: string }[]>([])
-  const [allTemplates, setAllTemplates] = useState<DashboardTemplate[]>([])
-  const [assignedStoreIds, setAssignedStoreIds] = useState<number[]>([])
-  const [assignedCatIds, setAssignedCatIds] = useState<number[]>([])
-  const [assignedTemplateId, setAssignedTemplateId] = useState<number | null>(null)
-  const [storeSearch, setStoreSearch] = useState('')
-  const [catSearch, setCatSearch] = useState('')
-  const [savingScope, setSavingScope] = useState(false)
-  const [loadingScope, setLoadingScope] = useState(false)
-
-  useEffect(() => {
-    masters_api.get_outlets().then(r => setOutlets(r.data || [])).catch(() => {})
-    masters_api.get_item_categories().then(r => setAllCategories((r.data || []).map((c: any) => ({ id: c.id, name: c.name })))).catch(() => {})
-    dashboardBuilderApi.getTemplates().then(r => setAllTemplates(r || [])).catch(() => {})
-  }, [])
-  const load = () => users_api.list({
-    page: q.page, per_page: PER_PAGE, search: q.search || undefined, role: q.role || undefined,
-    outlet_id: q.outlet === '' ? undefined : Number(q.outlet), status: q.status === '' ? undefined : q.status === 'true',
-  }).then(r => { setRows(r.data.data); setTotal(r.data.total) }).catch(e => toast.error(errMsg(e)))
-  useEffect(() => { load() }, [q])
-  useEffect(() => { const h = setTimeout(() => setQ(x => x.search === search.trim() ? x : { ...x, search: search.trim(), page: 1 }), 300); return () => clearTimeout(h) }, [search])
-
-  const openScopeModal = async (u: user_row) => {
-    setScopeUser(u)
-    setLoadingScope(true)
-    setStoreSearch('')
-    setCatSearch('')
-    try {
-      const res = await dashboardBuilderApi.getUserAssignments(u.id)
-      setAssignedStoreIds(res.assigned_stores.map(s => s.outlet_id))
-      setAssignedCatIds(res.assigned_categories.map(c => c.category_id))
-      setAssignedTemplateId(res.user.default_dashboard_template_id ?? null)
-    } catch (e) {
-      toast.error('Failed to load user assignments')
-    } finally {
-      setLoadingScope(false)
-    }
-  }
-
-  const saveScope = async () => {
-    if (!scopeUser) return
-    setSavingScope(true)
-    try {
-      await dashboardBuilderApi.updateUserAssignments(scopeUser.id, {
-        outlet_ids: assignedStoreIds,
-        category_ids: assignedCatIds,
-        default_template_id: assignedTemplateId
-      })
-      toast.success(`Data scope updated for ${scopeUser.name}`)
-      setScopeUser(null)
-    } catch (e) {
-      toast.error(errMsg(e))
-    } finally {
-      setSavingScope(false)
-    }
-  }
-
-  const save = async (ev: React.FormEvent) => {
-    ev.preventDefault()
-    if (!form) return
-    setBusy(true)
-    const outlet_id = Number(form.outlet_id) || null
-    try {
-      if (form.id) await users_api.update(form.id, { name: form.name.trim(), email: form.email.trim() || null, role: form.role, outlet_id, status: form.status })
-      else await users_api.create({ name: form.name.trim(), username: form.username.trim(), password: form.password, email: form.email.trim() || null, role: form.role, outlet_id })
-      toast.success(form.id ? 'User updated — they see the new location after their next login' : 'User created')
-      setForm(null); load()
-    } catch (e) { toast.error(errMsg(e)) } finally { setBusy(false) }
-  }
-
-  const resetPwd = async () => {
-    if (!pwd) return
-    setBusy(true)
-    try { await users_api.reset_password(pwd.u.id, pwd.p); toast.success(`Password reset for ${pwd.u.name}`); setPwd(null) }
-    catch (e) { toast.error(errMsg(e)) } finally { setBusy(false) }
-  }
-
-  const toggle = async (u: user_row) => {
-    if (u.status && !confirm(`Deactivate ${u.name}? They will not be able to log in.`)) return
-    try { u.status ? await users_api.deactivate(u.id) : await users_api.update(u.id, { status: true }); toast.success(u.status ? 'Deactivated' : 'Activated'); load() }
-    catch (e) { toast.error(errMsg(e)) }
-  }
-
-  const pages = Math.max(1, Math.ceil(total / PER_PAGE))
-  const locSelect = (value: string, onChange: (v: string) => void, withAll = false) => (
-    <select className="form-input" value={value} onChange={e => onChange(e.target.value)} aria-label="Location">
-      {withAll && <option value="">All locations</option>}
-      <option value="0">Head Office</option>
-      {outlets.map(o => <option key={o.id} value={o.id}>{o.outlet_name}</option>)}
-    </select>
-  )
+  const [tab, setTab] = useState<'users' | 'roles' | 'audit' | 'classic'>('users')
+  const [cat, setCat] = useState<access_catalog | null>(null)
+  useEffect(() => { access_api.catalog().then(r => setCat(r.data)).catch(e => toast.error(errMsg(e))) }, [])
+  const isAdmin = ADMIN.includes(useAuthStore(s => (s.user as any)?.role) || '')
 
   return (
-    <div className="p-4 space-y-4">
-      <PageHeader title="Users & Locations" subtitle="Assign every user a role and the location they work at"
-        action={isAdmin && <button className="btn btn-primary" onClick={() => setForm({ ...EMPTY })}><i className="fas fa-user-plus mr-2" />New User</button>} />
-
-      <div className="bg-app-card border border-border rounded-fiori p-3 flex flex-wrap gap-2 items-center">
-        <div className="relative flex-1 min-w-[220px]">
-          <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm" />
-          <input className="form-input !pl-9" placeholder="Search name, username, email…" value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <div className="w-56">{locSelect(q.outlet, v => setQ(x => ({ ...x, outlet: v, page: 1 })), true)}</div>
-        <select className="form-input !w-auto" value={q.role} onChange={e => setQ(x => ({ ...x, role: e.target.value, page: 1 }))} aria-label="Role">
-          <option value="">All roles</option>{['superadmin', ...USER_ROLES].map(r => <option key={r} value={r} className="capitalize">{r}</option>)}
-        </select>
-        <select className="form-input !w-auto" value={q.status} onChange={e => setQ(x => ({ ...x, status: e.target.value, page: 1 }))} aria-label="Status">
-          <option value="true">Active</option><option value="false">Inactive</option><option value="">All</option>
-        </select>
+    <div className="space-y-4">
+      <PageHeader title="User Management" subtitle="Who can log in, at which outlets, for which categories and groups, and what they may do in each module" />
+      <div className="flex gap-1 border-b border-border overflow-x-auto">
+        {([['users', 'Users', 'fa-users'], ['roles', 'Role templates', 'fa-user-shield'], ['audit', 'Permission audit', 'fa-history'],
+           ['classic', 'Locations & dashboards', 'fa-store']] as const).filter(([k]) => isAdmin || (k !== 'roles' && k !== 'audit')).map(([k, l, i]) => (
+          <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 text-[13px] font-semibold border-b-2 -mb-px whitespace-nowrap ${tab === k ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}>
+            <i className={`fas ${i} mr-2`} />{l}</button>))}
       </div>
+      {!cat ? <div className="text-text-muted py-10 text-center">Loading…</div> : <>
+        {tab === 'users' && <Users cat={cat} />}
+        {tab === 'roles' && <RoleTemplates cat={cat} />}
+        {tab === 'audit' && <Audit />}
+      </>}
+      {tab === 'classic' && <UsersClassic />}
+    </div>
+  )
+}
 
+// ── users list + editor ─────────────────────────────────────────────────────
+
+function Users({ cat }: { cat: access_catalog }) {
+  const [rows, setRows] = useState<access_user_row[]>([])
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('all')
+  const [editing, setEditing] = useState<{ id: number | null; form: access_form; original?: access_form; audit?: any[]; meta?: any } | null>(null)
+  const [pwFor, setPwFor] = useState<access_user_row | null>(null)
+  const [pw, setPw] = useState('')
+  const me = useAuthStore(s => (s.user as any)?.id)
+
+  const load = () => access_api.users({ search, status }).then(r => setRows(r.data)).catch(e => toast.error(errMsg(e)))
+  useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h) }, [search, status])
+
+  const open = async (id: number | null) => {
+    if (!id) return setEditing({ id: null, form: { ...EMPTY, permissions: [...(cat.role_permissions.staff || [])] } })
+    try {
+      const { data } = await access_api.user(id)
+      const form = Object.fromEntries(Object.keys(EMPTY).map(k => [k, (data as any)[k] ?? (EMPTY as any)[k]])) as access_form
+      form.password = ''
+      setEditing({ id, form, original: JSON.parse(JSON.stringify(form)), audit: data.audit, meta: data })
+    } catch (e) { toast.error(errMsg(e)) }
+  }
+  const act = async (fn: () => Promise<unknown>, msg: string) => { try { await fn(); toast.success(msg); load() } catch (e) { toast.error(errMsg(e)) } }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2 items-center">
+        <input className="form-input !w-72" placeholder="Search name, username, code, mobile…" value={search} onChange={e => setSearch(e.target.value)} />
+        <select className="form-input !w-auto" value={status} onChange={e => setStatus(e.target.value)}>
+          <option value="all">All</option><option value="active">Active</option><option value="inactive">Inactive</option></select>
+        <button className="btn btn-primary ml-auto" onClick={() => open(null)}><i className="fas fa-user-plus mr-2" />New user</button>
+      </div>
       <div className="bg-app-card border border-border rounded-fiori overflow-x-auto">
-        <table className="ent-table min-w-[860px]">
-          <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Location</th><th>Last login</th><th>Status</th>{isAdmin && <th className="!text-right">Actions</th>}</tr></thead>
+        <table className="ent-table min-w-[1150px]">
+          <thead><tr><th>ID</th><th>Employee</th><th>Username</th><th>Department</th><th>Role</th>
+            <th className="!text-center">Outlets</th><th className="!text-center">Categories</th><th className="!text-center">Groups</th>
+            <th>Status</th><th>Last login</th><th className="!text-right">Actions</th></tr></thead>
           <tbody>
-            {!rows.length ? <tr><td colSpan={7} className="text-center text-text-muted !py-10">No users found</td></tr> : rows.map(u => (
-              <tr key={u.id}>
-                <td className="font-semibold">{u.name}{u.id === me?.id && <span className="text-[11px] text-text-muted"> (you)</span>}{u.email && <div className="text-[12px] text-text-muted font-normal">{u.email}</div>}</td>
-                <td className="font-mono text-[12px]">{u.username}</td>
-                <td><span className="text-[12px] px-2 py-0.5 rounded-full bg-primary-light text-primary capitalize">{u.role}</span></td>
-                <td>{u.outlet_id ? u.outlet_name : <span className="text-text-muted">Head Office</span>}
-                  {u.role === 'staff' && !u.outlet_id && <div className="text-[11px] text-amber-600">No branch — can bill at any counter</div>}</td>
-                <td className="text-[12px]">{dt(u.last_login)}</td>
-                <td><StatusBadge active={u.status} /></td>
-                {isAdmin && <td className="text-right whitespace-nowrap">
-                  <button className="w-8 h-8 rounded-md text-text-secondary hover:bg-app-bg hover:text-primary" title="Edit" aria-label={`Edit ${u.name}`}
-                    onClick={() => setForm({ id: u.id, name: u.name, username: u.username, email: u.email || '', role: u.role, outlet_id: String(u.outlet_id || 0), password: '', status: u.status })}><i className="fas fa-pen" /></button>
-                  <button className="w-8 h-8 rounded-md text-text-secondary hover:bg-app-bg hover:text-blue-600" title="Data Scope & Store/Category Assignments" aria-label={`Configure data scope of ${u.name}`}
-                    onClick={() => openScopeModal(u)}><i className="fas fa-shield-alt" /></button>
-                  <button className="w-8 h-8 rounded-md text-text-secondary hover:bg-app-bg hover:text-primary" title="Reset password" aria-label={`Reset password of ${u.name}`}
-                    onClick={() => setPwd({ u, p: '' })}><i className="fas fa-key" /></button>
-                  {u.id !== me?.id && <button className={`w-8 h-8 rounded-md text-text-secondary hover:bg-app-bg ${u.status ? 'hover:text-red-600' : 'hover:text-green-600'}`}
-                    title={u.status ? 'Deactivate' : 'Activate'} aria-label={`${u.status ? 'Deactivate' : 'Activate'} ${u.name}`} onClick={() => toggle(u)}>
-                    <i className={`fas ${u.status ? 'fa-ban' : 'fa-undo'}`} /></button>}
-                </td>}
-              </tr>
-            ))}
+            {!rows.length ? <tr><td colSpan={11} className="text-center text-text-muted !py-10">No users</td></tr> : rows.map(u => {
+              const admin = ADMIN.includes(u.role)
+              return (
+                <tr key={u.id}>
+                  <td className="font-mono text-[12px]">{u.id}</td>
+                  <td><button className="font-semibold text-text-link hover:underline text-left" onClick={() => open(u.id)}>{u.name}</button>
+                    <div className="text-[11px] text-text-muted">{[u.employee_code, u.designation, u.mobile].filter(Boolean).join(' · ')}</div></td>
+                  <td className="font-mono text-[12px]">{u.username}</td>
+                  <td className="text-[12px]">{u.department || '—'}</td>
+                  <td><span className="text-[12px] px-2 py-0.5 rounded-full bg-primary-light text-primary">{cat.roles.find(r => r.slug === u.role)?.name || u.role}</span></td>
+                  <td className="!text-center text-[12px]">{admin || u.all_outlets ? 'All' : u.outlet_count}{u.default_outlet && <div className="text-text-muted">{u.default_outlet}</div>}</td>
+                  <td className="!text-center text-[12px]">{admin || u.all_categories ? 'All' : u.category_count}</td>
+                  <td className="!text-center text-[12px]">{admin || !u.group_count ? 'All' : u.group_count}</td>
+                  <td><span className={`text-[11px] px-2 py-0.5 rounded-full ${u.status ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>{u.status ? 'Active' : 'Inactive'}</span>
+                    {u.valid_until && <div className="text-[11px] text-text-muted">till {u.valid_until}</div>}</td>
+                  <td className="text-[12px] whitespace-nowrap">{dt(u.last_login)}</td>
+                  <td className="!text-right whitespace-nowrap">
+                    <button className="btn btn-secondary !px-2" title="Edit & permissions" onClick={() => open(u.id)}><i className="fas fa-user-cog" /></button>{' '}
+                    {u.id !== me && <>
+                      <button className="btn btn-secondary !px-2" title="Reset password" onClick={() => { setPwFor(u); setPw('') }}><i className="fas fa-key" /></button>{' '}
+                      <button className="btn btn-secondary !px-2" title={u.status ? 'Deactivate' : 'Activate'}
+                        onClick={() => window.confirm(`${u.status ? 'Deactivate' : 'Activate'} ${u.name}?`) && act(() => access_api.toggle(u.id), u.status ? 'Deactivated' : 'Activated')}>
+                        <i className={`fas ${u.status ? 'fa-user-slash' : 'fa-user-check'}`} /></button></>}
+                  </td>
+                </tr>)
+            })}
           </tbody>
         </table>
-        <div className="flex items-center justify-between px-4 py-3 border-t border-border text-[13px] text-text-secondary">
-          <span>{total} user{total === 1 ? '' : 's'}</span>
-          <div className="flex items-center gap-2">
-            <button className="btn btn-secondary" disabled={q.page <= 1} onClick={() => setQ(x => ({ ...x, page: x.page - 1 }))}>Prev</button>
-            <span>Page {q.page} of {pages}</span>
-            <button className="btn btn-secondary" disabled={q.page >= pages} onClick={() => setQ(x => ({ ...x, page: x.page + 1 }))}>Next</button>
-          </div>
-        </div>
       </div>
 
-      <Modal open={!!form} onClose={() => setForm(null)} title={form?.id ? `Edit • ${form.username}` : 'New User'} width="max-w-xl">
-        {form && (
-          <form onSubmit={save} className="grid sm:grid-cols-2 gap-3">
-            <div className="sm:col-span-2"><label className="form-label">Full name <span className="text-red-500">*</span></label>
-              <input className="form-input" required minLength={2} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div><label className="form-label">Username <span className="text-red-500">*</span></label>
-              <input className="form-input font-mono" required minLength={3} pattern="[A-Za-z0-9_.@-]+" disabled={!!form.id} value={form.username}
-                onChange={e => setForm({ ...form, username: e.target.value.trim() })} /></div>
-            <div><label className="form-label">Email</label>
-              <input className="form-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
-            {!form.id && <div className="sm:col-span-2"><label className="form-label">Password <span className="text-red-500">*</span></label>
-              <input className="form-input" type="password" required minLength={6} autoComplete="new-password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
-              <span className="form-helper">At least 6 characters</span></div>}
-            <div><label className="form-label">Role <span className="text-red-500">*</span></label>
-              <select className="form-input capitalize" value={form.role} disabled={form.id === me?.id || (form.role === 'superadmin' && me?.role !== 'superadmin')}
-                onChange={e => setForm({ ...form, role: e.target.value })}>
-                {[...(me?.role === 'superadmin' || form.role === 'superadmin' ? ['superadmin'] : []), ...USER_ROLES].map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <span className="form-helper">{ROLE_HELP[form.role]}</span></div>
-            <div><label className="form-label">Location <span className="text-red-500">*</span></label>
-              {locSelect(form.outlet_id, v => setForm({ ...form, outlet_id: v }))}
-              <span className="form-helper">{form.role === 'staff' ? 'Their POS counter is locked to this location' : form.role === 'manager' ? 'Accepts cash into this location\'s safe' : 'Head Office = not tied to a branch'}</span></div>
-            {form.id && form.id !== me?.id && <label className="sm:col-span-2 flex items-center gap-2 text-[13px] text-text-secondary">
-              <input type="checkbox" checked={form.status} onChange={e => setForm({ ...form, status: e.target.checked })} /> Active (can log in)</label>}
-            <p className="sm:col-span-2 text-[12px] text-text-muted m-0">A user with an open shift or cash in hand can't be moved or deactivated until that is settled.</p>
-            <div className="sm:col-span-2 flex justify-end gap-2 pt-2 border-t border-border">
-              <button type="button" className="btn btn-secondary" onClick={() => setForm(null)}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : form.id ? 'Update User' : 'Create User'}</button>
-            </div>
-          </form>
-        )}
+      {editing && <Editor cat={cat} rows={rows} state={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
+
+      <Modal open={!!pwFor} onClose={() => setPwFor(null)} title={`Reset password — ${pwFor?.name}`}>
+        <label className="form-label">New password (8+ characters)</label>
+        <input className="form-input" type="password" autoComplete="new-password" value={pw} onChange={e => setPw(e.target.value)} />
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="btn btn-secondary" onClick={() => setPwFor(null)}>Cancel</button>
+          <button className="btn btn-primary" disabled={pw.length < 8} onClick={() => pwFor && act(() => access_api.reset_password(pwFor.id, pw), 'Password reset').then(() => setPwFor(null))}>Reset</button>
+        </div>
       </Modal>
+    </div>
+  )
+}
 
-      <Modal open={!!pwd} onClose={() => setPwd(null)} title={`Reset password • ${pwd?.u.name ?? ''}`}>
-        {pwd && <div className="space-y-3">
-          <div><label className="form-label">New password</label>
-            <input className="form-input" type="password" autoComplete="new-password" minLength={6} value={pwd.p} onChange={e => setPwd({ ...pwd, p: e.target.value })} />
-            <span className="form-helper">At least 6 characters. Share it with the user privately.</span></div>
-          <div className="flex justify-end gap-2">
-            <button className="btn btn-secondary" onClick={() => setPwd(null)}>Cancel</button>
-            <button className="btn btn-primary" disabled={busy || pwd.p.length < 6} onClick={resetPwd}>Reset Password</button>
-          </div>
-        </div>}
-      </Modal>
+function Editor({ cat, rows, state, onClose, onSaved }: {
+  cat: access_catalog; rows: access_user_row[]; onClose: () => void; onSaved: () => void
+  state: { id: number | null; form: access_form; original?: access_form; audit?: any[]; meta?: any }
+}) {
+  const [f, setF] = useState<access_form>(state.form)
+  const [step, setStep] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const set = <K extends keyof access_form>(k: K, v: access_form[K]) => setF(x => ({ ...x, [k]: v }))
+  const admin = ADMIN.includes(f.role)
 
-      {/* Data Scope & Role Assignments Modal */}
-      <Modal
-        open={!!scopeUser}
-        onClose={() => setScopeUser(null)}
-        title={`Data Scope & Access Boundaries • ${scopeUser?.name ?? ''}`}
-        width="max-w-3xl"
-      >
-        {scopeUser && (
-          <div className="space-y-4">
-            <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 flex items-start gap-2.5 text-xs text-blue-900 dark:text-blue-200">
-              <i className="fas fa-shield-alt text-blue-600 mt-0.5" />
-              <div>
-                <strong>Role: {scopeUser.role.replace(/_/g, ' ').toUpperCase()}</strong>
-                <p className="m-0 mt-0.5 text-blue-800 dark:text-blue-300">
-                  Data isolation is strictly enforced at the backend database query layer. The user cannot view, filter, or query stores or product categories outside their assigned boundaries.
-                </p>
-              </div>
-            </div>
+  async function copyFrom(id: number) {
+    try {
+      const { data } = await access_api.user(id)
+      setF(x => ({ ...x, role: data.role, all_outlets: data.all_outlets, outlet_ids: data.outlet_ids, outlet_id: data.outlet_id,
+                   all_categories: data.all_categories, category_ids: data.category_ids, group_ids: data.group_ids, permissions: data.permissions }))
+      toast.success(`Copied ${data.name}'s access — review each tab, then save`)
+    } catch (e) { toast.error(errMsg(e)) }
+  }
 
-            {loadingScope ? (
-              <div className="py-12 text-center text-xs text-text-muted">Loading user assignments…</div>
-            ) : (
-              <div className="space-y-4">
-                {/* 1. Default Landing Dashboard Template */}
-                <div>
-                  <label className="form-label text-xs font-semibold">Default Dashboard Template</label>
-                  <select
-                    className="form-input text-xs"
-                    value={assignedTemplateId ?? ''}
-                    onChange={e => setAssignedTemplateId(e.target.value ? Number(e.target.value) : null)}
-                  >
-                    <option value="">Role Default (Auto-assigned)</option>
-                    {allTemplates.map(t => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} {t.is_default ? '★ (Global Default)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="form-helper">Specifies which dashboard layout loads when this user logs in.</span>
-                </div>
+  const o = state.original
+  const removed = o ? {
+    outlets: o.all_outlets && !f.all_outlets ? ['All outlets'] : o.outlet_ids.filter(i => !f.all_outlets && !f.outlet_ids.includes(i)).map(i => cat.outlets.find(x => x.id === i)?.outlet_name || `#${i}`),
+    categories: o.all_categories && !f.all_categories ? ['All categories'] : o.category_ids.filter(i => !f.all_categories && !f.category_ids.includes(i)).map(i => cat.categories.find(x => x.id === i)?.name || `#${i}`),
+    groups: f.group_ids.length ? o.group_ids.filter(i => !f.group_ids.includes(i)).map(i => cat.groups.find(x => x.id === i)?.name || `#${i}`) : [],
+    permissions: o.permissions.filter(p => !f.permissions.includes(p)),
+  } : null
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border">
-                  {/* 2. Permitted Stores (e.g. 6 stores for ASM) */}
-                  <div className="border border-border rounded-xl p-3 bg-app-bg/50 flex flex-col h-[320px]">
-                    <div className="flex items-center justify-between pb-2 border-b border-border">
-                      <span className="text-xs font-semibold text-text-primary">
-                        Assigned Outlets ({assignedStoreIds.length})
-                      </span>
-                      <div className="flex items-center gap-1.5 text-[11px]">
-                        <button
-                          type="button"
-                          className="text-primary hover:underline"
-                          onClick={() => setAssignedStoreIds(outlets.map(o => o.id))}
-                        >
-                          All
-                        </button>
-                        <span>·</span>
-                        <button
-                          type="button"
-                          className="text-text-muted hover:underline"
-                          onClick={() => setAssignedStoreIds([])}
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    </div>
+  async function save() {
+    if (removed && Object.values(removed).some(v => v.length)) {
+      const lines = Object.entries(removed).filter(([, v]) => v.length).map(([k, v]) => `• ${k}: ${v.slice(0, 8).join(', ')}${v.length > 8 ? ` … (+${v.length - 8})` : ''}`)
+      if (!window.confirm(`This removes existing access:\n\n${lines.join('\n')}\n\nContinue?`)) return
+    }
+    setSaving(true)
+    try {
+      const body = { ...f, password: f.password || undefined }
+      if (state.id) await access_api.update(state.id, body); else await access_api.create(body)
+      toast.success(state.id ? 'User updated' : 'User created'); onSaved()
+    } catch (e) { toast.error(errMsg(e)) } finally { setSaving(false) }
+  }
 
-                    <input
-                      className="form-input text-xs !py-1 my-2"
-                      placeholder="Filter stores…"
-                      value={storeSearch}
-                      onChange={e => setStoreSearch(e.target.value)}
-                    />
+  return (
+    <Modal open onClose={onClose} title={state.id ? `Edit user — ${state.form.name}` : 'New user'} width="max-w-6xl">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {STEPS.map((s, i) => <button key={s} onClick={() => setStep(i)}
+          className={`text-[12px] px-3 py-1.5 rounded-full border ${step === i ? 'bg-primary text-white border-primary' : 'border-border text-text-secondary hover:border-primary'}`}>{i + 1}. {s}</button>)}
+        <select className="form-input !w-56 !h-8 ml-auto text-[12px]" value="" onChange={e => e.target.value && copyFrom(Number(e.target.value))}>
+          <option value="">Copy access from user…</option>
+          {rows.filter(r => r.id !== state.id).map(r => <option key={r.id} value={r.id}>{r.name} ({r.role})</option>)}</select>
+      </div>
 
-                    <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 text-xs">
-                      {outlets
-                        .filter(o => !storeSearch || o.outlet_name.toLowerCase().includes(storeSearch.toLowerCase()))
-                        .map(o => {
-                          const checked = assignedStoreIds.includes(o.id)
-                          return (
-                            <label
-                              key={o.id}
-                              className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors ${
-                                checked ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-app-card text-text-secondary'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={e => {
-                                  if (e.target.checked) setAssignedStoreIds([...assignedStoreIds, o.id])
-                                  else setAssignedStoreIds(assignedStoreIds.filter(id => id !== o.id))
-                                }}
-                              />
-                              <span className="truncate">{o.outlet_name}</span>
-                            </label>
-                          )
-                        })}
-                    </div>
-                  </div>
+      <div className="min-h-[380px]">
+        {step === 0 && <Basic f={f} set={set} cat={cat} isNew={!state.id} meta={state.meta} />}
+        {step === 1 && (admin ? <AdminNote /> : <Outlets f={f} set={set} cat={cat} />)}
+        {step === 2 && (admin ? <AdminNote /> : <Categories f={f} set={set} cat={cat} />)}
+        {step === 3 && (admin ? <AdminNote /> : <Groups f={f} set={set} cat={cat} />)}
+        {step === 4 && (admin ? <AdminNote /> : <Matrix cat={cat} kind="module" value={f.permissions} onChange={v => set('permissions', v)} role={f.role} />)}
+        {step === 5 && (admin ? <AdminNote /> : <Matrix cat={cat} kind="report" value={f.permissions} onChange={v => set('permissions', v)} role={f.role} />)}
+        {step === 6 && <Review f={f} cat={cat} audit={state.audit} removed={removed} />}
+      </div>
 
-                  {/* 3. Permitted Product Categories (e.g. for Category Manager) */}
-                  <div className="border border-border rounded-xl p-3 bg-app-bg/50 flex flex-col h-[320px]">
-                    <div className="flex items-center justify-between pb-2 border-b border-border">
-                      <span className="text-xs font-semibold text-text-primary">
-                        Assigned Categories ({assignedCatIds.length})
-                      </span>
-                      <div className="flex items-center gap-1.5 text-[11px]">
-                        <button
-                          type="button"
-                          className="text-primary hover:underline"
-                          onClick={() => setAssignedCatIds(allCategories.map(c => c.id))}
-                        >
-                          All
-                        </button>
-                        <span>·</span>
-                        <button
-                          type="button"
-                          className="text-text-muted hover:underline"
-                          onClick={() => setAssignedCatIds([])}
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    </div>
+      <div className="flex justify-between gap-2 pt-4 mt-4 border-t border-border">
+        <button className="btn btn-secondary" disabled={step === 0} onClick={() => setStep(step - 1)}><i className="fas fa-arrow-left mr-2" />Back</button>
+        <div className="flex gap-2">
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          {step < STEPS.length - 1 && <button className="btn btn-secondary" onClick={() => setStep(step + 1)}>Next<i className="fas fa-arrow-right ml-2" /></button>}
+          <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : state.id ? 'Save changes' : 'Create user'}</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
 
-                    <input
-                      className="form-input text-xs !py-1 my-2"
-                      placeholder="Filter categories…"
-                      value={catSearch}
-                      onChange={e => setCatSearch(e.target.value)}
-                    />
+const AdminNote = () => <div className="rounded-lg bg-amber-50 text-amber-800 px-4 py-3 text-[13px]"><i className="fas fa-crown mr-2" />
+  Administrators always have every outlet, category and permission. Pick another role to restrict this user.</div>
 
-                    <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 text-xs">
-                      {allCategories
-                        .filter(c => !catSearch || c.name.toLowerCase().includes(catSearch.toLowerCase()))
-                        .map(c => {
-                          const checked = assignedCatIds.includes(c.id)
-                          return (
-                            <label
-                              key={c.id}
-                              className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors ${
-                                checked ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-app-card text-text-secondary'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={e => {
-                                  if (e.target.checked) setAssignedCatIds([...assignedCatIds, c.id])
-                                  else setAssignedCatIds(assignedCatIds.filter(id => id !== c.id))
-                                }}
-                              />
-                              <span className="truncate">{c.name}</span>
-                            </label>
-                          )
-                        })}
-                    </div>
-                  </div>
-                </div>
+type FP = { f: access_form; set: <K extends keyof access_form>(k: K, v: access_form[K]) => void; cat: access_catalog }
 
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                  <button type="button" className="btn btn-secondary text-xs" onClick={() => setScopeUser(null)}>
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary text-xs"
-                    disabled={savingScope}
-                    onClick={saveScope}
-                  >
-                    <i className="fas fa-save mr-1" /> {savingScope ? 'Saving…' : 'Save Scope & Assignments'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
+function Basic({ f, set, cat, isNew, meta }: FP & { isNew: boolean; meta?: any }) {
+  const field = (label: string, k: keyof access_form, type = 'text', req = false) => (
+    <div><label className="form-label">{label}{req && <span className="text-red-500"> *</span>}</label>
+      <input className="form-input" type={type} value={(f[k] as any) ?? ''} autoComplete={type === 'password' ? 'new-password' : 'off'}
+        onChange={e => set(k, (e.target.value || (k === 'password' ? '' : null)) as any)} /></div>)
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {field('Employee name', 'name', 'text', true)}
+      {field('Login username', 'username', 'text', true)}
+      {field(isNew ? 'Password (8+ characters)' : 'New password (leave blank to keep)', 'password', 'password', isNew)}
+      {field('Employee code', 'employee_code')}
+      {field('Mobile number', 'mobile', 'tel')}
+      {field('Email address', 'email', 'email')}
+      {field('Department', 'department')}
+      {field('Designation', 'designation')}
+      <div><label className="form-label">User role <span className="text-red-500">*</span></label>
+        <select className="form-input" value={f.role} onChange={e => {
+          const r = e.target.value
+          set('role', r)
+          if (!ADMIN.includes(r) && window.confirm('Load this role’s starting permissions? (You can still change them.)')) set('permissions', [...(cat.role_permissions[r] || [])])
+        }}>{cat.roles.map(r => <option key={r.slug} value={r.slug}>{r.name}</option>)}</select></div>
+      <div><label className="form-label">Default outlet</label>
+        <select className="form-input" value={f.outlet_id ?? ''} onChange={e => set('outlet_id', e.target.value ? Number(e.target.value) : null)}>
+          <option value="">Head Office</option>{cat.outlets.map(o => <option key={o.id} value={o.id}>{o.outlet_name}</option>)}</select></div>
+      {field('Account valid from', 'valid_from', 'date')}
+      {field('Account valid until', 'valid_until', 'date')}
+      <label className="flex items-center gap-2 text-[13px] md:col-span-3"><input type="checkbox" checked={f.status} onChange={e => set('status', e.target.checked)} />Active (can log in)</label>
+      {meta && <div className="md:col-span-3 text-[12px] text-text-muted grid grid-cols-2 md:grid-cols-4 gap-2 border-t border-border pt-3">
+        <span>Last login: <b>{dt(meta.last_login)}</b></span><span>Created: <b>{dt(meta.created_at)}</b>{meta.created_by_name && ` by ${meta.created_by_name}`}</span>
+        <span>Modified: <b>{dt(meta.updated_at)}</b>{meta.updated_by_name && ` by ${meta.updated_by_name}`}</span><span>User ID: <b>{meta.id}</b></span></div>}
+    </div>
+  )
+}
+
+function Checklist<T extends { id: number }>({ items, label, selected, onChange, group }: {
+  items: T[]; label: (t: T) => string; selected: number[]; onChange: (v: number[]) => void; group?: (t: T) => string
+}) {
+  const [q, setQ] = useState('')
+  const shown = items.filter(t => label(t).toLowerCase().includes(q.toLowerCase()) || (group?.(t) || '').toLowerCase().includes(q.toLowerCase()))
+  const groups = group ? [...new Set(shown.map(group))] : ['']
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2 items-center">
+        <input className="form-input !w-64" placeholder="Search…" value={q} onChange={e => setQ(e.target.value)} />
+        <button className="btn btn-secondary !py-1" onClick={() => onChange([...new Set([...selected, ...shown.map(t => t.id)])])}>Select all{q && ' shown'}</button>
+        <button className="btn btn-secondary !py-1" onClick={() => onChange(selected.filter(id => !shown.some(t => t.id === id)))}>Clear{q && ' shown'}</button>
+        <span className="text-[12px] text-text-muted">{selected.length} selected</span>
+      </div>
+      <div className="max-h-80 overflow-y-auto border border-border rounded-lg p-2 space-y-2">
+        {groups.map(g => <div key={g}>
+          {g && <div className="text-[11px] font-bold uppercase tracking-wide text-text-secondary mb-1">{g}</div>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1">
+            {shown.filter(t => !group || group(t) === g).map(t => <label key={t.id} className="flex items-center gap-2 text-[13px] cursor-pointer">
+              <input type="checkbox" checked={selected.includes(t.id)} onChange={e => onChange(e.target.checked ? [...selected, t.id] : selected.filter(x => x !== t.id))} />{label(t)}</label>)}
+          </div></div>)}
+        {!shown.length && <div className="text-text-muted text-[13px] p-2">Nothing matches</div>}
+      </div>
+    </div>
+  )
+}
+
+function Outlets({ f, set, cat }: FP) {
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 text-[14px] font-semibold"><input type="checkbox" checked={f.all_outlets} onChange={e => set('all_outlets', e.target.checked)} />
+        All outlets (includes outlets added later)</label>
+      {!f.all_outlets && <Checklist items={cat.outlets} label={o => `${o.outlet_name} (${o.unit_code})`} selected={f.outlet_ids} onChange={v => set('outlet_ids', v)} />}
+      <div className="text-[12px] text-text-muted">The user sees and works only in these outlets — dropdowns, reports, stock, GRN, transfers and billing. The default outlet is always included.</div>
+    </div>
+  )
+}
+
+function Categories({ f, set, cat }: FP) {
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 text-[14px] font-semibold"><input type="checkbox" checked={f.all_categories} onChange={e => set('all_categories', e.target.checked)} />
+        All categories (includes categories added later)</label>
+      {!f.all_categories && <Checklist items={cat.categories} label={c => c.name} group={c => c.department || 'Other'} selected={f.category_ids}
+        onChange={v => { set('category_ids', v); set('group_ids', f.group_ids.filter(g => v.includes(cat.groups.find(x => x.id === g)?.category_id ?? -1))) }} />}
+      <div className="text-[12px] text-text-muted">Items outside these categories are hidden from Item Master, item search, GRN, PO, transfers, stock and item-level reports.</div>
+    </div>
+  )
+}
+
+function Groups({ f, set, cat }: FP) {
+  const avail = cat.groups.filter(g => f.all_categories || f.category_ids.includes(g.category_id))
+  const catName = (id: number) => cat.categories.find(c => c.id === id)?.name || '—'
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg bg-blue-50 text-blue-800 px-3 py-2 text-[12px]"><i className="fas fa-info-circle mr-1.5" />
+        Groups are the item sub-categories. Leave all unticked to allow <b>every group</b> of the chosen categories; tick some to allow only those.</div>
+      {!avail.length ? <div className="text-text-muted text-[13px]">Pick categories first.</div>
+        : <Checklist items={avail} label={g => g.name} group={g => catName(g.category_id)} selected={f.group_ids} onChange={v => set('group_ids', v)} />}
+    </div>
+  )
+}
+
+function Matrix({ cat, kind, value, onChange, role }: { cat: access_catalog; kind: 'module' | 'report'; value: string[]; onChange: (v: string[]) => void; role?: string }) {
+  const mods = cat.modules.filter(m => m.kind === kind)
+  const acts = cat.actions.filter(a => mods.some(m => m.actions.includes(a)))
+  const has = (s: string) => value.includes(s)
+  const toggle = (slugs: string[], on: boolean) => onChange(on ? [...new Set([...value, ...slugs])] : value.filter(s => !slugs.includes(s)))
+  const tmpl = role ? cat.role_permissions[role] || [] : null
+  return (
+    <div className="space-y-2">
+      {tmpl && <div className="flex items-center gap-2 text-[12px]">
+        <button className="btn btn-secondary !py-1" onClick={() => onChange([...value.filter(s => !mods.some(m => s.startsWith(m.key + '.'))), ...tmpl.filter(s => mods.some(m => s.startsWith(m.key + '.')))])}>
+          Reset to role template</button>
+        <span className="text-text-muted">Ticks that differ from the role template are saved as this user's own exceptions. View does not imply create, edit or delete.</span></div>}
+      <div className="overflow-x-auto border border-border rounded-lg">
+        <table className="ent-table min-w-[820px]">
+          <thead><tr><th>{kind === 'report' ? 'Report group' : 'Module'}</th>
+            {acts.map(a => <th key={a} className="!text-center capitalize">
+              <button className="capitalize hover:text-primary" title="Toggle column" onClick={() => {
+                const slugs = mods.filter(m => m.actions.includes(a)).map(m => `${m.key}.${a}`); toggle(slugs, !slugs.every(has)) }}>{a}</button></th>)}
+            <th className="!text-center">All</th></tr></thead>
+          <tbody>{mods.map(m => {
+            const slugs = m.actions.map(a => `${m.key}.${a}`)
+            return <tr key={m.key}>
+              <td className="font-semibold text-[13px]">{m.label}</td>
+              {acts.map(a => <td key={a} className="!text-center">{m.actions.includes(a)
+                ? <input type="checkbox" checked={has(`${m.key}.${a}`)} onChange={e => toggle([`${m.key}.${a}`], e.target.checked)}
+                    className={tmpl && has(`${m.key}.${a}`) !== tmpl.includes(`${m.key}.${a}`) ? 'outline outline-2 outline-amber-400' : ''} />
+                : <span className="text-text-muted">·</span>}</td>)}
+              <td className="!text-center"><input type="checkbox" checked={slugs.every(has)} onChange={e => toggle(slugs, e.target.checked)} /></td>
+            </tr>
+          })}</tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function Review({ f, cat, audit, removed }: { f: access_form; cat: access_catalog; audit?: any[]; removed: Record<string, string[]> | null }) {
+  const admin = ADMIN.includes(f.role)
+  const byModule = useMemo(() => cat.modules.map(m => ({ m, acts: m.actions.filter(a => f.permissions.includes(`${m.key}.${a}`)) })).filter(x => x.acts.length), [f.permissions, cat])
+  const names = (ids: number[], list: { id: number; name?: string; outlet_name?: string }[]) => ids.map(i => { const x = list.find(y => y.id === i); return x?.outlet_name || x?.name || `#${i}` })
+  const Line = ({ k, v }: { k: string; v: React.ReactNode }) => <div className="grid grid-cols-[160px_1fr] gap-2 text-[13px] py-1 border-b border-border/60"><span className="text-text-secondary">{k}</span><span>{v}</span></div>
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div>
+        <div className="text-[12px] font-bold uppercase tracking-wide text-text-secondary mb-1">Permission summary</div>
+        <Line k="User" v={<><b>{f.name || '—'}</b> ({f.username || '—'}) · {cat.roles.find(r => r.slug === f.role)?.name}</>} />
+        <Line k="Status" v={`${f.status ? 'Active' : 'Inactive'}${f.valid_from || f.valid_until ? ` · valid ${f.valid_from || '…'} → ${f.valid_until || '…'}` : ''}`} />
+        <Line k="Default outlet" v={cat.outlets.find(o => o.id === f.outlet_id)?.outlet_name || 'Head Office'} />
+        <Line k="Outlets" v={admin || f.all_outlets ? 'All outlets' : names(f.outlet_ids, cat.outlets).join(', ') || <span className="text-red-600">none</span>} />
+        <Line k="Categories" v={admin || f.all_categories ? 'All categories' : names(f.category_ids, cat.categories).join(', ') || <span className="text-red-600">none</span>} />
+        <Line k="Groups" v={admin || !f.group_ids.length ? 'All groups of those categories' : names(f.group_ids, cat.groups).join(', ')} />
+        <div className="mt-2 space-y-1">{admin ? <div className="text-[13px]">Every module and report — full access.</div> : byModule.length ? byModule.map(({ m, acts }) =>
+          <div key={m.key} className="text-[12px]"><b>{m.label}:</b> {acts.join(', ')}</div>) : <div className="text-red-600 text-[13px]">No module permissions — the user can log in but open nothing.</div>}</div>
+        {removed && Object.values(removed).some(v => v.length) && <div className="mt-3 rounded-lg bg-red-50 text-red-700 px-3 py-2 text-[12px]">
+          <b>Will be removed:</b> {Object.entries(removed).filter(([, v]) => v.length).map(([k, v]) => `${k} (${v.length})`).join(', ')}</div>}
+      </div>
+      <div>
+        <div className="text-[12px] font-bold uppercase tracking-wide text-text-secondary mb-1">Access history</div>
+        {!audit?.length ? <div className="text-text-muted text-[13px]">No changes recorded yet.</div> :
+          <div className="max-h-96 overflow-y-auto space-y-2">{audit.map((a, i) => <div key={i} className="text-[12px] border-b border-border/60 pb-1">
+            <div className="text-text-muted">{dt(a.created_at)} · {a.changed_by_name}</div><div>{a.summary}</div></div>)}</div>}
+      </div>
+    </div>
+  )
+}
+
+// ── role templates ──────────────────────────────────────────────────────────
+
+function RoleTemplates({ cat }: { cat: access_catalog }) {
+  const roles = cat.roles.filter(r => !ADMIN.includes(r.slug))
+  const [role, setRole] = useState(roles[0]?.slug || '')
+  const [perms, setPerms] = useState<string[]>([])
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setPerms([...(cat.role_permissions[role] || [])]) }, [role, cat])
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="form-input !w-64" value={role} onChange={e => setRole(e.target.value)}>{roles.map(r => <option key={r.slug} value={r.slug}>{r.name}</option>)}</select>
+        <span className="text-[12px] text-text-muted">Starting permissions for everyone with this role. A user's own exceptions (set on the user) still apply on top.</span>
+        <button className="btn btn-primary ml-auto" disabled={saving} onClick={async () => {
+          setSaving(true)
+          try { await access_api.set_role_template(role, perms); cat.role_permissions[role] = perms; toast.success('Role template saved') }
+          catch (e) { toast.error(errMsg(e)) } finally { setSaving(false) }
+        }}>{saving ? 'Saving…' : 'Save template'}</button>
+      </div>
+      <Matrix cat={cat} kind="module" value={perms} onChange={setPerms} />
+      <Matrix cat={cat} kind="report" value={perms} onChange={setPerms} />
+    </div>
+  )
+}
+
+// ── audit ───────────────────────────────────────────────────────────────────
+
+function Audit() {
+  const [data, setData] = useState<{ changes: any[]; denials: any[] } | null>(null)
+  useEffect(() => { access_api.audit().then(r => setData(r.data)).catch(e => toast.error(errMsg(e))) }, [])
+  if (!data) return <div className="text-text-muted py-10 text-center">Loading…</div>
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="bg-app-card border border-border rounded-fiori overflow-x-auto">
+        <div className="px-4 py-2 font-semibold text-[13px] border-b border-border">Permission changes</div>
+        <table className="ent-table"><thead><tr><th>When</th><th>User</th><th>Changed by</th><th>What changed</th></tr></thead>
+          <tbody>{!data.changes.length ? <tr><td colSpan={4} className="text-center text-text-muted !py-6">None yet</td></tr> : data.changes.map((c, i) =>
+            <tr key={i}><td className="text-[12px] whitespace-nowrap">{dt(c.created_at)}</td><td className="text-[12px]">{c.user_id === 0 ? 'Role template' : c.user_name}</td>
+              <td className="text-[12px]">{c.changed_by_name}<div className="text-text-muted">{c.ip_address}</div></td><td className="text-[12px]">{c.summary}</td></tr>)}</tbody></table>
+      </div>
+      <div className="bg-app-card border border-border rounded-fiori overflow-x-auto">
+        <div className="px-4 py-2 font-semibold text-[13px] border-b border-border">Blocked access attempts</div>
+        <table className="ent-table"><thead><tr><th>When</th><th>User</th><th>Attempt</th></tr></thead>
+          <tbody>{!data.denials.length ? <tr><td colSpan={3} className="text-center text-text-muted !py-6">None</td></tr> : data.denials.map((d, i) =>
+            <tr key={i}><td className="text-[12px] whitespace-nowrap">{dt(d.created_at)}</td><td className="text-[12px]">{d.user_name}<div className="text-text-muted">{d.ip_address}</div></td>
+              <td className="text-[12px]">{d.description}</td></tr>)}</tbody></table>
+      </div>
     </div>
   )
 }

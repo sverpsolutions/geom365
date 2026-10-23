@@ -7,6 +7,7 @@ from sqlalchemy.orm import aliased
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, current_user_dep
+from app.core import access
 from app.models.inventory import multi_transfer_session, multi_transfer_session_branch, multi_transfer_session_item
 from app.models.sync import unit_wise_stock_transfer, unit_wise_stock_transfer_item
 from app.models.outlet import outlet
@@ -42,6 +43,8 @@ async def save_multi_transfer_draft(
     db: AsyncSession = Depends(get_db)
 ):
     """Save or update a multi-branch transfer draft."""
+    access.check_outlet(body.from_location_id)          # stock can only leave a location you hold
+    await access.check_products(db, [it.product_id for it in body.items])
     try:
         # Create session header
         session = multi_transfer_session(
@@ -125,6 +128,7 @@ async def confirm_multi_transfer(
         raise HTTPException(status_code=404, detail="Session not found")
     if session.status == "CONFIRMED":
         raise HTTPException(status_code=400, detail="Session already confirmed")
+    access.check_outlet(session.from_location_id)
 
     # Load branches and items
     branches = (await db.execute(select(multi_transfer_session_branch).where(multi_transfer_session_branch.session_id == session_id))).scalars().all()
@@ -248,6 +252,8 @@ async def get_transfer_for_print(
     trf = await db.get(unit_wise_stock_transfer, trf_id)
     if not trf:
         raise HTTPException(status_code=404, detail="Transfer not found")
+    if access.allowed_outlets() is not None and not {trf.from_outlet_id, trf.to_outlet_id} & set(access.allowed_outlets()):
+        raise HTTPException(status_code=403, detail="Access denied: this transfer is between locations not assigned to you.")
     locs = {o.id: o for o in (await db.execute(
         select(outlet).where(outlet.id.in_([trf.from_outlet_id, trf.to_outlet_id]))
     )).scalars().all()}
@@ -295,6 +301,7 @@ async def receive_transfer(
         raise HTTPException(status_code=404, detail="Transfer not found")
     if trf.status != "pending":
         raise HTTPException(status_code=400, detail=f"Transfer is already {trf.status}")
+    access.check_outlet(trf.to_outlet_id)               # only the receiving location confirms arrival
     items = {i.id: i for i in (await db.execute(
         select(unit_wise_stock_transfer_item).where(unit_wise_stock_transfer_item.transfer_id == trf_id)
     )).scalars().all()}
@@ -362,6 +369,9 @@ async def list_stock_transfers(
         .group_by(i.transfer_id).subquery()
     )
     conds = []
+    if access.allowed_outlets() is not None:            # transfers touching one of your locations
+        mine = access.allowed_outlets() or [0]
+        conds.append(t.from_outlet_id.in_(mine) | t.to_outlet_id.in_(mine))
     if location_id:
         conds.append((t.from_outlet_id if direction == "out" else t.to_outlet_id) == location_id)
     if date_from:

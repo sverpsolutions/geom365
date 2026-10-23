@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core import access
 from app.core.dependencies import current_user_dep, get_current_user, require_role
 from app.models.outlet import outlet
 from app.models.party import supplier
@@ -96,6 +97,7 @@ async def list_returns(
     if from_date: conds.append(pr.return_date >= from_date)
     if to_date: conds.append(pr.return_date <= to_date)
     if supplier_id: conds.append(pr.supplier_id == supplier_id)
+    conds += access.outlet_where(pr.outlet_id)
     if source == "HO": conds.append(pr.prn_no.like(f"{svc.DN_PREFIX}%"))
     if source == "OUTLET": conds.append(~pr.prn_no.like(f"{svc.DN_PREFIX}%"))
     total = (await db.execute(select(func.count(pr.id)).where(*conds))).scalar_one()

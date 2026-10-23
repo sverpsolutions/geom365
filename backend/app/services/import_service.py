@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import json
 from datetime import datetime
+from app.core import access
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, insert, func, and_
 from app.models.product import (
@@ -203,6 +204,7 @@ async def process_import(file_path: str, user_id: int, db: AsyncSession, auto_cr
                 sg_id = await get_or_create_hierarchical(db, item_subgroup, d.get('SUB GROUP'), 'group_id', g_id, auto_create)
                 c_id = await get_or_create_hierarchical(db, item_category, d.get('CATEGORY'), 'subgroup_id', sg_id, auto_create)
                 sc_id = await get_or_create_hierarchical(db, item_subcategory, d.get('SUB CATEGORY'), 'category_id', c_id, auto_create)
+                access.check_category(c_id, sc_id)  # each row must sit in the importer's categories / groups
                 b_id = await get_or_create_hierarchical(db, brand_model, d.get('BRAND'), 'subcategory_id', sc_id, auto_create)
                 sb_id = await get_or_create_hierarchical(db, sub_category_brand, d.get('SUB BRAND'), 'brand_id', b_id, auto_create)
 

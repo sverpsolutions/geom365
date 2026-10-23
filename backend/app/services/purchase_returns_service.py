@@ -23,6 +23,7 @@ from app.models.party import supplier
 from app.models.product import product
 from app.models.purchase import purchase, purchase_item
 from app.models.sync import unit_wise_purchase_return as pr, unit_wise_purchase_return_item as pr_item
+from app.core import access
 from app.services.billing_service import _write_stock_ledger, _update_product_stock
 from app.services import batch_service
 
@@ -76,6 +77,7 @@ async def _grn(db: AsyncSession, purchase_no: str, lock: bool = False) -> purcha
         raise LookupError(f"GRN {purchase_no} not found")
     if g.status == "cancelled":
         raise ValueError(f"GRN {purchase_no} is cancelled")
+    access.check_outlet(g.outlet_id)
     return g
 
 
@@ -150,6 +152,7 @@ async def _next_dn_no(db: AsyncSession) -> str:
 async def create_return(db: AsyncSession, data, user_id: Optional[int]) -> pr:
     """data: purchase_no | supplier_id, items [{product_id, qty, rate?, batch_no?, batch_id?, expiry_date?}], reason, return_date, notes."""
     g = await _grn(db, data.purchase_no, lock=True) if data.purchase_no else None
+    await access.check_products(db, [r.product_id for r in data.items])
     supplier_id = g.supplier_id if g else data.supplier_id
     sup = await db.get(supplier, supplier_id) if supplier_id else None
     if not sup:
@@ -260,6 +263,7 @@ async def cancel_return(db: AsyncSession, return_id: int, reason: str, user_id: 
     dn = (await db.execute(select(pr).where(pr.id == return_id).with_for_update())).scalar_one_or_none()
     if not dn or not dn.prn_no.startswith(DN_PREFIX):
         raise LookupError("Debit note not found (outlet PRNs are cancelled at the outlet)")
+    access.check_outlet(dn.outlet_id)
     if dn.status == "cancelled":
         return dn
     

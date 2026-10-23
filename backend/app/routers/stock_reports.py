@@ -7,6 +7,7 @@ from sqlalchemy import text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core import access
 from app.core.dependencies import get_current_user, current_user_dep, require_role
 
 router = APIRouter(prefix="/stock-reports", tags=["stock-reports"], dependencies=[Depends(get_current_user)])
@@ -74,12 +75,8 @@ async def stock_summary_report(
     where_clauses = ["1=1"]
     params = {}
 
-    # Security: restrict by user outlet if not admin
-    if current_user.role != "admin":
-        user_obj = (await db.execute(text("SELECT outlet_id FROM users WHERE id = :uid"), {"uid": current_user.user_id})).fetchone()
-        if user_obj and user_obj[0]:
-            where_clauses.append("os.outlet_id = :uoid")
-            params["uoid"] = user_obj[0]
+    # Security: the user's outlets and categories / groups (core/access.py), applied to every total below
+    where_clauses.append("TRUE" + access.outlet_filter("os.outlet_id", params) + access.product_filter("p", params))
 
     if outlet_ids:
         where_clauses.append("os.outlet_id = ANY(:oids)")
@@ -296,12 +293,8 @@ async def stock_detail_report(
     where_clauses = ["sl.created_at::date BETWEEN :fd AND :td"]
     params = {"fd": fd, "td": td}
 
-    # Security: restrict by user outlet if not admin
-    if current_user.role != "admin":
-        user_obj = (await db.execute(text("SELECT outlet_id FROM users WHERE id = :uid"), {"uid": current_user.user_id})).fetchone()
-        if user_obj and user_obj[0]:
-            where_clauses.append("sl.outlet_id = :uoid")
-            params["uoid"] = user_obj[0]
+    # Security: the user's outlets and categories / groups (core/access.py), applied to every total below
+    where_clauses.append("TRUE" + access.outlet_filter("sl.outlet_id", params) + access.product_filter("p", params))
 
     if outlet_id:
         where_clauses.append("sl.outlet_id = :oid")

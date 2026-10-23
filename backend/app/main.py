@@ -1,16 +1,17 @@
 import os
 from datetime import datetime
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import engine
+from app.core.access import enforce_access
 from app.routers import (
     auth, users, roles, masters, products, customers, suppliers,
     billing, estimates, outlets, sync, reports, company, states,
     warehouse, packaging, import_export, wms, purchases, channels,
     audit_logs, inventory, logistic, stock_reports, shop, returns, purchase_returns, dashboard, shifts, cash, accounts,
-    stock_take, batches, vendor_portal, dashboard_builder, schemes
+    stock_take, batches, vendor_portal, dashboard_builder, schemes, access
 )
 
 _settings = get_settings()
@@ -31,6 +32,7 @@ app = FastAPI(
     version=_settings.app_version,
     debug=_settings.debug,
     lifespan=lifespan,
+    dependencies=[Depends(enforce_access)],  # central module/action permission + data scope (core/access.py)
 )
 
 app.add_middleware(
@@ -88,6 +90,7 @@ app.include_router(batches.router,       prefix=API_PREFIX)
 app.include_router(vendor_portal.router, prefix=API_PREFIX)
 app.include_router(dashboard_builder.router, prefix=API_PREFIX)
 app.include_router(schemes.router,       prefix=API_PREFIX)
+app.include_router(access.router,        prefix=API_PREFIX)
 
 
 from fastapi.staticfiles import StaticFiles

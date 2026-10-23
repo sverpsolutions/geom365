@@ -121,7 +121,7 @@ async def get_user_scope(db: AsyncSession, current_user: UserModel) -> UserScope
         cat_map = {r[0]: r[1] for r in cat_res.fetchall()}
 
         return UserScope(
-            user_id=current_user.id,
+            user_id=getattr(current_user, "id", None) or current_user.user_id,
             username=current_user.username,
             role=current_user.role,
             role_id=current_user.role_id,
@@ -137,96 +137,27 @@ async def get_user_scope(db: AsyncSession, current_user: UserModel) -> UserScope
             default_template_id=getattr(current_user, "default_dashboard_template_id", None)
         )
 
-    # 1. Fetch Region Assignments
-    reg_sql = """
-        SELECT r.id, r.name
-        FROM user_region_assignments ura
-        JOIN regions r ON r.id = ura.region_id
-        WHERE ura.user_id = :uid AND r.is_active
-        ORDER BY r.name
-    """
-    reg_rows = (await db.execute(text(reg_sql), {"uid": current_user.id})).fetchall()
-    region_map = {r[0]: r[1] for r in reg_rows}
-
-    # 2. Fetch Zone Assignments (explicit + zones belonging to assigned regions)
-    zone_sql = """
-        SELECT z.id, z.name
-        FROM user_zone_assignments uza
-        JOIN outlet_zones z ON z.id = uza.zone_id
-        WHERE uza.user_id = :uid AND z.is_active
-    """
-    zone_rows = (await db.execute(text(zone_sql), {"uid": current_user.id})).fetchall()
-    zone_map = {r[0]: r[1] for r in zone_rows}
-
-    if region_map:
-        reg_zones = await db.execute(
-            text("SELECT id, name FROM outlet_zones WHERE region_id = ANY(:rids) AND is_active"),
-            {"rids": list(region_map.keys())}
-        )
-        for r in reg_zones.fetchall():
-            zone_map[r[0]] = r[1]
-
-    # 3. Fetch Store Assignments (direct + stores in assigned regions/zones + single outlet_id)
-    outlet_map: Dict[int, str] = {}
-    store_sql = """
-        SELECT o.id, o.outlet_name
-        FROM user_store_assignments usa
-        JOIN outlets o ON o.id = usa.outlet_id
-        WHERE usa.user_id = :uid AND o.is_active
-        ORDER BY o.outlet_name
-    """
-    store_rows = (await db.execute(text(store_sql), {"uid": current_user.id})).fetchall()
-    for r in store_rows:
-        outlet_map[r[0]] = r[1]
-
-    if region_map:
-        reg_stores = await db.execute(
-            text("SELECT id, outlet_name FROM outlets WHERE region_id = ANY(:rids) AND is_active"),
-            {"rids": list(region_map.keys())}
-        )
-        for r in reg_stores.fetchall():
-            outlet_map[r[0]] = r[1]
-
-    if zone_map:
-        zone_stores = await db.execute(
-            text("SELECT id, outlet_name FROM outlets WHERE zone_id = ANY(:zids) AND is_active"),
-            {"zids": list(zone_map.keys())}
-        )
-        for r in zone_stores.fetchall():
-            outlet_map[r[0]] = r[1]
-
-    # Fallback to single outlet_id on user record if no explicit assignments
-    if not outlet_map and current_user.outlet_id:
-        single_res = await db.execute(
-            text("SELECT id, outlet_name FROM outlets WHERE id = :oid AND is_active"),
-            {"oid": current_user.outlet_id}
-        )
-        s_row = single_res.first()
-        if s_row:
-            outlet_map[s_row[0]] = s_row[1]
-
-    # 4. Fetch category assignments
-    cat_sql = """
-        SELECT c.id, c.name
-        FROM user_category_assignments uca
-        JOIN item_categories c ON c.id = uca.category_id
-        WHERE uca.user_id = :uid AND c.is_active
-        ORDER BY c.name
-    """
-    cat_rows = (await db.execute(text(cat_sql), {"uid": current_user.id})).fetchall()
-    cat_map = {r[0]: r[1] for r in cat_rows}
-
-    # Fetch child subcategory ids if any categories assigned
-    subcat_ids: List[int] = []
-    if cat_map:
-        subcat_res = await db.execute(
-            text("SELECT id FROM item_subcategories WHERE category_id = ANY(:cids) AND is_active"),
-            {"cids": list(cat_map.keys())}
-        )
-        subcat_ids = [r[0] for r in subcat_res.fetchall()]
-
+    # Restricted user: the same scope the central access check enforces (core/access.load_scope);
+    # "all" flags expand to every active outlet / category so callers can keep using the id lists.
+    from app.core.access import load_scope
+    uid = getattr(current_user, "id", None) or current_user.user_id
+    sc = await load_scope(db, uid)
+    outlet_map = dict((await db.execute(text(
+        "SELECT id, outlet_name FROM outlets WHERE is_active" + ("" if sc["outlets"] is None else " AND id = ANY(:o)")
+        + " ORDER BY outlet_name"), {"o": sorted(sc["outlets"] or [])})).all())
+    cat_map = dict((await db.execute(text(
+        "SELECT id, name FROM item_categories WHERE is_active" + ("" if sc["categories"] is None else " AND id = ANY(:c)")
+        + " ORDER BY name"), {"c": sorted(sc["categories"] or [])})).all())
+    region_map = dict((await db.execute(text(
+        "SELECT r.id, r.name FROM user_region_assignments a JOIN regions r ON r.id = a.region_id WHERE a.user_id = :u"),
+        {"u": uid})).all())
+    zone_map = dict((await db.execute(text(
+        "SELECT z.id, z.name FROM user_zone_assignments a JOIN outlet_zones z ON z.id = a.zone_id WHERE a.user_id = :u"),
+        {"u": uid})).all())
+    subcat_ids = sorted(sc["groups"]) if sc["groups"] else list((await db.execute(text(
+        "SELECT id FROM item_subcategories WHERE is_active AND category_id = ANY(:c)"), {"c": list(cat_map)})).scalars().all())
     return UserScope(
-        user_id=current_user.id,
+        user_id=uid,
         username=current_user.username,
         role=current_user.role,
         role_id=current_user.role_id,

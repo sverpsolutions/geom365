@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, JSON
+from datetime import date, datetime
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import base
 
@@ -93,6 +93,16 @@ class user(base):
     rack_transfer_rights: Mapped[bool] = mapped_column(Boolean, default=False)
 
     last_login: Mapped[datetime | None] = mapped_column(DateTime)
+    employee_code: Mapped[str | None] = mapped_column(String(30))
+    mobile: Mapped[str | None] = mapped_column(String(20))
+    department: Mapped[str | None] = mapped_column(String(60))
+    designation: Mapped[str | None] = mapped_column(String(60))
+    valid_from: Mapped[date | None] = mapped_column(Date)
+    valid_until: Mapped[date | None] = mapped_column(Date)
+    all_outlets: Mapped[bool] = mapped_column(Boolean, default=False)      # data scope: every outlet
+    all_categories: Mapped[bool] = mapped_column(Boolean, default=False)   # data scope: every category
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    updated_by: Mapped[int | None] = mapped_column(Integer)
     reset_token: Mapped[str | None] = mapped_column(String(100))
     reset_token_expiry: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

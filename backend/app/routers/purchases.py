@@ -28,6 +28,7 @@ from app.services.auth_service import write_audit
 from app.services.billing_service import _write_stock_ledger
 from app.services import batch_service
 from app.models.product import product as product_model
+from app.core import access
 
 router = APIRouter(prefix="/purchases", tags=["purchases"])
 
@@ -336,8 +337,9 @@ async def get_supplier_items(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    sql = "SELECT id, name, item_code, unit, purchase_price, mrp FROM products WHERE supplier_id=:sid AND is_active=TRUE"
     params: dict[str, Any] = {"sid": supplier_id}
+    sql = ("SELECT p.id, p.name, p.item_code, p.unit, p.purchase_price, p.mrp FROM products p WHERE p.supplier_id=:sid AND p.is_active=TRUE"
+           + access.product_filter("p", params))
 
     if brand_ids:
         ids = [int(x) for x in brand_ids.split(",") if x.strip().isdigit()]
@@ -363,7 +365,7 @@ async def list_pos(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    q = select(po_header).order_by(po_header.id.desc())
+    q = select(po_header).where(*access.outlet_where(po_header.outlet_id)).order_by(po_header.id.desc())
     if status:
         q = q.where(po_header.approval_status == status)
     if supplier_id:
@@ -403,6 +405,8 @@ async def create_po(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    access.check_outlet(body.outlet_id)
+    await access.check_products(db, [it.product_id for it in body.items])
     po_no = body.po_no or await _next_po_no(db)
 
     # Check duplicate
@@ -473,6 +477,10 @@ async def create_multi_po(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    await access.check_products(db, [it.product_id for it in body.items])
+    for it in body.items:
+        for oid in (it.distributions or {}):
+            access.check_outlet(int(oid))
     master_po_no = body.po_no or await _next_po_no(db)
 
     exists = await db.execute(select(po_header).where(po_header.po_no == master_po_no))
@@ -598,6 +606,7 @@ async def get_po(po_id: int, db: AsyncSession = Depends(get_db)):
     h = result.scalar_one_or_none()
     if not h:
         raise HTTPException(404, "PO not found")
+    access.check_outlet(h.outlet_id)
 
     sd = await _supplier_details(db, h.supplier_id)
     od = await _outlet_details(db, h.outlet_id)
@@ -696,6 +705,10 @@ async def update_po(
         raise HTTPException(404, "PO not found")
     if h.approval_status not in ("draft",):
         raise HTTPException(403, "Only draft POs can be edited.")
+    access.check_outlet(h.outlet_id)
+    access.check_outlet(getattr(body, "outlet_id", None))
+    if body.items is not None:
+        await access.check_products(db, [it.product_id for it in body.items])
 
     for field in ("supplier_id", "outlet_id", "expected_date", "delivery_days",
                   "total_amount", "notes", "terms", "markdown_enabled"):
@@ -751,6 +764,7 @@ async def approve_po(
     h = result.scalar_one_or_none()
     if not h:
         raise HTTPException(404, "PO not found")
+    access.check_outlet(h.outlet_id)
 
     old = h.approval_status
     h.approval_status = body.status
@@ -945,7 +959,7 @@ async def list_purchases(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    q = select(purchase).order_by(purchase.id.desc())
+    q = select(purchase).where(*access.outlet_where(purchase.outlet_id)).order_by(purchase.id.desc())
     if supplier_id:
         q = q.where(purchase.supplier_id == supplier_id)
     if status:
@@ -1025,6 +1039,10 @@ async def create_purchase(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    # 0. Data scope: the location and every line must be inside the user's outlets / categories / groups
+    access.check_outlet(body.outlet_id)
+    await access.check_products(db, [it.product_id for it in body.items])
+
     # 1. Validation: Block blank invoices and required fields
     if not body.supplier_id:
         raise HTTPException(400, "Supplier is required.")
@@ -1392,6 +1410,7 @@ async def get_purchase(purchase_id: int, db: AsyncSession = Depends(get_db), _=D
     h = result.scalar_one_or_none()
     if not h:
         raise HTTPException(404, "Purchase not found")
+    access.check_outlet(h.outlet_id)
 
     sn = await _supplier_name(db, h.supplier_id)
     sd = await _supplier_details(db, h.supplier_id)

@@ -21,6 +21,7 @@ from app.services.auth_service import write_audit
 
 from app.models.packaging import item_packaging_master
 from app.utils.search import word_match
+from app.core import access
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -76,7 +77,7 @@ async def search_products(
             product_model.is_batch_required,
             product_model.shelf_life_days,
         )
-        .where(product_model.is_active == True)
+        .where(product_model.is_active == True, *access.product_where(product_model))
         .where(
             word_match(q, product_model.name, product_model.item_code, product_model.barcode, product_model.barcode_crt) |
             product_model.id.in_(barcode_sub)
@@ -130,8 +131,8 @@ async def list_products(
     current_user: current_user_dep = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Build product-level WHERE conditions (no join needed for count)
-    product_conditions = []
+    # Build product-level WHERE conditions (no join needed for count); the user's category / group scope first
+    product_conditions = access.product_where(product_model)
     if search:
         product_conditions.append(word_match(search, product_model.name, product_model.item_code,
                                              product_model.barcode, product_model.filter_combination_name))
@@ -206,6 +207,7 @@ async def create_product_endpoint(
     current_user: current_user_dep = Depends(require_role("admin", "manager")),
     db: AsyncSession = Depends(get_db),
 ):
+    access.check_category(body.category_id, getattr(body, "subcategory_id", None))
     return await create_product(body, db, current_user.user_id, current_user.username)
 
 
@@ -218,6 +220,7 @@ async def get_product(
     row = (await db.execute(select(product_model).where(product_model.id == product_id))).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="product not found")
+    await access.check_products(db, [product_id])
     return row
 
 
@@ -228,6 +231,11 @@ async def update_product_endpoint(
     current_user: current_user_dep = Depends(require_role("admin", "manager")),
     db: AsyncSession = Depends(get_db),
 ):
+    await access.check_products(db, [product_id])
+    if access.product_restricted():
+        cur = (await db.execute(select(product_model.category_id, product_model.subcategory_id).where(product_model.id == product_id))).one()
+        access.check_category(body.category_id if body.category_id is not None else cur[0],
+                              getattr(body, "subcategory_id", None) if getattr(body, "subcategory_id", None) is not None else cur[1])
     return await update_product(product_id, body, db, current_user.user_id, current_user.username)
 
 
@@ -240,6 +248,7 @@ async def delete_product(
     row = (await db.execute(select(product_model).where(product_model.id == product_id))).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="product not found")
+    await access.check_products(db, [product_id])
     await db.execute(
         update(product_model).where(product_model.id == product_id).values(is_active=False, status=False)
     )
@@ -313,6 +322,7 @@ async def lookup_by_barcode(
     if bc:
         prod = (await db.execute(select(product_model).where(product_model.id == bc.product_id))).scalar_one_or_none()
         if prod and prod.is_active:
+            await access.check_products(db, [prod.id])
             return prod
 
     # 2. Search in main product table (direct barcode or item_code)
@@ -326,7 +336,7 @@ async def lookup_by_barcode(
     
     if not prod:
         raise HTTPException(status_code=404, detail="Product not found by barcode or code")
-        
+    await access.check_products(db, [prod.id])
     return prod
 
 

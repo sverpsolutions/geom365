@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
+from app.core import access
 from app.core.dependencies import get_current_user, require_role, current_user_dep
 from app.services import shift_service as svc
 
@@ -81,16 +82,18 @@ async def day_reopen(outlet_id: int = Query(0), db: AsyncSession = Depends(get_d
 async def list_days(outlet_id: Optional[int] = Query(None), from_date: Optional[date] = None, to_date: Optional[date] = None,
                     limit: int = Query(60, le=200), db: AsyncSession = Depends(get_db),
                     user: current_user_dep = Depends(get_current_user)):
-    rows = (await db.execute(text("""
+    sp: dict = {}
+    sf = access.outlet_filter("d.outlet_id", sp)
+    rows = (await db.execute(text(f"""
         SELECT d.id, d.outlet_id, COALESCE(o.outlet_name, 'Head Office') AS outlet_name, d.business_date, d.status,
                d.opened_at, d.closed_at, ou.name AS opened_by_name, cu.name AS closed_by_name,
                d.total_bills, d.net_sales, d.total_collected, d.total_cash, d.total_shortage, d.total_excess
         FROM business_days d LEFT JOIN outlets o ON o.id = d.outlet_id
         LEFT JOIN users ou ON ou.id = d.opened_by LEFT JOIN users cu ON cu.id = d.closed_by
-        WHERE (CAST(:loc AS INT) IS NULL OR d.outlet_id = :loc)
+        WHERE (CAST(:loc AS INT) IS NULL OR d.outlet_id = :loc) {sf}
           AND (CAST(:fd AS DATE) IS NULL OR d.business_date >= :fd) AND (CAST(:td AS DATE) IS NULL OR d.business_date <= :td)
         ORDER BY d.business_date DESC, d.id DESC LIMIT :lim"""),
-        {"loc": outlet_id, "fd": from_date, "td": to_date, "lim": limit})).mappings().all()
+        {"loc": outlet_id, "fd": from_date, "td": to_date, "lim": limit, **sp})).mappings().all()
     return [dict(r) for r in rows]
 
 
@@ -117,17 +120,19 @@ async def list_shifts(outlet_id: Optional[int] = Query(None), day_id: Optional[i
                       cashier_id: Optional[int] = None, from_date: Optional[date] = None, to_date: Optional[date] = None,
                       limit: int = Query(100, le=500), db: AsyncSession = Depends(get_db),
                       user: current_user_dep = Depends(get_current_user)):
-    rows = (await db.execute(text("""
+    sp: dict = {}
+    sf = access.outlet_filter("s.outlet_id", sp)
+    rows = (await db.execute(text(f"""
         SELECT s.id, s.business_day_id, s.outlet_id, COALESCE(o.outlet_name, 'Head Office') AS outlet_name,
                s.business_date, s.shift_name, s.terminal_no, s.status, s.opened_at, s.closed_at,
                u.name AS cashier_name, s.opening_cash, s.total_bills, s.total_sales,
                s.expected_cash, s.actual_cash, s.short_amount, s.excess_amount
         FROM cashier_shifts s JOIN users u ON u.id = s.cashier_id LEFT JOIN outlets o ON o.id = s.outlet_id
-        WHERE (CAST(:loc AS INT) IS NULL OR s.outlet_id = :loc) AND (CAST(:day AS INT) IS NULL OR s.business_day_id = :day)
+        WHERE (CAST(:loc AS INT) IS NULL OR s.outlet_id = :loc) {sf} AND (CAST(:day AS INT) IS NULL OR s.business_day_id = :day)
           AND (CAST(:cid AS INT) IS NULL OR s.cashier_id = :cid)
           AND (CAST(:fd AS DATE) IS NULL OR s.business_date >= :fd) AND (CAST(:td AS DATE) IS NULL OR s.business_date <= :td)
         ORDER BY s.opened_at DESC LIMIT :lim"""),
-        {"loc": outlet_id, "day": day_id, "cid": cashier_id, "fd": from_date, "td": to_date, "lim": limit})).mappings().all()
+        {"loc": outlet_id, "day": day_id, "cid": cashier_id, "fd": from_date, "td": to_date, "lim": limit, **sp})).mappings().all()
     return [dict(r) for r in rows]
 
 

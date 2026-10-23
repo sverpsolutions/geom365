@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
+from app.core import access
 from app.core.dependencies import get_current_user, require_role, current_user_dep
 from app.services import cash_service as svc, shift_service as shifts
 
@@ -229,10 +230,10 @@ async def control(db: AsyncSession = Depends(get_db), user: current_user_dep = D
                (SELECT COUNT(*) FROM cash_entries WHERE outlet_id = l.id AND kind = 'expense' AND status = 'pending') AS pending_expenses,
                (SELECT status FROM business_days WHERE outlet_id = l.id ORDER BY business_date DESC LIMIT 1) AS day_status
         FROM locs l
-        WHERE EXISTS (SELECT 1 FROM cash_entries e WHERE (e.from_type = 'safe' AND e.from_ref = l.id)
+        WHERE (CAST(:_mine AS INT[]) IS NULL OR l.id = ANY(CAST(:_mine AS INT[]))) AND (EXISTS (SELECT 1 FROM cash_entries e WHERE (e.from_type = 'safe' AND e.from_ref = l.id)
                          OR (e.to_type = 'safe' AND e.to_ref = l.id))
-           OR EXISTS (SELECT 1 FROM business_days d WHERE d.outlet_id = l.id)
-        ORDER BY l.name"""))).mappings().all()
+           OR EXISTS (SELECT 1 FROM business_days d WHERE d.outlet_id = l.id))
+        ORDER BY l.name"""), {"_mine": access.allowed_outlets()})).mappings().all()
     people = (await db.execute(text("""
         SELECT u.id, u.name, u.role,
                COALESCE(SUM(e.amount) FILTER (WHERE e.to_type = 'person' AND e.to_ref = u.id AND e.status = 'posted'), 0)
@@ -264,10 +265,13 @@ async def entries(outlet_id: Optional[int] = None, kind: Optional[str] = None, s
              "(CAST(:s AS TEXT) IS NULL OR e.status = :s)", "(CAST(:fd AS DATE) IS NULL OR e.business_date >= :fd)",
              "(CAST(:td AS DATE) IS NULL OR e.business_date <= :td)",
              "(:q = '' OR e.entry_no ILIKE :ql OR e.party ILIKE :ql OR e.ref_no ILIKE :ql OR e.description ILIKE :ql)"]
+    sp: dict = {}
+    if access.outlet_filter("e.outlet_id", sp):
+        where.append("e.outlet_id = ANY(:_scope_outlets)")
     if user.role not in svc.MANAGERS:  # staff see only what they created or hold
         where.append("""(e.created_by = :u OR (e.to_type = 'person' AND e.to_ref = :u) OR (e.from_type = 'person' AND e.from_ref = :u))""")
     return await _entries(db, " AND ".join(where), {"o": outlet_id, "k": kind, "s": status, "fd": from_date, "td": to_date,
-                                                    "q": search.strip(), "ql": f"%{search.strip()}%", "u": user.user_id}, limit)
+                                                    "q": search.strip(), "ql": f"%{search.strip()}%", "u": user.user_id, **sp}, limit)
 
 
 # ── actions ───────────────────────────────────────────────────────────────────

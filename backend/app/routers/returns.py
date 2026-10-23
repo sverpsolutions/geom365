@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from app.core import access
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +44,7 @@ async def lookup_bill(invoice_no: str = Query(..., min_length=1), db: AsyncSessi
     except ValueError as e:
         raise HTTPException(400, str(e))
     inv = res["invoice"]
+    access.check_outlet(inv.outlet_id)
     out_name = (await db.execute(select(outlet.outlet_name).where(outlet.id == inv.outlet_id))).scalar()
     return {
         "invoice_no": inv.invoice_no, "invoice_date": inv.invoice_date, "outlet_name": out_name,
@@ -77,6 +79,7 @@ async def list_returns(
     if from_date: conds.append(invoice.invoice_date >= from_date)
     if to_date: conds.append(invoice.invoice_date <= to_date)
     if outlet_id: conds.append(invoice.outlet_id == outlet_id)
+    conds += access.outlet_where(invoice.outlet_id)
     if source == "HO": conds.append(invoice.invoice_no.like(f"{returns_service.CN_PREFIX}%"))
     if source == "OUTLET": conds.append(~invoice.invoice_no.like(f"{returns_service.CN_PREFIX}%"))
 
@@ -103,6 +106,7 @@ async def get_return(return_id: int, db: AsyncSession = Depends(get_db)):
     cn = (await db.execute(select(invoice).where(invoice.id == return_id, invoice.invoice_type == "return"))).scalar_one_or_none()
     if not cn:
         raise HTTPException(404, "Credit note not found")
+    access.check_outlet(cn.outlet_id)
     items = (await db.execute(select(invoice_item).where(invoice_item.invoice_id == cn.id).order_by(invoice_item.id))).scalars().all()
     cust = await db.get(customer, cn.customer_id)
     orig = (await db.execute(select(invoice.invoice_date).where(invoice.invoice_no == cn.ref_invoice_no))).scalar() if cn.ref_invoice_no else None
