@@ -74,7 +74,9 @@ export default function CompanySettingsPage() {
   const save = async () => {
     setSaving(true)
     try {
-      const updated = await updateCompanySettings(s)
+      // send only what changed: an untouched field (e.g. an old GSTIN) must not block saving a toggle
+      const changed = Object.fromEntries(Object.entries(s!).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify((saved as any)?.[k])))
+      const updated = await updateCompanySettings(changed)
       setS(updated); setSaved(updated); updateSettings(updated)
       toast.success('Company profile saved')
     } catch (e) { toast.error(errMsg(e)) } finally { setSaving(false) }
