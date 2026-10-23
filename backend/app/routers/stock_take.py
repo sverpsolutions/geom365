@@ -518,6 +518,7 @@ async def scan_save(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    await access.check_products(db, [body.product_id])  # only items in your categories / groups
     st_res = await db.execute(select(stock_take).where(stock_take.id == body.stock_take_id))
     st = st_res.scalar_one_or_none()
     if st:
@@ -602,6 +603,7 @@ async def edit_count(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    await access.check_products(db, [body.product_id])  # only items in your categories / groups
     st_res = await db.execute(select(stock_take).where(stock_take.id == body.stock_take_id))
     st = st_res.scalar_one_or_none()
     if st:
@@ -667,6 +669,7 @@ async def save_stock_take_batches(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    await access.check_products(db, [body.product_id])  # only items in your categories / groups
     st_res = await db.execute(select(stock_take).where(stock_take.id == body.stock_take_id))
     st = st_res.scalar_one_or_none()
     if st:
