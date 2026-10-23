@@ -103,6 +103,16 @@ const reports = [
     badgeColor: 'bg-rose-500',
   },
   {
+    id: 'stock_as_at',
+    title: 'Stock as at Time',
+    icon: '⏱️',
+    desc: 'Stock on any date at any time, e.g. today 2:10 pm',
+    color: 'bg-teal-50 text-teal-600 group-hover:bg-teal-100',
+    path: '/reports/stock-as-at',
+    badge: 'NEW',
+    badgeColor: 'bg-teal-500',
+  },
+  {
     id: 'channel_margin',
     title: 'Channel Margins',
     icon: '🌐',

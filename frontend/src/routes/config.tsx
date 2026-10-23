@@ -42,6 +42,7 @@ import PaymentCollectionReport from '../pages/reports/PaymentCollectionReport';
 import HourlySalesReport from '../pages/reports/HourlySalesReport';
 import HierarchyReport from '../pages/reports/HierarchyReport';
 import StockLedgerReport from '../pages/reports/StockLedgerReport';
+import StockAsAtReport from '../pages/reports/StockAsAtReport';
 import HsnMismatchReport from '../pages/reports/HsnMismatchReport';
 import HsnMappingReport from '../pages/reports/HsnMappingReport';
 import HsnExceptionReport from '../pages/reports/HsnExceptionReport';
@@ -178,6 +179,7 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '709', path: '/reports/hourly', component: HourlySalesReport, title: 'Hourly Sales' },
   { id: '710', path: '/reports/hierarchy', component: HierarchyReport, title: 'Hierarchy' },
   { id: '711', path: '/reports/ledger', component: StockLedgerReport, title: 'Stock Ledger' },
+  { id: '712', path: '/reports/stock-as-at', component: StockAsAtReport, title: 'Stock as at Time' },
   { id: '712', path: '/reports/hsn-mismatch', component: HsnMismatchReport, title: 'HSN Mismatch' },
   { id: '713', path: '/reports/hsn-mapping', component: HsnMappingReport, title: 'HSN Mapping' },
   { id: '714', path: '/reports/hsn-exceptions', component: HsnExceptionReport, title: 'HSN Exceptions' },

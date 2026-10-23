@@ -172,6 +172,7 @@ const NAV_SECTIONS = [
       { label: 'GST Report', to: '/reports/gst', icon: 'fas fa-receipt' },
       { label: 'Stock Report', to: '/reports/stock', icon: 'fas fa-cubes' },
       { label: 'Stock Ledger', to: '/reports/ledger', icon: 'fas fa-book' },
+      { label: 'Stock as at Time', to: '/reports/stock-as-at', icon: 'fas fa-clock' },
       { label: 'Outstanding Dues', to: '/reports/outstanding', icon: 'fas fa-exclamation-triangle' },
       { label: 'Hourly Sales', to: '/reports/hourly', icon: 'fas fa-clock' },
       { label: 'Audit Logs', to: '/reports/audit-logs', icon: 'fas fa-history' },

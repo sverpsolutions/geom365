@@ -438,3 +438,74 @@ async def create_backup(request: Request):
         return {"status": "success", "message": f"Backup created successfully: {filename}", "path": full_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/as-at")
+async def stock_as_at(
+    on: date = Query(..., description="date, e.g. 2026-10-23"),
+    at: str = Query("23:59", pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="time HH:MM, Indian time"),
+    outlet_id: Optional[int] = Query(None),
+    category_id: Optional[int] = Query(None),
+    search: str = Query(""),
+    show_zero: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stock as it stood at a moment (e.g. 23 Oct 2026, 14:10).
+
+    Worked backwards from today: stock then = stock now − every movement recorded after that moment
+    (sales, GRNs, transfers, returns, adjustments in stock_ledger). This needs no complete history
+    back to opening stock. Times are entered in IST; the ledger is stored in UTC.
+    """
+    access.check_outlet(outlet_id)
+    p: dict = {"ts": f"{on.isoformat()} {at}:00", "q": f"%{search.strip()}%", "cat": category_id}
+    cut = "((CAST(:ts AS timestamp) AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC')"
+    mine = [outlet_id] if outlet_id else access.allowed_outlets()   # None = whole company
+    if mine is None:
+        cur_sql = "SELECT id AS product_id, COALESCE(stock_qty, 0) AS cur FROM products"
+        aft_where = ""
+    else:
+        p["S"] = mine or [0]
+        # per outlet: its own stock row, or (no row yet) the sum of its ledger movements
+        cur_sql = """SELECT pr.product_id, SUM(COALESCE(os.stock_qty, (SELECT SUM(l.qty) FROM stock_ledger l
+                       WHERE l.outlet_id = pr.outlet_id AND l.product_id = pr.product_id), 0)) AS cur
+                     FROM (SELECT outlet_id, product_id FROM outlet_stock WHERE outlet_id = ANY(:S)
+                           UNION SELECT outlet_id, product_id FROM stock_ledger WHERE outlet_id = ANY(:S)) pr
+                     LEFT JOIN outlet_stock os ON os.outlet_id = pr.outlet_id AND os.product_id = pr.product_id
+                     GROUP BY pr.product_id"""
+        aft_where = " AND outlet_id = ANY(:S)"
+    pf = access.product_filter("p", p)
+    rows = (await db.execute(text(f"""
+        WITH cur AS ({cur_sql}),
+        aft AS (SELECT product_id, COALESCE(SUM(qty) FILTER (WHERE qty > 0), 0) AS qin,
+                       COALESCE(SUM(-qty) FILTER (WHERE qty < 0), 0) AS qout, COALESCE(SUM(qty), 0) AS net
+                FROM stock_ledger WHERE created_at > {cut}{aft_where} GROUP BY product_id)
+        SELECT p.id, p.item_code, p.name AS item_name, COALESCE(c.name, p.category) AS category, p.unit,
+               COALESCE(cur.cur, 0) AS current_stock, COALESCE(aft.qin, 0) AS in_after, COALESCE(aft.qout, 0) AS out_after,
+               COALESCE(cur.cur, 0) - COALESCE(aft.net, 0) AS stock_at, COALESCE(p.cost_price, 0) AS cost_price, COALESCE(p.mrp, 0) AS mrp
+        FROM products p
+        LEFT JOIN cur ON cur.product_id = p.id
+        LEFT JOIN aft ON aft.product_id = p.id
+        LEFT JOIN item_categories c ON c.id = p.category_id
+        WHERE (cur.product_id IS NOT NULL OR aft.product_id IS NOT NULL){pf}
+          AND (CAST(:cat AS INT) IS NULL OR p.category_id = :cat)
+          AND (:q = '%%' OR p.name ILIKE :q OR p.item_code ILIKE :q OR p.barcode ILIKE :q)
+        ORDER BY p.name"""), p)).mappings().all()
+    out = [dict(r) for r in rows if show_zero or r["stock_at"] != 0 or r["in_after"] or r["out_after"]]
+    for r in out:
+        r["value_cost"] = float(r["stock_at"] * r["cost_price"])
+        r["value_mrp"] = float(r["stock_at"] * r["mrp"])
+    return {
+        "as_at": f"{on.isoformat()} {at}",
+        "outlet_id": outlet_id,
+        "summary": {
+            "items": sum(1 for r in out if r["stock_at"] != 0),
+            "qty_at": _fmt(sum(r["stock_at"] for r in out)),
+            "qty_now": _fmt(sum(r["current_stock"] for r in out)),
+            "in_after": _fmt(sum(r["in_after"] for r in out)),
+            "out_after": _fmt(sum(r["out_after"] for r in out)),
+            "value_cost": round(sum(r["value_cost"] for r in out), 2),
+            "value_mrp": round(sum(r["value_mrp"] for r in out), 2),
+            "negative_items": sum(1 for r in out if r["stock_at"] < 0),
+        },
+        "rows": [{k: (_fmt(v) if isinstance(v, Decimal) else v) for k, v in r.items()} for r in out],
+    }
