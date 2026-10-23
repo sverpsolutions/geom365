@@ -260,6 +260,7 @@ export default function CompanySettingsPage() {
           {toggle('Excel import', 'Allow bulk import from Excel', 'enable_excel_import')}
           {toggle('Estimate stock check', 'Warn when estimating without stock', 'enable_estimate_stock_check')}
           {toggle('Block estimate without stock', 'Stop the estimate instead of warning', 'block_estimate_if_no_stock')}
+          {toggle('Block negative inventory', 'Stop sales, transfers and returns that would take an item below zero stock (items marked "Allow Neg. Stock" are exempt)', 'block_negative_stock', 'text-red-600')}
           {input('Low stock threshold', 'low_stock_threshold', { type: 'number' })}
           {input('Auto item code format', 'item_code_format', { help: 'Tokens: [PREFIX] [BRAND] [VARIANT] [SIZE]' })}
         </>)}

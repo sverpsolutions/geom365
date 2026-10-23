@@ -29,6 +29,8 @@ async def create_invoice(
     try:
         inv = await billing_service.create_invoice(db, data, current_user.id)
         return inv
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

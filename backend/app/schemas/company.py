@@ -39,6 +39,7 @@ class CompanySettingBase(BaseModel):
     default_markdown_margin : Optional[float] = 25.00
     enable_estimate_stock_check: bool = True
     block_estimate_if_no_stock: bool = False
+    block_negative_stock: bool = False
     enable_bill_modify: bool = True
     enable_excel_import: bool = True
     enable_gst: bool = True

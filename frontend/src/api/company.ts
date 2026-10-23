@@ -19,6 +19,7 @@ export interface CompanySettings {
     default_markdown_margin: number;
     enable_estimate_stock_check: boolean;
     block_estimate_if_no_stock: boolean;
+    block_negative_stock: boolean;
     enable_bill_modify: boolean;
     enable_excel_import: boolean;
     enable_gst: boolean;

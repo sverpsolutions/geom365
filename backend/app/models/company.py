@@ -19,6 +19,7 @@ class CompanySetting(base):
     # Global Toggles
     enable_estimate_stock_check = Column(Boolean, default=True)
     block_estimate_if_no_stock = Column(Boolean, default=False)
+    block_negative_stock = Column(Boolean, default=False)  # sales / transfers may not take stock below zero
     enable_bill_modify = Column(Boolean, default=True)
     enable_excel_import = Column(Boolean, default=True)
     enable_gst = Column(Boolean, default=True)

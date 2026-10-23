@@ -6,7 +6,8 @@ from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
-from sqlalchemy import select, func, update
+from fastapi import HTTPException
+from sqlalchemy import select, func, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -183,13 +184,34 @@ async def _write_stock_ledger(
     db.add(entry)
 
 
-async def _update_product_stock(db: AsyncSession, product_id: int, delta: Decimal):
-    """Add delta (negative = deduction) to products.stock_qty."""
+async def _update_product_stock(db: AsyncSession, product_id: int, delta: Decimal, outlet_id: Optional[int] = None):
+    """Add delta (negative = deduction) to products.stock_qty, and to the outlet's own stock row when outlet_id is
+    given and the outlet has one (the figure the POS shows).
+
+    Settings → Block negative inventory: a deduction may not take stock below zero — the outlet's stock when
+    outlet_id is given, else company stock — unless the item is marked "Allow Neg. Stock". Every outflow
+    (sale, transfer, purchase return …) comes through here, so this one guard covers them all. The product row
+    is locked, so two counters cannot both sell the last unit."""
+    if delta < 0 and (await db.execute(text("SELECT block_negative_stock FROM company_settings ORDER BY id LIMIT 1"))).scalar():
+        p = (await db.execute(text("SELECT name, stock_qty, allow_neg_stock FROM products WHERE id = :p FOR UPDATE"),
+                              {"p": product_id})).one()
+        if not p.allow_neg_stock:
+            avail = p.stock_qty or Decimal("0")
+            if outlet_id:
+                at_outlet = (await db.execute(text("SELECT stock_qty FROM outlet_stock WHERE outlet_id = :o AND product_id = :p"),
+                                              {"o": outlet_id, "p": product_id})).scalar()
+                avail = avail if at_outlet is None else at_outlet
+            if avail + delta < 0:
+                raise HTTPException(400, f"Not enough stock for '{p.name}': available {avail.normalize():f}, needed {(-delta).normalize():f}. "
+                                         "Negative inventory is blocked (Company Settings → Software Settings).")
     await db.execute(
         update(product_model)
         .where(product_model.id == product_id)
         .values(stock_qty=product_model.stock_qty + delta)
     )
+    if outlet_id:
+        await db.execute(text("UPDATE outlet_stock SET stock_qty = stock_qty + :d, updated_at = NOW() "
+                              "WHERE outlet_id = :o AND product_id = :p"), {"d": delta, "o": outlet_id, "p": product_id})
 
 
 # ─── Invoice Service ──────────────────────────────────────────────────────────
@@ -351,7 +373,7 @@ async def create_invoice(
             batch_id=item_in.batch_id,
             expiry_date=item_in.expiry_date,
         )
-        await _update_product_stock(db, item_in.product_id, -item_in.qty)
+        await _update_product_stock(db, item_in.product_id, -item_in.qty, data.outlet_id)
 
         if item_in.batch_id:
             await batch_service.record_batch_movement(
@@ -550,7 +572,7 @@ async def cancel_invoice(
             batch_id=it.batch_id,
             expiry_date=it.expiry_date,
         )
-        await _update_product_stock(db, it.product_id, it.qty)
+        await _update_product_stock(db, it.product_id, it.qty, inv.outlet_id)
 
         if it.batch_id:
             await batch_service.record_batch_movement(
