@@ -179,8 +179,8 @@ async def load_scope(db, user_id: int) -> dict:
 
 
 async def _deny(db, user_id, username, request: Request, why: str):
-    await db.execute(text("""INSERT INTO audit_logs (module, action, description, user_id, user_name, ip_address, created_at)
-        VALUES ('security', 'access_denied', :d, :u, :n, :ip, NOW())"""),
+    await db.execute(text("""INSERT INTO audit_logs (module, action, record_id, description, user_id, user_name, ip_address, created_at)
+        VALUES ('security', 'access_denied', :u, :d, :u, :n, :ip, NOW())"""),
         {"d": f"{request.method} {request.url.path}: {why}"[:500], "u": user_id, "n": username,
          "ip": request.client.host if request.client else None})
     await db.commit()
