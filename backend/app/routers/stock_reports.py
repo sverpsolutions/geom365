@@ -457,7 +457,7 @@ async def stock_as_at(
     back to opening stock. Times are entered in IST; the ledger is stored in UTC.
     """
     access.check_outlet(outlet_id)
-    p: dict = {"ts": f"{on.isoformat()} {at}:00", "q": f"%{search.strip()}%", "cat": category_id}
+    p: dict = {"ts": datetime.combine(on, datetime.strptime(at, "%H:%M").time()), "q": f"%{search.strip()}%", "cat": category_id}
     cut = "((CAST(:ts AS timestamp) AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC')"
     mine = [outlet_id] if outlet_id else access.allowed_outlets()   # None = whole company
     if mine is None:
