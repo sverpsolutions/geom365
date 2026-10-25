@@ -56,6 +56,8 @@ interface Outlet {
   store_timing?: string;
   is_active: boolean;
   is_connected: boolean;
+  negative_stock?: 'company' | 'block' | 'allow';
+  outlet_code?: string;
   is_delivery_available?: boolean;
   is_online_order_available?: boolean;
   server_name?: string;
@@ -179,7 +181,8 @@ const OutletMaster = () => {
     db_username: 'postgres',
     db_password: '',
     type: 'O',
-    is_active: true
+    is_active: true,
+    negative_stock: 'company'
   });
 
   const [activeTab, setActiveTab] = useState('General');
@@ -478,7 +481,7 @@ const OutletMaster = () => {
                       city: 'New Delhi', state: 'Delhi', country: 'India', pincode: '', address: '',
                       manager_name: '', manager_mobile: '', manager_email: '', store_phone: '',
                       store_type: 'Company Operated', store_category: '24/7 Convenience Retail',
-                      store_timing: '24 Hours / 7 Days Open', is_active: true, is_connected: true, type: 'O'
+                      store_timing: '24 Hours / 7 Days Open', is_active: true, is_connected: true, type: 'O', negative_stock: 'company'
                     });
                     setActiveTab('General');
                     setShowModal(true);
@@ -566,6 +569,11 @@ const OutletMaster = () => {
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#8c2785] text-white">
                         {o.store_timing || '24/7 OPEN'}
                       </span>
+                      {o.negative_stock && o.negative_stock !== 'company' && (
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold text-white ${o.negative_stock === 'block' ? 'bg-red-600' : 'bg-amber-500'}`}>
+                          {o.negative_stock === 'block' ? 'NEGATIVE BLOCKED' : 'NEGATIVE ALLOWED'}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex gap-1">
@@ -1130,6 +1138,20 @@ const OutletMaster = () => {
                         className="rounded text-[#8c2785] focus:ring-[#8c2785]"
                       />
                       <span className="font-bold text-slate-700">Active Operational Store</span>
+                    </label>
+
+                    <label className="flex items-center gap-2">
+                      <span className="font-bold text-slate-700">Billing below zero stock</span>
+                      <select
+                        value={formData.negative_stock || 'company'}
+                        onChange={e => setFormData({...formData, negative_stock: e.target.value as 'company' | 'block' | 'allow'})}
+                        className="p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold"
+                        title="Whether this outlet may bill, transfer or return an item that would go below zero stock"
+                      >
+                        <option value="company">Use company setting</option>
+                        <option value="block">Block (no negative stock)</option>
+                        <option value="allow">Allow negative stock</option>
+                      </select>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">

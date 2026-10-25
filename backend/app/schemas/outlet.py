@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, List
+from typing import Literal, Optional, List
 
 class RegionBase(BaseModel):
     code: str
@@ -60,6 +60,7 @@ class OutletBase(BaseModel):
     schemes_sync_required: bool = False
     type: str = "O"
     is_active: bool = True
+    negative_stock: Literal["company", "block", "allow"] = "company"  # billing below zero: follow company setting / block / allow
     
     # Basic Details
     outlet_code: Optional[str] = None

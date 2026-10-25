@@ -108,6 +108,7 @@ class outlet(base):
     
     is_connected: Mapped[bool] = mapped_column(Boolean, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    negative_stock: Mapped[str] = mapped_column(String(10), default="company")  # company | block | allow
     
     sync_required: Mapped[bool] = mapped_column(Boolean, default=False)
     sales_sync_required: Mapped[bool] = mapped_column(Boolean, default=False)

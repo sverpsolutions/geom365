@@ -185,6 +185,15 @@ async def _write_stock_ledger(
     db.add(entry)
 
 
+async def _negative_blocked(db: AsyncSession, outlet_id: Optional[int]) -> bool:
+    """Outlet master rule wins (block / allow); 'company' or no outlet follows Company Settings."""
+    company = bool((await db.execute(text("SELECT block_negative_stock FROM company_settings ORDER BY id LIMIT 1"))).scalar())
+    if not outlet_id:
+        return company
+    rule = (await db.execute(text("SELECT negative_stock FROM outlets WHERE id = :o"), {"o": outlet_id})).scalar()
+    return {"block": True, "allow": False}.get(rule, company)
+
+
 async def _update_product_stock(db: AsyncSession, product_id: int, delta: Decimal, outlet_id: Optional[int] = None):
     """Add delta (negative = deduction) to products.stock_qty, and to the outlet's own stock row when outlet_id is
     given and the outlet has one (the figure the POS shows).
@@ -193,7 +202,7 @@ async def _update_product_stock(db: AsyncSession, product_id: int, delta: Decima
     outlet_id is given, else company stock — unless the item is marked "Allow Neg. Stock". Every outflow
     (sale, transfer, purchase return …) comes through here, so this one guard covers them all. The product row
     is locked, so two counters cannot both sell the last unit."""
-    if delta < 0 and (await db.execute(text("SELECT block_negative_stock FROM company_settings ORDER BY id LIMIT 1"))).scalar():
+    if delta < 0 and await _negative_blocked(db, outlet_id):
         p = (await db.execute(text("SELECT name, stock_qty, allow_neg_stock FROM products WHERE id = :p FOR UPDATE"),
                               {"p": product_id})).one()
         if not p.allow_neg_stock:
@@ -204,7 +213,7 @@ async def _update_product_stock(db: AsyncSession, product_id: int, delta: Decima
                 avail = avail if at_outlet is None else at_outlet
             if avail + delta < 0:
                 raise HTTPException(400, f"Not enough stock for '{p.name}': available {avail.normalize():f}, needed {(-delta).normalize():f}. "
-                                         "Negative inventory is blocked (Company Settings → Software Settings).")
+                                         "Negative stock is blocked for this outlet (Outlet Master / Company Settings).")
     await db.execute(
         update(product_model)
         .where(product_model.id == product_id)
