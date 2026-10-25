@@ -1,4 +1,5 @@
 import { useState, type FormEvent, useEffect, useRef } from 'react'
+import { enterFull } from '../../utils/fullscreen'
 import { useAuth } from '../../hooks/useAuth'
 
 /* ------------------------------------------------------------------ */
@@ -27,6 +28,7 @@ export default function LoginPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    enterFull()  // the Login click is the moment the browser allows full screen: open like a desktop app
     await login({ username, password })
   }
 

@@ -9,6 +9,7 @@ import api from '../../api/axios';
 import BackupModal from '../common/BackupModal';
 import CommandPalette from '../common/CommandPalette';
 import { useThemeStore } from '../../store/themeStore';
+import { isFull, keepFull, toggleFull } from '../../utils/fullscreen';
 
 interface HeaderProps {
   onSidebarToggle: () => void;
@@ -30,6 +31,8 @@ export default function Header({ onSidebarToggle }: HeaderProps) {
   const navigate = useNavigate();
   const addTab = useTabStore(s => s.addTab);
   const user = useAuthStore(s => s.user);
+  const [full, setFull] = useState(isFull());
+  useEffect(() => keepFull(setFull), []);  // stay full screen after a reload (on the next click)
   const { isDarkMode, toggleDarkMode } = useThemeStore();
 
   // States
@@ -207,6 +210,15 @@ export default function Header({ onSidebarToggle }: HeaderProps) {
       <div className="flex items-center gap-4 ml-auto">
         {/* Global Tools */}
         <div className="flex items-center gap-1 pr-4 border-r border-border">
+          <button
+            onClick={toggleFull}
+            className="text-text-secondary hover:text-primary transition-colors w-10 h-10 rounded-lg hover:bg-app-bg flex items-center justify-center"
+            title={full ? 'Exit full screen (Esc)' : 'Full screen'}
+            aria-label={full ? 'Exit full screen' : 'Full screen'}
+            aria-pressed={full}
+          >
+            <i className={`fas ${full ? 'fa-compress' : 'fa-expand'} text-lg`}></i>
+          </button>
           <button
             onClick={toggleDarkMode}
             className="text-text-secondary hover:text-primary transition-colors w-10 h-10 rounded-lg hover:bg-app-bg flex items-center justify-center"
