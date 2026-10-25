@@ -10,13 +10,14 @@ const CustomerAnalyticsReport = () => {
   const qtrAgo = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
   const [fromDate, setFromDate] = useState(qtrAgo);
   const [toDate, setToDate] = useState(today);
+  const [outletId, setOutletId] = useState('');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/reports/customer-analytics`, { params: { from_date: fromDate, to_date: toDate } });
+      const res = await api.get(`/reports/customer-analytics`, { params: { from_date: fromDate, to_date: toDate, outlet_id: outletId || undefined } });
       setData(res.data);
     } catch {} finally { setLoading(false); }
   };
@@ -68,6 +69,11 @@ const CustomerAnalyticsReport = () => {
             <input type="date" className="form-control h-9 text-xs" value={fromDate} onChange={e => setFromDate(e.target.value)} /></div>
           <div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">To</label>
             <input type="date" className="form-control h-9 text-xs" value={toDate} onChange={e => setToDate(e.target.value)} /></div>
+          <div><label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Outlet</label>
+            <select className="form-control h-9 text-xs w-52" value={outletId} onChange={e => setOutletId(e.target.value)}>
+              <option value="">All my outlets</option>
+              {(data?.outlets || []).map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select></div>
           <button className="btn btn-dark btn-sm h-9 px-6" onClick={load} disabled={loading}>
             {loading ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-search mr-1"></i>}Apply
           </button>

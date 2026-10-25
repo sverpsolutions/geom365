@@ -105,10 +105,16 @@ PATHS: dict[str, str] = {
 }
 _PATHS_SORTED = sorted(PATHS.items(), key=lambda kv: -len(kv[0]))
 
+
+def register_paths(paths: dict[str, str]):
+    """Routers that define their own sub-paths (the report engine) add them to the central map."""
+    PATHS.update(paths)
+    _PATHS_SORTED[:] = sorted(PATHS.items(), key=lambda kv: -len(kv[0]))
+
 # GETs every logged-in user may make: pickers and lookups other screens need (results are still scope-filtered)
 LOOKUP_PREFIXES = ("/masters/", "/products/lookup/", "/products/search")
 LOOKUPS = ("/products/search", "/outlets", "/masters", "/states", "/customers", "/suppliers", "/company",
-           "/shifts/status", "/reports/filters", "/access/me", "/schemes/types", "/dashboard/user-scope")
+           "/shifts/status", "/reports/filters", "/access/me", "/schemes/types", "/dashboard/user-scope", "/reports/x")
 POST_VIEW = ("search", "lookup", "lookup_ajax", "evaluate", "check-invoice", "preview")
 API_PREFIX = "/api/v1"
 
@@ -127,7 +133,7 @@ def classify(path: str, method: str) -> Optional[tuple[str, str]]:
     if method in ("GET", "HEAD"):
         if p in LOOKUPS or p.startswith(LOOKUP_PREFIXES):
             return ("*", "view")
-        act = "export" if segs & {"export", "excel", "csv", "download"} else "print" if segs & {"print", "pdf"} else "view"
+        act = "export" if segs & {"export", "excel", "csv", "download", "json", "xml"} else "print" if segs & {"print", "pdf"} else "view"
         return (module, act)
     if method == "DELETE":
         return (module, "delete")
@@ -135,6 +141,8 @@ def classify(path: str, method: str) -> Optional[tuple[str, str]]:
         return (module, "approve" if segs & {"approve", "reject"} else "edit")
     if p == "/schemes/evaluate":                      # POS asks the scheme engine while billing
         return ("billing", "view")
+    if p.startswith("/reports/x/"):                   # report engine uploads (GSTR-2B file) only read data
+        return (module, "view")
     if segs & {"change-password"}:
         return ("*", "view")                          # the endpoint itself checks it is your own password
     if segs & set(POST_VIEW):

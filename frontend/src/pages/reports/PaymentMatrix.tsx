@@ -7,11 +7,12 @@ const PaymentMatrix = () => {
     const [loading, setLoading] = useState(true);
     const [fromDate, setFromDate] = useState<string>(new Date(new Date().setDate(1)).toISOString().split('T')[0]);
     const [toDate, setToDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [outletId, setOutletId] = useState('');
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await api.get(`/reports/payments-matrix?from_date=${fromDate}&to_date=${toDate}`);
+            const res = await api.get(`/reports/payments-matrix`, { params: { from_date: fromDate, to_date: toDate, outlet_id: outletId || undefined } });
             setData(res.data);
         } catch (err) {
             console.error("Failed to fetch payment matrix", err);
@@ -22,7 +23,7 @@ const PaymentMatrix = () => {
 
     useEffect(() => {
         fetchData();
-    }, [fromDate, toDate]);
+    }, [fromDate, toDate, outletId]);
 
     const formatCurrency = (val: number) => {
         return new Intl.NumberFormat('en-IN', {
@@ -57,6 +58,13 @@ const PaymentMatrix = () => {
                             onChange={(e) => setToDate(e.target.value)}
                             className="text-sm font-bold text-slate-700 outline-none border-none bg-transparent"
                         />
+                    </div>
+                    <div className="flex items-center bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm gap-2">
+                        <span className="text-xs font-bold text-slate-400 uppercase">Outlet</span>
+                        <select value={outletId} onChange={e => setOutletId(e.target.value)} className="text-sm font-bold text-slate-700 outline-none border-none bg-transparent">
+                            <option value="">All my outlets</option>
+                            {(data?.outlets || []).map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                        </select>
                     </div>
                     <button 
                         onClick={() => window.print()}

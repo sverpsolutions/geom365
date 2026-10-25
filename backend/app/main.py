@@ -11,7 +11,7 @@ from app.routers import (
     billing, estimates, outlets, sync, reports, company, states,
     warehouse, packaging, import_export, wms, purchases, channels,
     audit_logs, inventory, logistic, stock_reports, shop, returns, purchase_returns, dashboard, shifts, cash, accounts,
-    stock_take, batches, vendor_portal, dashboard_builder, schemes, access
+    stock_take, batches, vendor_portal, dashboard_builder, schemes, access, report_engine
 )
 
 _settings = get_settings()
@@ -91,6 +91,7 @@ app.include_router(vendor_portal.router, prefix=API_PREFIX)
 app.include_router(dashboard_builder.router, prefix=API_PREFIX)
 app.include_router(schemes.router,       prefix=API_PREFIX)
 app.include_router(access.router,        prefix=API_PREFIX)
+app.include_router(report_engine.router, prefix=API_PREFIX)
 
 
 from fastapi.staticfiles import StaticFiles

@@ -1,4 +1,5 @@
 import React from 'react';
+import { EngineReportList } from './ReportRunner';
 import { useNavigate } from 'react-router-dom';
 
 const reports = [
@@ -292,6 +293,8 @@ const ReportCenter = () => {
           </div>
         ))}
       </div>
+
+      <EngineReportList />
 
       {/* Quick Stats Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

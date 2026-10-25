@@ -505,31 +505,38 @@ async def payment_collection_report(
 async def payment_matrix_report(
     from_date: str  = Query(default=None),
     to_date:   str  = Query(default=None),
+    outlet_id: Optional[int] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    access.require_unrestricted()
+    access.require_whole_bill_access()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
-    params: dict = {"fd": fd, "td": td}
+    params: dict = {"fd": fd, "td": td, "oid": outlet_id}
+    ow = " AND (CAST(:oid AS INT) IS NULL OR b.outlet_id = :oid)" + access.outlet_filter("b.outlet_id", params)
+    # synced outlet POS bills + bills made in geom365 itself (their payments)
+    src = f"""(SELECT outlet_id, bill_date, paymode, pay_amount FROM bill_wise_sales_summary
+               UNION ALL
+               SELECT i.outlet_id, py.payment_date, py.payment_mode, py.amount
+               FROM unit_wise_payments py JOIN unit_wise_invoices i ON i.id = py.invoice_id)"""
 
     # 1. Get all payment modes present in the period
-    modes_q = await db.execute(text("""
-        SELECT DISTINCT UPPER(paymode) as mode 
-        FROM bill_wise_sales_summary 
-        WHERE bill_date BETWEEN :fd AND :td
+    modes_q = await db.execute(text(f"""
+        SELECT DISTINCT UPPER(b.paymode) as mode
+        FROM {src} b
+        WHERE b.bill_date BETWEEN :fd AND :td {ow}
         ORDER BY mode
     """), params)
     modes = [r[0] for r in modes_q.fetchall()]
 
     # 2. Get outlet-wise totals for each mode using a cross-tab style query (or just group by and pivot in Python)
-    data_q = await db.execute(text("""
-        SELECT 
+    data_q = await db.execute(text(f"""
+        SELECT
             o.outlet_name,
             UPPER(b.paymode) as mode,
             SUM(b.pay_amount) as total
-        FROM bill_wise_sales_summary b
+        FROM {src} b
         JOIN outlets o ON o.id = b.outlet_id
-        WHERE b.bill_date BETWEEN :fd AND :td
+        WHERE b.bill_date BETWEEN :fd AND :td {ow}
         GROUP BY o.outlet_name, UPPER(b.paymode)
         ORDER BY o.outlet_name, mode
     """), params)
@@ -562,7 +569,8 @@ async def payment_matrix_report(
         "modes": modes,
         "rows": result_rows,
         "grand_totals": grand_totals,
-        "period": {"from": str(fd), "to": str(td)}
+        "period": {"from": str(fd), "to": str(td)},
+        "outlets": await _outlets(db),
     }
 
 
@@ -1445,23 +1453,26 @@ async def profitability_analysis(
 
 @router.get("/sales-vs-purchase")
 async def sales_vs_purchase_report(
-    year: int = Query(default=None), db: AsyncSession = Depends(get_db),
+    year: int = Query(default=None), outlet_id: Optional[int] = Query(default=None), db: AsyncSession = Depends(get_db),
 ):
-    access.require_unrestricted()
+    access.require_whole_bill_access()
     yr = year or date.today().year
-    sq = await db.execute(text("""
+    sp: dict = {"yr": yr, "oid": outlet_id}
+    sw = " AND (CAST(:oid AS INT) IS NULL OR i.outlet_id = :oid)" + access.outlet_filter("i.outlet_id", sp)
+    pw = " AND (CAST(:oid AS INT) IS NULL OR p.outlet_id = :oid)" + access.outlet_filter("p.outlet_id", sp)
+    sq = await db.execute(text(f"""
         SELECT EXTRACT(MONTH FROM i.invoice_date)::int, TO_CHAR(i.invoice_date,'Mon'),
                COALESCE(SUM(i.total_amount),0), COUNT(i.id)
         FROM unit_wise_invoices i
-        WHERE EXTRACT(YEAR FROM i.invoice_date)=:yr AND i.invoice_type!='return'
+        WHERE EXTRACT(YEAR FROM i.invoice_date)=:yr AND i.invoice_type!='return' AND i.status <> 'cancelled' {sw}
         GROUP BY 1,2 ORDER BY 1
-    """), {"yr": yr})
+    """), sp)
     sales = {int(r[0]): {"month": r[1], "sales": _fmt(r[2]), "bills": int(r[3] or 0)}
              for r in sq.fetchall()}
-    pq = await db.execute(text("""
+    pq = await db.execute(text(f"""
         SELECT EXTRACT(MONTH FROM p.invoice_date)::int, COALESCE(SUM(p.total_amount),0)
-        FROM unit_wise_purchases p WHERE EXTRACT(YEAR FROM p.invoice_date)=:yr GROUP BY 1
-    """), {"yr": yr})
+        FROM unit_wise_purchases p WHERE EXTRACT(YEAR FROM p.invoice_date)=:yr AND p.status NOT IN ('draft', 'cancelled') {pw} GROUP BY 1
+    """), sp)
     purchases = {int(r[0]): _fmt(r[1]) for r in pq.fetchall()}
     rows = []
     for m in range(1, 13):
@@ -1471,7 +1482,7 @@ async def sales_vs_purchase_report(
         rows.append({"month": s["month"], "month_num": m, "sales": s["sales"],
                       "bills": s["bills"], "purchases": pu, "net_margin": round(net, 2),
                       "margin_pct": round(net / s["sales"] * 100, 2) if s["sales"] else 0})
-    return {"year": yr, "rows": rows}
+    return {"year": yr, "rows": rows, "outlets": await _outlets(db)}
 
 
 @router.get("/item-velocity")
