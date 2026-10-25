@@ -1519,22 +1519,26 @@ async def item_velocity_report(
 @router.get("/customer-analytics")
 async def customer_analytics_report(
     from_date: str = Query(default=None), to_date: str = Query(default=None),
+    outlet_id: Optional[int] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    access.require_unrestricted()
+    access.require_whole_bill_access()
     fd = _d(from_date, date.today() - timedelta(days=90))
     td = _d(to_date, date.today())
-    q = await db.execute(text("""
-        SELECT i.customer_name, COUNT(i.id), COALESCE(SUM(i.total_amount),0),
-               COALESCE(AVG(i.total_amount),0), MAX(i.invoice_date), MIN(i.invoice_date)
-        FROM unit_wise_invoices i
+    p: dict = {"fd": fd, "td": td, "oid": outlet_id}
+    w = access.outlet_filter("i.outlet_id", p)
+    q = await db.execute(text(f"""
+        SELECT c.name, COUNT(i.id), COALESCE(SUM(i.total_amount),0),
+               COALESCE(AVG(i.total_amount),0), MAX(i.invoice_date), MIN(i.invoice_date), c.phone
+        FROM unit_wise_invoices i JOIN customers c ON c.id = i.customer_id
         WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type!='return'
-          AND i.customer_name IS NOT NULL AND i.customer_name!=''
-        GROUP BY i.customer_name ORDER BY SUM(i.total_amount) DESC LIMIT 200
-    """), {"fd": fd, "td": td})
+          AND (CAST(:oid AS INT) IS NULL OR i.outlet_id = :oid) {w}
+        GROUP BY c.id, c.name, c.phone ORDER BY SUM(i.total_amount) DESC LIMIT 200
+    """), p)
     return {"rows": [{"customer": r[0], "visits": int(r[1] or 0), "total_spent": _fmt(r[2]),
                       "avg_bill": round(_fmt(r[3]), 2), "last_visit": str(r[4]) if r[4] else "",
-                      "first_visit": str(r[5]) if r[5] else ""} for r in q.fetchall()]}
+                      "first_visit": str(r[5]) if r[5] else "", "phone": r[6]} for r in q.fetchall()],
+            "outlets": await _outlets(db)}
 
 
 @router.get("/tax-breakup")
