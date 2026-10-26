@@ -11,7 +11,8 @@ from app.services.auth_service import write_audit
 
 router = APIRouter(prefix="/audit-logs", tags=["Audit Logs"])
 
-@router.get("/", response_model=List[audit_log_out])
+@router.get("", response_model=List[audit_log_out])
+@router.get("/", response_model=List[audit_log_out], include_in_schema=False)
 async def list_logs(
     db: AsyncSession = Depends(get_db),
     current_user: current_user_dep = Depends(get_current_user),
@@ -32,7 +33,8 @@ async def list_logs(
     result = await db.execute(q.order_by(AuditLog.created_at.desc()).offset(skip).limit(limit))
     return result.scalars().all()
 
-@router.post("/", response_model=audit_log_out)
+@router.post("", response_model=audit_log_out)
+@router.post("/", response_model=audit_log_out, include_in_schema=False)
 async def create_log(
     log_data: audit_log_create,
     request: Request,
@@ -48,7 +50,8 @@ async def create_log(
         user_name=current_user.username,
         action=log_data.action,
         module=log_data.module,
-        record_id=log_data.record_id,
+        record_id=int(log_data.record_id) if str(log_data.record_id or "").isdigit() else 0,  # column is a NOT NULL integer
+        record_no=(log_data.record_id or "")[:50] or None,
         description=log_data.details,
         meta_data=log_data.meta_data,
         ip_address=request.client.host if request.client else None
@@ -57,7 +60,7 @@ async def create_log(
 
     return {
         "id": 0, "user_id": current_user.user_id, "user_name": current_user.username,
-        "action": log_data.action, "module": log_data.module, "record_id": log_data.record_id,
+        "action": log_data.action, "module": log_data.module, "record_no": log_data.record_id,
         "details": log_data.details, "meta_data": log_data.meta_data, "ip_address": request.client.host if request.client else None,
         "created_at": datetime.now()
     }
