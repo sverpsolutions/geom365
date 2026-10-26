@@ -16,14 +16,23 @@ async def login(username: str, password: str, db: AsyncSession, request: Request
     )
     db_user = result.scalar_one_or_none()
 
+    async def refuse(code: int, detail: str, why: str):
+        # failed logins on a real account are audited (login history report); unknown usernames have no user to log against
+        if db_user:
+            await write_audit(db=db, module="auth", action="login_failed", record_id=db_user.id, description=f"{db_user.username}: {why}",
+                              user_id=db_user.id, user_name=db_user.username,
+                              ip_address=request.client.host if request and request.client else None)
+            await db.commit()
+        raise HTTPException(status_code=code, detail=detail)
+
     if not db_user or not verify_password(password, db_user.password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid username or password")
+        await refuse(status.HTTP_401_UNAUTHORIZED, "invalid username or password", "wrong password")
 
     if not db_user.status:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account is inactive")
+        await refuse(status.HTTP_403_FORBIDDEN, "account is inactive", "account inactive")
     today = datetime.now().date()
     if (db_user.valid_from and db_user.valid_from > today) or (db_user.valid_until and db_user.valid_until < today):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account is outside its validity period")
+        await refuse(status.HTTP_403_FORBIDDEN, "account is outside its validity period", "outside validity period")
 
     await db.execute(
         update(user_model)

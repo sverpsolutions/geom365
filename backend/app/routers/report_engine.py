@@ -47,6 +47,7 @@ class F:
     supplier_id: Optional[int]
     search: str
     month: Optional[str]
+    user_id: Optional[int] = None
 
 
 def report(key, title, group, module, filters=("date", "outlet"), note="", bill_level=False, download=None, upload=False):
@@ -675,15 +676,147 @@ async def _tally_rows(db, f: F):
         WHERE i.invoice_date BETWEEN :fd AND :td AND {ACTIVE} {_where(f, p)} ORDER BY i.invoice_date, i.invoice_no""", p)
 
 
+# ═══ Audit & Compliance ══════════════════════════════════════════════════════
+# audit_logs.created_at is stored in UTC; dates are filtered and shown in Indian time.
+IST = "(a.created_at + INTERVAL '5 hours 30 minutes')"
+
+
+def _audit_where(f: F, p: dict, ts: str = IST, user_col: str = "a.user_id") -> str:
+    p.update(fd=f.fd, td=f.td, q=f"%{f.search.strip()}%", uid=f.user_id)
+    return f" AND CAST({ts} AS date) BETWEEN :fd AND :td AND (CAST(:uid AS INT) IS NULL OR {user_col} = :uid)"
+
+
+AUDIT_COLS = [col("at", "Date & time"), col("user_name", "User"), col("role", "Role"), col("module", "Module"),
+              col("action", "Action"), col("record_no", "Record"), col("description", "Details"), col("ip_address", "IP")]
+
+
+@report("audit_trail", "Audit Log (Full)", "Audit & Compliance", "audit", ("date", "user", "search"),
+        note="Every recorded action — who did what, when, from which IP. Search matches module, action, record or description.")
+async def audit_trail(db, f: F):
+    p: dict = {}
+    rows = await _rows(db, f"""
+        SELECT TO_CHAR({IST}, 'DD Mon YYYY HH24:MI:SS') AS at, COALESCE(u.name, a.user_name) AS user_name, u.role,
+               a.module, a.action, a.record_no, a.description, a.ip_address
+        FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
+        WHERE TRUE {_audit_where(f, p)}
+          AND (:q = '%%' OR a.module ILIKE :q OR a.action ILIKE :q OR a.record_no ILIKE :q OR a.description ILIKE :q)
+        ORDER BY a.created_at DESC LIMIT 5000""", p)
+    return {"columns": AUDIT_COLS, "rows": rows, "notes": ["Latest 5,000 entries for the filter"] if len(rows) == 5000 else []}
+
+
+@report("user_activity", "User Activity Summary", "Audit & Compliance", "audit", ("date", "user"),
+        note="Per user: logins, failed logins, creates, edits, approvals, cancellations / deletes, blocked attempts and last activity.")
+async def user_activity(db, f: F):
+    p: dict = {}
+    rows = await _rows(db, f"""
+        SELECT COALESCE(u.name, MAX(a.user_name)) AS user_name, u.username, u.role, o.outlet_name AS outlet,
+               COUNT(*) FILTER (WHERE a.module = 'auth' AND a.action = 'login') AS logins,
+               COUNT(*) FILTER (WHERE a.action = 'login_failed') AS failed_logins,
+               COUNT(*) FILTER (WHERE a.action ILIKE '%create%' OR a.action ILIKE 'start%' OR a.action ILIKE '%open') AS creates,
+               COUNT(*) FILTER (WHERE a.action ILIKE '%update%' OR a.action ILIKE '%edit%' OR a.action ILIKE 'toggle%') AS edits,
+               COUNT(*) FILTER (WHERE a.action ILIKE '%approve%' OR a.action ILIKE 'finalize%' OR a.action ILIKE '%close') AS approvals,
+               COUNT(*) FILTER (WHERE a.action ILIKE '%cancel%' OR a.action ILIKE '%delete%' OR a.action ILIKE 'deactivate%') AS cancels_deletes,
+               COUNT(*) FILTER (WHERE a.module = 'security') AS blocked,
+               COUNT(*) AS total_actions, COUNT(DISTINCT a.module) AS modules,
+               TO_CHAR(MAX({IST}), 'DD Mon YYYY HH24:MI') AS last_activity
+        FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id LEFT JOIN outlets o ON o.id = u.outlet_id
+        WHERE TRUE {_audit_where(f, p)}
+        GROUP BY u.id, u.name, u.username, u.role, o.outlet_name ORDER BY total_actions DESC""", p)
+    return {"columns": [col("user_name", "User"), col("username", "Username"), col("role", "Role"), col("outlet", "Default outlet"),
+                        col("logins", "Logins", "num"), col("failed_logins", "Failed logins", "num"), col("creates", "Creates", "num"),
+                        col("edits", "Edits", "num"), col("approvals", "Approvals / closes", "num"), col("cancels_deletes", "Cancels / deletes", "num"),
+                        col("blocked", "Blocked attempts", "num"), col("total_actions", "Total actions", "num"), col("modules", "Modules used", "num"),
+                        col("last_activity", "Last activity")], "rows": rows}
+
+
+@report("login_history", "Login History", "Audit & Compliance", "audit", ("date", "user", "search"),
+        note="Every login and failed login with time and IP. Repeated failures for one user can mean someone is guessing the password.")
+async def login_history(db, f: F):
+    p: dict = {}
+    rows = await _rows(db, f"""
+        SELECT TO_CHAR({IST}, 'DD Mon YYYY HH24:MI:SS') AS at, COALESCE(u.name, a.user_name) AS user_name, u.username, u.role,
+               CASE WHEN a.action = 'login' THEN 'Success' ELSE 'Failed' END AS result,
+               CASE WHEN a.action = 'login' THEN '' ELSE SPLIT_PART(a.description, ': ', 2) END AS reason, a.ip_address
+        FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
+        WHERE a.module = 'auth' AND a.action IN ('login', 'login_failed') {_audit_where(f, p)}
+          AND (:q = '%%' OR a.ip_address ILIKE :q OR u.name ILIKE :q OR u.username ILIKE :q)
+        ORDER BY a.created_at DESC LIMIT 5000""", p)
+    return {"columns": [col("at", "Date & time"), col("user_name", "User"), col("username", "Username"), col("role", "Role"),
+                        col("result", "Result"), col("reason", "Reason"), col("ip_address", "IP")], "rows": rows}
+
+
+@report("security_denials", "Blocked Access Attempts", "Audit & Compliance", "audit", ("date", "user", "search"),
+        note="Requests refused by User Management: a screen, outlet, category or action the user is not allowed.")
+async def security_denials(db, f: F):
+    p: dict = {}
+    rows = await _rows(db, f"""
+        SELECT TO_CHAR({IST}, 'DD Mon YYYY HH24:MI:SS') AS at, COALESCE(u.name, a.user_name) AS user_name, u.role,
+               SPLIT_PART(a.description, ': ', 1) AS request,
+               SUBSTRING(a.description FROM POSITION(': ' IN a.description) + 2) AS reason, a.ip_address
+        FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
+        WHERE a.module = 'security' {_audit_where(f, p)}
+          AND (:q = '%%' OR a.description ILIKE :q OR u.name ILIKE :q)
+        ORDER BY a.created_at DESC LIMIT 5000""", p)
+    return {"columns": [col("at", "Date & time"), col("user_name", "User"), col("role", "Role"), col("request", "Request"),
+                        col("reason", "Why it was refused"), col("ip_address", "IP")], "rows": rows}
+
+
+@report("permission_changes", "Permission Changes", "Audit & Compliance", "audit", ("date", "user", "search"),
+        note="Every change to a user's role, status, outlets, categories, groups or permissions, and to role templates.")
+async def permission_changes(db, f: F):
+    p: dict = {}
+    rows = await _rows(db, f"""
+        SELECT TO_CHAR({IST}, 'DD Mon YYYY HH24:MI:SS') AS at,
+               CASE WHEN a.user_id = 0 THEN 'Role template' ELSE u.name END AS user_name,
+               a.changed_by_name AS changed_by, a.summary, a.ip_address
+        FROM user_permission_audit a LEFT JOIN users u ON u.id = a.user_id
+        WHERE TRUE {_audit_where(f, p)}
+          AND (:q = '%%' OR a.summary ILIKE :q OR u.name ILIKE :q OR a.changed_by_name ILIKE :q)
+        ORDER BY a.created_at DESC LIMIT 5000""", p)
+    return {"columns": [col("at", "Date & time"), col("user_name", "User changed"), col("changed_by", "Changed by"),
+                        col("summary", "What changed"), col("ip_address", "IP")], "rows": rows}
+
+
+SENSITIVE = ("(a.action ILIKE '%delete%' OR a.action ILIKE '%cancel%' OR a.action ILIKE '%approve%' OR a.action ILIKE 'deactivate%' "
+             "OR a.action ILIKE '%password%' OR a.action ILIKE 'finalize%' OR a.action ILIKE '%adjust%' OR a.action = 'day_close' "
+             "OR a.action ILIKE '%reopen%' OR a.module IN ('company', 'users') OR a.action ILIKE '%price%')")
+
+
+@report("sensitive_actions", "Sensitive Actions", "Audit & Compliance", "audit", ("date", "user", "search"),
+        note="Deletes, cancellations, approvals, stock adjustments, day close / reopen, password resets, price and company-setting changes.")
+async def sensitive_actions(db, f: F):
+    p: dict = {}
+    rows = await _rows(db, f"""
+        SELECT TO_CHAR({IST}, 'DD Mon YYYY HH24:MI:SS') AS at, COALESCE(u.name, a.user_name) AS user_name, u.role,
+               a.module, a.action, a.record_no, a.description, a.ip_address
+        FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
+        WHERE {SENSITIVE} {_audit_where(f, p)}
+          AND (:q = '%%' OR a.module ILIKE :q OR a.action ILIKE :q OR a.record_no ILIKE :q OR a.description ILIKE :q)
+        ORDER BY a.created_at DESC LIMIT 5000""", p)
+    return {"columns": AUDIT_COLS, "rows": rows}
+
+
+@report("activity_by_module", "Activity by Module", "Audit & Compliance", "audit", ("date", "user"),
+        note="How often each action happens in each module, and how many users did it.")
+async def activity_by_module(db, f: F):
+    p: dict = {}
+    rows = await _rows(db, f"""
+        SELECT a.module, a.action, COUNT(*) AS times, COUNT(DISTINCT a.user_id) AS users,
+               TO_CHAR(MIN({IST}), 'DD Mon YYYY HH24:MI') AS first_seen, TO_CHAR(MAX({IST}), 'DD Mon YYYY HH24:MI') AS last_seen
+        FROM audit_logs a WHERE TRUE {_audit_where(f, p)}
+        GROUP BY a.module, a.action ORDER BY times DESC""", p)
+    return {"columns": [col("module", "Module"), col("action", "Action"), col("times", "Times", "num"), col("users", "Users", "num"),
+                        col("first_seen", "First"), col("last_seen", "Last")], "rows": rows}
+
 # ═══ endpoints ═══════════════════════════════════════════════════════════════
 
 access.register_paths({f"/reports/x/{k}": r["module"] for k, r in REPORTS.items()}
                       | {"/reports/x/gstr1/json": "rep_gst", "/reports/x/tally/xml": "rep_finance"})
 
 
-def _filters(from_date, to_date, outlet_id, category_id, brand_id, supplier_id, search, month) -> F:
+def _filters(from_date, to_date, outlet_id, category_id, brand_id, supplier_id, search, month, user_id=None) -> F:
     td = to_date or date.today()
-    return F(from_date or td.replace(day=1), td, outlet_id, category_id, brand_id, supplier_id, search or "", month)
+    return F(from_date or td.replace(day=1), td, outlet_id, category_id, brand_id, supplier_id, search or "", month, user_id)
 
 
 async def _run(key, db, f, **extra):
@@ -783,8 +916,9 @@ async def tally_xml(from_date: Optional[date] = None, to_date: Optional[date] = 
 @router.get("/{key}")
 async def run_report(key: str, from_date: Optional[date] = None, to_date: Optional[date] = None, outlet_id: Optional[int] = None,
                      category_id: Optional[int] = None, brand_id: Optional[int] = None, supplier_id: Optional[int] = None,
-                     search: str = "", month: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"), db: AsyncSession = Depends(get_db)):
-    return await _run(key, db, _filters(from_date, to_date, outlet_id, category_id, brand_id, supplier_id, search, month))
+                     search: str = "", month: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"), user_id: Optional[int] = None,
+                     db: AsyncSession = Depends(get_db)):
+    return await _run(key, db, _filters(from_date, to_date, outlet_id, category_id, brand_id, supplier_id, search, month, user_id))
 
 
 @router.post("/gst2b_recon")

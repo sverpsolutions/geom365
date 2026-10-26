@@ -45,8 +45,9 @@ export default function ReportRunner() {
   const [brandId, setBrandId] = useState('')
   const [supplierId, setSupplierId] = useState('')
   const [search, setSearch] = useState('')
+  const [userId, setUserId] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  const [opts, setOpts] = useState<{ outlets: any[]; cats: any[]; brands: any[]; suppliers: any[] }>({ outlets: [], cats: [], brands: [], suppliers: [] })
+  const [opts, setOpts] = useState<{ outlets: any[]; cats: any[]; brands: any[]; suppliers: any[]; users: any[] }>({ outlets: [], cats: [], brands: [], suppliers: [], users: [] })
   const [data, setData] = useState<Res | null>(null)
   const [loading, setLoading] = useState(false)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
@@ -62,6 +63,7 @@ export default function ReportRunner() {
     if (has('category')) masters_api.get_item_categories().then(r => setOpts(o => ({ ...o, cats: (r.data as any[]) || [] }))).catch(() => {})
     if (has('brand')) masters_api.get_brands().then(r => setOpts(o => ({ ...o, brands: (r.data as any[]) || [] }))).catch(() => {})
     if (has('supplier')) suppliers_api.list({ per_page: 500 }).then((r: any) => setOpts(o => ({ ...o, suppliers: r.data?.data || r.data || [] }))).catch(() => {})
+    if (has('user')) api.get('/access/users').then(r => setOpts(o => ({ ...o, users: r.data || [] }))).catch(() => {})
     if (!meta.upload) run()
   }, [meta])
 
@@ -74,6 +76,7 @@ export default function ReportRunner() {
     if (brandId) p.brand_id = brandId
     if (supplierId) p.supplier_id = supplierId
     if (search.trim()) p.search = search.trim()
+    if (userId) p.user_id = userId
     return p
   }
   async function run() {
@@ -120,9 +123,10 @@ export default function ReportRunner() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf])); a.download = `${data.key}_${has('month') ? month : `${from}_${to}`}.xlsx`; a.click()
   }
   const filterText = () => [has('month') ? `Period ${month}` : has('date') ? `${from} to ${to}` : '',
-    outletId ? opts.outlets.find(o => String(o.id) === outletId)?.outlet_name : 'All my outlets',
+    has('outlet') && (outletId ? opts.outlets.find(o => String(o.id) === outletId)?.outlet_name : 'All my outlets'),
     catId && opts.cats.find(c => String(c.id) === catId)?.name, brandId && opts.brands.find(b => String(b.id) === brandId)?.name,
-    supplierId && opts.suppliers.find(s => String(s.id) === supplierId)?.name, search && `"${search}"`].filter(Boolean).join(' · ')
+    supplierId && opts.suppliers.find(s => String(s.id) === supplierId)?.name, userId && opts.users.find(u => String(u.id) === userId)?.name,
+    search && `"${search}"`].filter(Boolean).join(' · ')
   const preset = (a: Date, b: Date) => { setFrom(iso(a)); setTo(iso(b)) }
 
   if (!meta) return <div className="p-10 text-center text-slate-500">{data === null ? 'Loading report…' : 'Report not found'}</div>
@@ -169,6 +173,9 @@ export default function ReportRunner() {
         {has('supplier') && <div><label className="form-label">Supplier</label>
           <select className="form-input !w-52" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
             <option value="">All</option>{opts.suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>}
+        {has('user') && <div><label className="form-label">User</label>
+          <select className="form-input !w-52" value={userId} onChange={e => setUserId(e.target.value)}>
+            <option value="">All users</option>{opts.users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}</select></div>}
         {has('search') && <div><label className="form-label">Search</label>
           <input className="form-input !w-48" placeholder="Item, bill, party…" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && run()} /></div>}
         {meta.upload && <div><label className="form-label">GSTR-2B JSON file</label>

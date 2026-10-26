@@ -49,7 +49,7 @@ const SECTIONS: { title: string; cards: Card[] }[] = [
     C('/reports/r/price_override', '💲', 'Price Override Report', 'Items billed below their standard selling price', red, 'rep_sales'),
     C('/inventory/stock-take', '⚖️', 'Stock-Take Variance', 'Shortage / surplus value across stock takes', red, 'stock_adjustment'),
     C('/schemes', '🎁', 'Scheme Report', 'Bills, customers and discount given per scheme', ok, 'schemes'),
-    C('/reports/audit-logs', '🕵️', 'User Activity Log', 'System audit trail and security logs', grey, 'audit'),
+    C('/reports/r/user_activity', '🕵️', 'User Activity Log', 'Per-user actions, logins and last activity', grey, 'audit'),
   ] },
   { title: 'Outlet / Location Reports', cards: [
     C('/reports/hierarchy', '🏪', 'Outlet-wise Sales', 'Compare sales across outlets side by side', ok, 'rep_sales'),
@@ -79,6 +79,15 @@ const SECTIONS: { title: string; cards: Card[] }[] = [
     C('/reports/tax-breakup', '🧾', 'Tax Breakup Report', 'Date-wise sales split by GST slab', blue, 'rep_gst'),
     C('/reports/hsn-mismatch', '🚩', 'HSN Mismatch', 'Items whose HSN does not match their category', red, 'rep_gst'),
     C('/reports/r/tally_vouchers', '📤', 'Tally Export', 'Sales vouchers as Tally XML', dark, 'rep_finance'),
+  ] },
+  { title: 'Audit & Compliance', cards: [
+    C('/reports/r/audit_trail', '🕵️', 'Audit Log (Full)', 'Every action: who, what, when and from which IP', dark, 'audit'),
+    C('/reports/r/user_activity', '👤', 'User Activity Summary', 'Logins, creates, edits, approvals, cancels per user', blue, 'audit'),
+    C('/reports/r/login_history', '🔐', 'Login History', 'Successful and failed logins with time and IP', ok, 'audit'),
+    C('/reports/r/security_denials', '⛔', 'Blocked Access Attempts', 'Requests refused by User Management', red, 'audit'),
+    C('/reports/r/permission_changes', '🛡️', 'Permission Changes', 'Changes to user access and role templates', warn, 'audit'),
+    C('/reports/r/sensitive_actions', '⚠️', 'Sensitive Actions', 'Deletes, cancels, approvals, adjustments, day close, password resets', red, 'audit'),
+    C('/reports/r/activity_by_module', '📊', 'Activity by Module', 'How often each action happens, and by how many users', info, 'audit'),
   ] },
   { title: 'Margin & Channel Analytics', cards: [
     C('/reports/low-margin', '📉', 'Low Margin Items', 'Items selling below the minimum margin', red, 'rep_analytics'),
