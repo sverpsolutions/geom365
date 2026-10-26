@@ -1216,7 +1216,7 @@ const ProductAdd = () => {
       } else {
         const res = await products_api.create(data);
         const newId = res.data.id;
-        const itemCode = data.item_code || res.data.code || `ID-${newId}`;
+        const itemCode = res.data.item_code || data.item_code || `ID-${newId}`;  // server generates the code when left blank
         // Show success popup with item code
         setSuccessModal({ show: true, code: itemCode, name: data.name, id: newId });
         return;

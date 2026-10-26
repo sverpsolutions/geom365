@@ -80,6 +80,7 @@ async def search_products(
         .where(product_model.is_active == True, *access.product_where(product_model))
         .where(
             word_match(q, product_model.name, product_model.item_code, product_model.barcode, product_model.barcode_crt) |
+            ((product_model.id == int(q.strip())) if q.strip().isdigit() and len(q.strip()) < 10 else False) |
             product_model.id.in_(barcode_sub)
         )
         .order_by(product_model.name)
@@ -134,8 +135,11 @@ async def list_products(
     # Build product-level WHERE conditions (no join needed for count); the user's category / group scope first
     product_conditions = access.product_where(product_model)
     if search:
-        product_conditions.append(word_match(search, product_model.name, product_model.item_code,
-                                             product_model.barcode, product_model.filter_combination_name))
+        match = word_match(search, product_model.name, product_model.item_code,
+                           product_model.barcode, product_model.filter_combination_name)
+        if search.strip().isdigit() and len(search.strip()) < 10:  # the item ID shown after saving (e.g. 6464) also finds the item
+            match = match | (product_model.id == int(search.strip()))
+        product_conditions.append(match)
     if category_id:
         product_conditions.append(product_model.category_id == category_id)
     if brand_id:
