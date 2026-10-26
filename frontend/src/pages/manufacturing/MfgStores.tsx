@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import api from '../../api/axios';
 import Modal from '../../components/ui/Modal';
 import { Badge, ItemPicker, Table, Tabs, btnPri, btnSec, err, fmt, inp, useList } from './mfgShared';
 
-const TABS = ['Store Stock', 'Transfers', 'Stock Ledger', 'Opening Stock', 'Stores'];
+const TABS = ['Store Stock', 'Transfers', 'Inward from Outlet', 'Stock Ledger', 'Opening Stock', 'Return / Dispose', 'Stores'];
 
 export default function MfgStores() {
   const [tab, setTab] = useState(TABS[0]);
@@ -19,6 +19,8 @@ export default function MfgStores() {
       {tab === 'Transfers' && <Transfers stores={stores} brands={brands} />}
       {tab === 'Stock Ledger' && <Ledger stores={stores} />}
       {tab === 'Opening Stock' && <Opening stores={stores} brands={brands} />}
+      {tab === 'Inward from Outlet' && <Inward stores={stores} brands={brands} />}
+      {tab === 'Return / Dispose' && <Dispose stores={stores} />}
       {tab === 'Stores' && <Stores stores={stores} reload={loadStores} />}
     </div>
   );
@@ -211,6 +213,59 @@ function Stores({ stores, reload }: any) {
           <div className="flex justify-end gap-2"><button className={btnSec} onClick={() => setF(null)}>Cancel</button><button className={btnPri} onClick={save}>Save</button></div>
         </div>}
       </Modal>
+    </>
+  );
+}
+
+function Inward({ stores, brands }: any) {
+  const [outlets, setOutlets] = useState<any[]>([]);
+  const [f, setF] = useState<any>({ outlet_id: '', to_store_id: null, grn_ref: '', remarks: '' });
+  const [lines, setLines] = useState<Line[]>([newLine()]);
+  const [k, setK] = useState(() => crypto.randomUUID());
+  useEffect(() => { api.get('/outlets').then((r) => setOutlets(r.data?.data || r.data || [])).catch(() => {}); }, []);
+  const targets = stores.filter((s: any) => ['RAW', 'PACKAGING', 'PLAIN_TIN', 'PRINTED', 'QC'].includes(s.kind));
+  const post = async () => {
+    try {
+      const r = await api.post('/manufacturing/stock/inward', { ...f, outlet_id: Number(f.outlet_id), lines: linesBody(lines), request_key: k });
+      toast.success(r.data.doc_no ? `Received into plant: ${r.data.doc_no}` : 'Already posted'); setLines([newLine()]); setK(crypto.randomUUID());
+    } catch (e) { err(e); }
+  };
+  return (
+    <div className="bg-white border rounded-lg p-4 space-y-3 max-w-5xl">
+      <p className="text-sm text-slate-600">Material purchased through PO / GRN lands in an outlet or warehouse. Move it into the plant here — it leaves that outlet's stock at the same moment, so it is never counted twice. Choose <b>QC / Quarantine</b> when it must be inspected first (then transfer to the store after inspection).</p>
+      <div className="grid md:grid-cols-3 gap-3">
+        <select className={inp} value={f.outlet_id} onChange={(e) => setF({ ...f, outlet_id: e.target.value })}>
+          <option value="">From outlet / warehouse…</option>{outlets.map((o: any) => <option key={o.id} value={o.id}>{o.outlet_name || o.name}</option>)}</select>
+        <StoreSelect stores={targets} value={f.to_store_id} onChange={(v: any) => setF({ ...f, to_store_id: v })} />
+        <input className={inp} placeholder="GRN / supplier invoice ref" value={f.grn_ref} onChange={(e) => setF({ ...f, grn_ref: e.target.value })} />
+      </div>
+      <Lines lines={lines} setLines={setLines} brands={brands} />
+      <input className={inp} placeholder="Remarks" value={f.remarks} onChange={(e) => setF({ ...f, remarks: e.target.value })} />
+      <div className="flex justify-end"><button className={btnPri} onClick={post}>Receive into plant</button></div>
+    </div>
+  );
+}
+
+function Dispose({ stores }: any) {
+  const kinds = stores.filter((s: any) => ['REJECTED', 'SCRAP'].includes(s.kind));
+  const [store, setStore] = useState<number | null>(null);
+  const [rows, load] = useList<any>('/manufacturing/stock', { store_id: store || -1 });
+  const act = (r: any, action: string) => {
+    const qty = prompt(`${action === 'RETURN_TO_VENDOR' ? 'Return to vendor' : 'Dispose as scrap'} — quantity (max ${fmt(r.qty)})`);
+    const reason = qty && prompt('Reason / vendor debit note ref');
+    if (!qty || !reason) return;
+    api.post('/manufacturing/stock/dispose', { store_id: r.store_id, product_id: r.product_id, batch_no: r.batch_no, brand_id: r.brand_id, qty: Number(qty), action, reason })
+      .then(() => { toast.success('Posted'); load(); }).catch(err);
+  };
+  return (
+    <>
+      <p className="text-xs text-slate-500 mb-2">Rejected and scrap stock leaves the plant only through this screen (manager / admin). To send rejected printed tins for reprinting, create a printing challan from the Rejected store.</p>
+      <div className="w-72 mb-3"><StoreSelect stores={kinds} value={store} onChange={setStore} /></div>
+      <Table rows={store ? rows : []} empty="Choose the Rejected or Scrap store." cols={[
+        ['Item', (r) => r.item], ['Brand', (r) => r.brand || 'General'], ['Batch / job', (r) => r.batch_no || '—'], ['Qty', (r) => `${fmt(r.qty)} ${r.unit}`, 'text-right'],
+        ['', (r) => <div className="flex gap-1 justify-end"><button className={btnSec} onClick={() => act(r, 'RETURN_TO_VENDOR')}>Return to vendor</button>
+          <button className={btnSec} onClick={() => act(r, 'SCRAP_DISPOSAL')}>Dispose</button></div>, 'text-right'],
+      ]} />
     </>
   );
 }

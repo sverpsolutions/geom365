@@ -4,7 +4,8 @@ post() is the single posting path: it converts the entered unit to the item's ba
 balance row, refuses to go below zero, moves the quantity and writes an append-only mfg_stock_txns row —
 all inside the caller's transaction. A request_key makes a double-submitted form post only once.
 """
-from datetime import datetime
+import hashlib
+from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
 from typing import Optional
 
@@ -26,6 +27,28 @@ async def next_doc(db: AsyncSession, prefix: str) -> str:
     n = (await db.execute(text("""INSERT INTO mfg_doc_seq (prefix, last_no) VALUES (:k, 1)
         ON CONFLICT (prefix) DO UPDATE SET last_no = mfg_doc_seq.last_no + 1 RETURNING last_no"""), {"k": key})).scalar()
     return f"{key}-{n:05d}"
+
+
+def today() -> date:
+    """Business date in India (the server clock is UTC)."""
+    return (datetime.utcnow() + timedelta(hours=5, minutes=30)).date()
+
+
+async def store(db: AsyncSession, code: str) -> int:
+    return (await db.execute(text("SELECT id FROM mfg_stores WHERE code = :c"), {"c": code})).scalar()
+
+
+async def once(db: AsyncSession, key: Optional[str]) -> bool:
+    """False when this form submission (request key) was already posted — double clicks post once."""
+    if not key:
+        return True
+    return (await db.execute(text("INSERT INTO mfg_doc_seq (prefix, last_no) VALUES (:k, 0) ON CONFLICT DO NOTHING RETURNING 1"),
+                             {"k": "RK:" + hashlib.md5(key.encode()).hexdigest()[:17]})).scalar() is not None
+
+
+def pending(*a) -> Decimal:
+    """First value minus the rest, as Decimal (issued - accepted - rejected ...)."""
+    return d(a[0]) - sum((d(x) for x in a[1:]), ZERO)
 
 
 async def item(db: AsyncSession, product_id: int) -> dict:
@@ -117,6 +140,26 @@ async def post(db: AsyncSession, *, txn_type: str, product_id: int, qty_base: De
     return {"id": tid, "doc_no": doc, "duplicate": False}
 
 
+async def drain(db: AsyncSession, *, from_store: int, product_id: int, brand_id: int, qty_base, **kw) -> list[tuple[str, Decimal]]:
+    """Take qty out of a store across its batches, oldest batch first (WIP holds several issued batches of one item).
+    ponytail: FIFO across all orders sharing the WIP store; per-order batch pinning if traceability needs it."""
+    left, done = d(qty_base), []
+    rows = (await db.execute(text("""SELECT m.batch_no, m.qty FROM mfg_stock m WHERE m.store_id = :s AND m.product_id = :p AND m.brand_id = :b
+        AND m.qty > 0 ORDER BY (SELECT MIN(t.id) FROM mfg_stock_txns t WHERE t.to_store_id = m.store_id AND t.product_id = m.product_id
+        AND t.batch_no = m.batch_no), m.batch_no FOR UPDATE"""), {"s": from_store, "p": product_id, "b": brand_id or 0})).all()
+    for batch, have in rows:
+        take = min(d(have), left)
+        if take <= 0:
+            break
+        await post(db, product_id=product_id, qty_base=take, from_store=from_store, brand_id=brand_id, batch_no=batch, **kw)
+        done.append((batch, take))
+        left -= take
+    if left > 0:
+        it = await item(db, product_id)
+        raise HTTPException(400, f"Not enough '{it['name']}' in the store: short by {left.normalize():f} {it['unit']}.")
+    return done
+
+
 async def reverse(db: AsyncSession, txn_id: int, user_id: Optional[int], reason: str) -> dict:
     t = (await db.execute(text("SELECT * FROM mfg_stock_txns WHERE id = :i"), {"i": txn_id})).mappings().first()
     if not t:
@@ -131,10 +174,50 @@ async def reverse(db: AsyncSession, txn_id: int, user_id: Optional[int], reason:
                       reversal_of=txn_id)
 
 
+async def tolerance(db: AsyncSession, material_id: int, product_id: Optional[int] = None, department: Optional[str] = None,
+                    process: Optional[str] = None) -> Decimal:
+    """Most specific active tolerance row wins (each matching column scores; blank columns match anything)."""
+    r = (await db.execute(text("""SELECT tolerance_pct FROM mfg_tolerances
+        WHERE is_active AND (material_id IS NULL OR material_id = :m) AND (product_id IS NULL OR product_id = :p)
+          AND (department IS NULL OR department = :d) AND (process IS NULL OR process = :pr)
+        ORDER BY (material_id IS NOT NULL)::int + (product_id IS NOT NULL)::int + (department IS NOT NULL)::int
+               + (process IS NOT NULL)::int DESC, id DESC LIMIT 1"""), {"m": material_id, "p": product_id, "d": department, "pr": process})).scalar()
+    return d(r) if r is not None else Decimal(1)
+
+
+async def record_damage(db: AsyncSession, *, source: str, product_id: int, qty, reason: str, held_store: int, back_store: int,
+                        from_store: int, user_id: Optional[int], base_qty=None, brand_id: int = 0, batch_no: Optional[str] = "",
+                        mfg_order_id=None, order_item_id=None, print_job_id=None, output_id=None, finished_id=None,
+                        stage=None, department=None, operator=None, remarks=None, photo=None, ref_no=None) -> dict:
+    """Damaged material leaves good stock at once (moved to `held_store`, normally Scrap) and waits for approval.
+    Rejecting the claim moves it to `back_store` for re-classification — damage is never silently written off."""
+    q = d(qty)
+    no = await next_doc(db, "DMG")
+    common = dict(txn_type="DAMAGE", to_store=held_store, user_id=user_id, ref_type="damage", ref_no=ref_no or no, doc_no=no,
+                  remarks=f"{reason}: {remarks or ''}")
+    if batch_no is None:          # from WIP: take the oldest batches
+        moved = await drain(db, from_store=from_store, product_id=product_id, brand_id=brand_id, qty_base=q, **common)
+        batch_no = moved[0][0] if len(moved) == 1 else ",".join(b for b, _ in moved)[:100]
+    else:
+        await post(db, product_id=product_id, qty_base=q, from_store=from_store, batch_no=batch_no, brand_id=brand_id, **common)
+    pct = (q / d(base_qty) * 100).quantize(Decimal("0.001")) if base_qty and d(base_qty) > 0 else None
+    tol = await tolerance(db, product_id, finished_id, department, stage)
+    did = (await db.execute(text("""INSERT INTO mfg_damages (damage_no, source, mfg_order_id, order_item_id, print_job_id, output_id,
+        product_id, brand_id, batch_no, qty, base_qty, damage_pct, tolerance_pct, over_tolerance, reason, stage, department,
+        held_store_id, back_store_id, operator, remarks, photo, created_by)
+        VALUES (:no, :src, :mo, :oi, :pj, :out, :p, :br, :b, :q, :bq, :pct, :tol, :over, :r, :st, :dep, :hs, :bs, :op, :rm, :ph, :u) RETURNING id"""),
+        {"no": no, "src": source, "mo": mfg_order_id, "oi": order_item_id, "pj": print_job_id, "out": output_id, "p": product_id,
+         "br": brand_id, "b": batch_no, "q": q, "bq": base_qty, "pct": pct, "tol": tol, "over": pct is not None and pct > tol,
+         "r": reason, "st": stage, "dep": department, "hs": held_store, "bs": back_store, "op": operator, "rm": remarks, "ph": photo,
+         "u": user_id})).scalar()
+    return {"id": did, "damage_no": no, "damage_pct": pct, "tolerance_pct": tol, "over_tolerance": pct is not None and pct > tol}
+
+
 if __name__ == "__main__":  # python -m app.services.mfg_stock_service
     assert cartons(72, 24) == {"units": Decimal(72), "cartons": 3, "loose": Decimal(0), "units_per_carton": 24}
     c = cartons(70, 24)
     assert c["cartons"] == 2 and c["loose"] == Decimal(22)
     c = cartons(Decimal("49.5"), 12)
     assert c["cartons"] == 4 and c["loose"] == Decimal("1.5")
+    assert pending(1000, 970, 20, 5) == 5 and pending(72, 70, 1, 1) == 0
     print("mfg_stock_service OK")

@@ -120,6 +120,10 @@ import BatchTraceabilityPage from '../pages/manufacturing/BatchTraceabilityPage'
 import ManufacturingReportsPage from '../pages/manufacturing/ManufacturingReportsPage';
 import MfgMasters from '../pages/manufacturing/MfgMasters';
 import MfgStores from '../pages/manufacturing/MfgStores';
+import MfgPrinting from '../pages/manufacturing/MfgPrinting';
+import MfgProduction from '../pages/manufacturing/MfgProduction';
+import MfgCustomerOrders from '../pages/manufacturing/MfgCustomerOrders';
+import MfgPlantDashboard from '../pages/manufacturing/MfgPlantDashboard';
 
 export interface RouteConfig {
   id: string;
@@ -268,6 +272,10 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '1408', path: '/manufacturing/reports', component: ManufacturingReportsPage, title: 'Manufacturing Reports' },
   { id: '1409', path: '/manufacturing/masters', component: MfgMasters, title: 'Customer Packaging Masters' },
   { id: '1410', path: '/manufacturing/stores', component: MfgStores, title: 'Department Stores & Stock' },
+  { id: '1411', path: '/manufacturing/printing', component: MfgPrinting, title: 'Printing Job Work' },
+  { id: '1412', path: '/manufacturing/production', component: MfgProduction, title: 'Production' },
+  { id: '1413', path: '/manufacturing/customer-orders', component: MfgCustomerOrders, title: 'Customer Orders & Dispatch' },
+  { id: '1414', path: '/manufacturing/plant', component: MfgPlantDashboard, title: 'Plant Dashboard' },
 ];
 
 function ComingSoon({ name }: { name: string }) {

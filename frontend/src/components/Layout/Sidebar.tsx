@@ -142,10 +142,15 @@ const NAV_SECTIONS = [
     icon: 'fas fa-industry',
     color: '#4f46e5', // Indigo
     children: [
+      { label: 'Plant Dashboard', to: '/manufacturing/plant', icon: 'fas fa-gauge-high' },
+      { label: 'Customer Orders & Dispatch', to: '/manufacturing/customer-orders', icon: 'fas fa-file-signature' },
+      { label: 'Printing Job Work', to: '/manufacturing/printing', icon: 'fas fa-print' },
+      { label: 'Production', to: '/manufacturing/production', icon: 'fas fa-industry' },
+      { label: 'Department Stores', to: '/manufacturing/stores', icon: 'fas fa-warehouse' },
+      { label: 'Brands, Artwork & Specs', to: '/manufacturing/masters', icon: 'fas fa-palette' },
+      { label: 'Mfg Reports', to: '/reports', icon: 'fas fa-chart-bar' },
       { label: 'Mfg Dashboard', to: '/manufacturing/dashboard', icon: 'fas fa-tachometer-alt' },
       { label: 'Plant Settings', to: '/manufacturing/settings', icon: 'fas fa-cogs' },
-      { label: 'Brands, Artwork & Specs', to: '/manufacturing/masters', icon: 'fas fa-palette' },
-      { label: 'Department Stores', to: '/manufacturing/stores', icon: 'fas fa-warehouse' },
       { label: 'Bill of Materials', to: '/manufacturing/boms', icon: 'fas fa-layer-group' },
       { label: 'BOM Approvals', to: '/manufacturing/boms?status=DRAFT', icon: 'fas fa-check-double' },
       { label: 'Production Planning', to: '/manufacturing/planning', icon: 'fas fa-calendar-alt' },

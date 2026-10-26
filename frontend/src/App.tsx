@@ -120,6 +120,10 @@ import BatchTraceabilityPage from './pages/manufacturing/BatchTraceabilityPage';
 import ManufacturingReportsPage from './pages/manufacturing/ManufacturingReportsPage';
 import MfgMasters from './pages/manufacturing/MfgMasters';
 import MfgStores from './pages/manufacturing/MfgStores';
+import MfgPrinting from './pages/manufacturing/MfgPrinting';
+import MfgProduction from './pages/manufacturing/MfgProduction';
+import MfgCustomerOrders from './pages/manufacturing/MfgCustomerOrders';
+import MfgPlantDashboard from './pages/manufacturing/MfgPlantDashboard';
 
 // Placeholder components for other modules
 const Masters = () => <div className="h-96 flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl text-slate-400">Masters Module (Phase 3)</div>;
@@ -300,6 +304,10 @@ const App = () => {
             <Route path="manufacturing/reports" element={<ManufacturingReportsPage />} />
             <Route path="manufacturing/masters" element={<MfgMasters />} />
             <Route path="manufacturing/stores" element={<MfgStores />} />
+            <Route path="manufacturing/printing" element={<MfgPrinting />} />
+            <Route path="manufacturing/production" element={<MfgProduction />} />
+            <Route path="manufacturing/customer-orders" element={<MfgCustomerOrders />} />
+            <Route path="manufacturing/plant" element={<MfgPlantDashboard />} />
 
             {/* Any other path: keep the shell; TabbedOutlet renders it from routes/config.tsx */}
             <Route path="*" element={null} />

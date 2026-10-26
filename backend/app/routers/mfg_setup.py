@@ -246,7 +246,7 @@ async def approve_versioned(kind: str, rid: int, db: AsyncSession = Depends(get_
     if cur["status"] != "DRAFT":
         raise HTTPException(400, f"Only a draft can be approved (this one is {cur['status'].lower()}).")
     _not_own(cur["created_by"], user)
-    today = date.today()
+    today = stk.today()
     await db.execute(text(f"""UPDATE {table} SET status = 'SUPERSEDED', effective_to = :y
         WHERE {code_col} = :c AND status = 'APPROVED'"""), {"c": cur["code"], "y": today - timedelta(days=1)})
     await db.execute(text(f"""UPDATE {table} SET status = 'APPROVED', approved_by = :u, approved_at = NOW(),
