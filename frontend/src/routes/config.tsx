@@ -118,6 +118,8 @@ import ManufacturingOrdersList from '../pages/manufacturing/ManufacturingOrdersL
 import ManufacturingOrderDetail from '../pages/manufacturing/ManufacturingOrderDetail';
 import BatchTraceabilityPage from '../pages/manufacturing/BatchTraceabilityPage';
 import ManufacturingReportsPage from '../pages/manufacturing/ManufacturingReportsPage';
+import MfgMasters from '../pages/manufacturing/MfgMasters';
+import MfgStores from '../pages/manufacturing/MfgStores';
 
 export interface RouteConfig {
   id: string;
@@ -264,6 +266,8 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '1406', path: '/manufacturing/orders/:id', component: ManufacturingOrderDetail, title: 'Production Workbench' },
   { id: '1407', path: '/manufacturing/traceability', component: BatchTraceabilityPage, title: 'Batch Traceability' },
   { id: '1408', path: '/manufacturing/reports', component: ManufacturingReportsPage, title: 'Manufacturing Reports' },
+  { id: '1409', path: '/manufacturing/masters', component: MfgMasters, title: 'Customer Packaging Masters' },
+  { id: '1410', path: '/manufacturing/stores', component: MfgStores, title: 'Department Stores & Stock' },
 ];
 
 function ComingSoon({ name }: { name: string }) {

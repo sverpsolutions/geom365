@@ -118,6 +118,8 @@ import ManufacturingOrdersList from './pages/manufacturing/ManufacturingOrdersLi
 import ManufacturingOrderDetail from './pages/manufacturing/ManufacturingOrderDetail';
 import BatchTraceabilityPage from './pages/manufacturing/BatchTraceabilityPage';
 import ManufacturingReportsPage from './pages/manufacturing/ManufacturingReportsPage';
+import MfgMasters from './pages/manufacturing/MfgMasters';
+import MfgStores from './pages/manufacturing/MfgStores';
 
 // Placeholder components for other modules
 const Masters = () => <div className="h-96 flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl text-slate-400">Masters Module (Phase 3)</div>;
@@ -296,6 +298,8 @@ const App = () => {
             <Route path="manufacturing/orders/:id" element={<ManufacturingOrderDetail />} />
             <Route path="manufacturing/traceability" element={<BatchTraceabilityPage />} />
             <Route path="manufacturing/reports" element={<ManufacturingReportsPage />} />
+            <Route path="manufacturing/masters" element={<MfgMasters />} />
+            <Route path="manufacturing/stores" element={<MfgStores />} />
 
             {/* Any other path: keep the shell; TabbedOutlet renders it from routes/config.tsx */}
             <Route path="*" element={null} />

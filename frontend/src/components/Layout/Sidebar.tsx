@@ -144,6 +144,8 @@ const NAV_SECTIONS = [
     children: [
       { label: 'Mfg Dashboard', to: '/manufacturing/dashboard', icon: 'fas fa-tachometer-alt' },
       { label: 'Plant Settings', to: '/manufacturing/settings', icon: 'fas fa-cogs' },
+      { label: 'Brands, Artwork & Specs', to: '/manufacturing/masters', icon: 'fas fa-palette' },
+      { label: 'Department Stores', to: '/manufacturing/stores', icon: 'fas fa-warehouse' },
       { label: 'Bill of Materials', to: '/manufacturing/boms', icon: 'fas fa-layer-group' },
       { label: 'BOM Approvals', to: '/manufacturing/boms?status=DRAFT', icon: 'fas fa-check-double' },
       { label: 'Production Planning', to: '/manufacturing/planning', icon: 'fas fa-calendar-alt' },
