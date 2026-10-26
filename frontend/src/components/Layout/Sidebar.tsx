@@ -138,14 +138,19 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: 'Processing',
-    icon: 'fas fa-fish',
-    color: '#06b6d4', // Cyan
+    label: 'Manufacturing',
+    icon: 'fas fa-industry',
+    color: '#4f46e5', // Indigo
     children: [
-      { label: 'Dashboard', to: '/processing', icon: 'fas fa-list' },
-      { label: 'Receive New Lot', to: '/processing/receive', icon: 'fas fa-plus' },
-      { label: 'BOM Recipes', to: '/production/recipes', icon: 'fas fa-book' },
-      { label: 'Production Batches', to: '/production/batches', icon: 'fas fa-industry' },
+      { label: 'Mfg Dashboard', to: '/manufacturing/dashboard', icon: 'fas fa-tachometer-alt' },
+      { label: 'Plant Settings', to: '/manufacturing/settings', icon: 'fas fa-cogs' },
+      { label: 'Bill of Materials', to: '/manufacturing/boms', icon: 'fas fa-layer-group' },
+      { label: 'BOM Approvals', to: '/manufacturing/boms?status=DRAFT', icon: 'fas fa-check-double' },
+      { label: 'Production Planning', to: '/manufacturing/planning', icon: 'fas fa-calendar-alt' },
+      { label: 'Material Requirements', to: '/manufacturing/planning', icon: 'fas fa-boxes-stacked' },
+      { label: 'Manufacturing Orders', to: '/manufacturing/orders', icon: 'fas fa-clipboard-list' },
+      { label: 'Batch Traceability', to: '/manufacturing/traceability', icon: 'fas fa-sitemap' },
+      { label: 'Production Reports', to: '/manufacturing/reports', icon: 'fas fa-chart-line' },
     ],
   },
   {

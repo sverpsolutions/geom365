@@ -79,6 +79,32 @@ class CompanySettingBase(BaseModel):
     invoice_footer: Optional[str] = Field(None, max_length=200)
     fy_start_month: int = Field(4, ge=1, le=12)
 
+    # Manufacturing Settings (Nutribray ERP)
+    enable_manufacturing: bool = False
+    mfg_company_name: Optional[str] = None
+    mfg_plant_locations: Optional[str] = None
+    mfg_departments: Optional[str] = None
+    production_store_id: Optional[int] = None
+    raw_material_warehouse_id: Optional[int] = None
+    packaging_material_warehouse_id: Optional[int] = None
+    semi_finished_store_id: Optional[int] = None
+    finished_goods_warehouse_id: Optional[int] = None
+    qc_store_id: Optional[int] = None
+    quarantine_store_id: Optional[int] = None
+    production_number_prefix: Optional[str] = "MFG-PROD-"
+    mfg_order_number_prefix: Optional[str] = "MO-"
+    batch_number_prefix: Optional[str] = "BAT-"
+    require_bom_approval: bool = True
+    require_material_issue_approval: bool = True
+    require_production_completion_approval: bool = True
+    require_qc_release: bool = True
+    negative_stock_policy: str = "block"
+    batch_tracking_required: bool = True
+    expiry_tracking_required: bool = True
+    default_stock_valuation_method: str = "FIFO"
+    default_units_conversion_rules: Optional[str] = None
+    mfg_document_print_settings: Optional[str] = None
+
 
 class CompanySettingUpdate(CompanySettingBase):
     @field_validator("*", mode="before")

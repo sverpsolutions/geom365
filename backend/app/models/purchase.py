@@ -39,6 +39,11 @@ class po_header(base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Manufacturing Linkage
+    mfg_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mfg_order_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    material_type: Mapped[str] = mapped_column(String(30), default="GENERAL")
+
     items: Mapped[list["po_item"]] = relationship(
         "po_item", back_populates="po_rel", cascade="all, delete-orphan"
     )
@@ -196,6 +201,11 @@ class purchase(base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Manufacturing & QC fields
+    material_type: Mapped[str]   = mapped_column(String(30), default="GENERAL")
+    qc_status: Mapped[str]       = mapped_column(String(30), default="PENDING")
+    qc_inspection_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     items: Mapped[list["purchase_item"]] = relationship(
         "purchase_item", back_populates="purchase_rel", cascade="all, delete-orphan"
     )
@@ -231,5 +241,16 @@ class purchase_item(base):
     batch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("product_batches.id", ondelete="SET NULL"), nullable=True)
     mfg_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Manufacturing & QC Line Item extensions
+    qc_status: Mapped[str]       = mapped_column(String(30), default="PENDING")
+    accepted_qty: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("0.000"))
+    rejected_qty: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("0.000"))
+    quarantined_qty: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("0.000"))
+    supplier_lot_no: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    coa_attachment: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    inspection_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    warehouse_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rack_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     purchase_rel: Mapped["purchase"] = relationship("purchase", back_populates="items")

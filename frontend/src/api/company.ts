@@ -38,6 +38,28 @@ export interface CompanySettings {
     authorized_signatory: string | null; signatory_designation: string | null
     invoice_terms: string | null; invoice_footer: string | null; fy_start_month: number; updated_at: string | null
     primary_color?: string | null;
+    // Nutribray Manufacturing Settings
+    enable_manufacturing?: boolean;
+    mfg_company_name?: string | null;
+    mfg_plant_locations?: string | null;
+    mfg_departments?: string | null;
+    production_stores?: string | null;
+    raw_material_wh_id?: number | null;
+    packaging_material_wh_id?: number | null;
+    semi_finished_wh_id?: number | null;
+    finished_goods_wh_id?: number | null;
+    qc_quarantine_wh_id?: number | null;
+    rejected_wh_id?: number | null;
+    mfg_order_prefix?: string | null;
+    bom_prefix?: string | null;
+    production_batch_prefix?: string | null;
+    require_bom_approval?: boolean;
+    require_material_issue_approval?: boolean;
+    require_production_completion_approval?: boolean;
+    require_qc_release_for_fg?: boolean;
+    allow_negative_raw_material_stock?: boolean;
+    strict_fefo_enforcement?: boolean;
+    default_stock_valuation_method?: string | null;
 }
 
 export interface company_doc {

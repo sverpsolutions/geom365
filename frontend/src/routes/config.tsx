@@ -109,6 +109,16 @@ import ShopCustomers from '../pages/shop/ShopCustomers';
 import ShopReports from '../pages/shop/ShopReports';
 import BannerManagement from '../pages/shop/BannerManagement';
 
+// Nutribray Manufacturing Module
+import ManufacturingDashboard from '../pages/manufacturing/ManufacturingDashboard';
+import ManufacturingSettings from '../pages/manufacturing/ManufacturingSettings';
+import BomList from '../pages/manufacturing/BomList';
+import ProductionPlanning from '../pages/manufacturing/ProductionPlanning';
+import ManufacturingOrdersList from '../pages/manufacturing/ManufacturingOrdersList';
+import ManufacturingOrderDetail from '../pages/manufacturing/ManufacturingOrderDetail';
+import BatchTraceabilityPage from '../pages/manufacturing/BatchTraceabilityPage';
+import ManufacturingReportsPage from '../pages/manufacturing/ManufacturingReportsPage';
+
 export interface RouteConfig {
   id: string;
   path: string;
@@ -221,10 +231,10 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '603', path: '/accounts/bills', component: BillEntry, title: 'Bill Entry (SPS)' },
   { id: '1101', path: '/schemes', component: Schemes, title: 'Schemes' },
   { id: '1102', path: '/bulk-pricing', component: BulkDiscount, title: 'Bulk Discount' },
-  { id: '1201', path: '/processing', component: () => <ComingSoon name="Processing" />, title: 'Processing' },
-  { id: '1202', path: '/processing/receive', component: () => <ComingSoon name="Receive New Lot" />, title: 'Receive New Lot' },
-  { id: '1203', path: '/production/recipes', component: () => <ComingSoon name="BOM Recipes" />, title: 'BOM Recipes' },
-  { id: '1204', path: '/production/batches', component: () => <ComingSoon name="Production Batches" />, title: 'Production Batches' },
+  { id: '1201', path: '/processing', component: ManufacturingDashboard, title: 'Manufacturing Dashboard' },
+  { id: '1202', path: '/processing/receive', component: Purchases, title: 'GRN Inward' },
+  { id: '1203', path: '/production/recipes', component: BomList, title: 'Bill of Materials' },
+  { id: '1204', path: '/production/batches', component: ManufacturingOrdersList, title: 'Manufacturing Orders' },
   { id: '803', path: '/hr/dashboard', component: () => <ComingSoon name="HR Dashboard" />, title: 'HR Dashboard' },
   { id: '804', path: '/hr/leaves', component: () => <ComingSoon name="Leave Requests" />, title: 'Leave Requests' },
   { id: '805', path: '/hr/salary', component: () => <ComingSoon name="Salary Slips" />, title: 'Salary Slips' },
@@ -244,6 +254,16 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '511', path: '/inventory/stock-take/view/:id', component: StockTakeView, title: 'Stock Take Summary' },
   { id: '512', path: '/inventory/stock-take/variance-print/:id', component: StockTakeVariancePrint, title: 'Variance Report' },
   { id: '507', path: '/inventory/barcode', component: () => <ComingSoon name="Barcode Printing" />, title: 'Barcode Printing' },
+
+  // Nutribray Manufacturing Module
+  { id: '1401', path: '/manufacturing/dashboard', component: ManufacturingDashboard, title: 'Manufacturing Dashboard' },
+  { id: '1402', path: '/manufacturing/settings', component: ManufacturingSettings, title: 'Plant Settings' },
+  { id: '1403', path: '/manufacturing/boms', component: BomList, title: 'Bill of Materials' },
+  { id: '1404', path: '/manufacturing/planning', component: ProductionPlanning, title: 'Production Planning' },
+  { id: '1405', path: '/manufacturing/orders', component: ManufacturingOrdersList, title: 'Manufacturing Orders' },
+  { id: '1406', path: '/manufacturing/orders/:id', component: ManufacturingOrderDetail, title: 'Production Workbench' },
+  { id: '1407', path: '/manufacturing/traceability', component: BatchTraceabilityPage, title: 'Batch Traceability' },
+  { id: '1408', path: '/manufacturing/reports', component: ManufacturingReportsPage, title: 'Manufacturing Reports' },
 ];
 
 function ComingSoon({ name }: { name: string }) {

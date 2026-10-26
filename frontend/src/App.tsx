@@ -109,6 +109,16 @@ import ShopReports from './pages/shop/ShopReports';
 import BannerManagement from './pages/shop/BannerManagement';
 import { ThemeProvider } from './context/ThemeContext';
 
+// Nutribray Manufacturing Module
+import ManufacturingDashboard from './pages/manufacturing/ManufacturingDashboard';
+import ManufacturingSettings from './pages/manufacturing/ManufacturingSettings';
+import BomList from './pages/manufacturing/BomList';
+import ProductionPlanning from './pages/manufacturing/ProductionPlanning';
+import ManufacturingOrdersList from './pages/manufacturing/ManufacturingOrdersList';
+import ManufacturingOrderDetail from './pages/manufacturing/ManufacturingOrderDetail';
+import BatchTraceabilityPage from './pages/manufacturing/BatchTraceabilityPage';
+import ManufacturingReportsPage from './pages/manufacturing/ManufacturingReportsPage';
+
 // Placeholder components for other modules
 const Masters = () => <div className="h-96 flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl text-slate-400">Masters Module (Phase 3)</div>;
 const Estimates = () => <div className="h-96 flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl text-slate-400">Estimates Module</div>;
@@ -271,11 +281,22 @@ const App = () => {
             <Route path="schemes" element={<Schemes />} />
             <Route path="bulk-pricing" element={<BulkDiscount />} />
 
-            {/* Processing & Production */}
-            <Route path="processing" element={<ProcessingDashboard />} />
-            <Route path="processing/receive" element={<ReceiveLot />} />
-            <Route path="production/recipes" element={<BOMRecipes />} />
-            <Route path="production/batches" element={<ProductionBatches />} />
+            {/* Legacy Processing redirects to Nutribray Manufacturing */}
+            <Route path="processing" element={<Navigate to="/manufacturing/dashboard" replace />} />
+            <Route path="processing/receive" element={<Navigate to="/purchases/grn" replace />} />
+            <Route path="production/recipes" element={<Navigate to="/manufacturing/boms" replace />} />
+            <Route path="production/batches" element={<Navigate to="/manufacturing/orders" replace />} />
+
+            {/* Nutribray Manufacturing */}
+            <Route path="manufacturing/dashboard" element={<ManufacturingDashboard />} />
+            <Route path="manufacturing/settings" element={<ManufacturingSettings />} />
+            <Route path="manufacturing/boms" element={<BomList />} />
+            <Route path="manufacturing/planning" element={<ProductionPlanning />} />
+            <Route path="manufacturing/orders" element={<ManufacturingOrdersList />} />
+            <Route path="manufacturing/orders/:id" element={<ManufacturingOrderDetail />} />
+            <Route path="manufacturing/traceability" element={<BatchTraceabilityPage />} />
+            <Route path="manufacturing/reports" element={<ManufacturingReportsPage />} />
+
             {/* Any other path: keep the shell; TabbedOutlet renders it from routes/config.tsx */}
             <Route path="*" element={null} />
           </Route>

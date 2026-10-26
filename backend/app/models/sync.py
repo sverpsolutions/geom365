@@ -84,6 +84,12 @@ class unit_wise_stock_transfer(base):
     received_at: Mapped[datetime | None] = mapped_column(DateTime)
     received_by: Mapped[int | None] = mapped_column(Integer)
 
+    # Manufacturing & movement type extensions
+    movement_type: Mapped[str] = mapped_column(String(50), default="OUT")
+    mfg_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mfg_order_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
 
 class unit_wise_stock_transfer_item(base):
     __tablename__ = "unit_wise_stock_transfer_items"

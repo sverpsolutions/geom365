@@ -34,6 +34,16 @@ class product_batch(base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # Manufacturing & Traceability fields
+    batch_type: Mapped[str] = mapped_column(String(30), default="STANDARD")  # STANDARD, RAW_MATERIAL, PACKAGING, SEMI_FINISHED, FINISHED_PRODUCT
+    mfg_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bom_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parent_batch_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    qc_status: Mapped[str] = mapped_column(String(30), default="Active")
+    qc_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    qc_release_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    qc_released_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Relationships
     product_rel: Mapped["product"] = relationship("product", back_populates="batches", lazy="selectin")
     supplier_rel: Mapped["supplier | None"] = relationship("supplier", lazy="selectin")
