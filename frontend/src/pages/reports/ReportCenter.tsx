@@ -89,6 +89,12 @@ const SECTIONS: { title: string; cards: Card[] }[] = [
     C('/reports/r/sensitive_actions', '⚠️', 'Sensitive Actions', 'Deletes, cancels, approvals, adjustments, day close, password resets', red, 'audit'),
     C('/reports/r/activity_by_module', '📊', 'Activity by Module', 'How often each action happens, and by how many users', info, 'audit'),
   ] },
+  { title: 'Store Operations', cards: [
+    C('/ho-dashboard', '🏢', 'Head Office Dashboard', 'All stores: sales, closing, expiry, approvals', 'text-blue-600', 'dashboard'),
+    C('/reports/r/day_closing', '🔒', 'Day-End Closing Register', 'Expected vs counted cash, collections, review & reopen', 'text-slate-800', 'day_shift'),
+    C('/reports/r/discount_audit', '🏷️', 'Discount Audit', 'Item / scheme / bill / loyalty discount and approvals', 'text-amber-500', 'rep_sales'),
+    C('/reports/r/loyalty_ledger', '🎁', 'Loyalty Ledger', 'Points earned, redeemed, expired, reversed, adjusted', 'text-emerald-600', 'loyalty'),
+  ] },
   { title: 'Expiry & Batches', cards: [
     C('/reports/r/exp_near_expiry', '⏳', 'Near-Expiry Batches', 'Store-wise batches inside the warning bands, with GRN', 'text-amber-500', 'rep_stock'),
     C('/reports/r/exp_expired', '⛔', 'Expired Stock in Stores', 'Expired batches still holding stock', 'text-red-600', 'rep_stock'),

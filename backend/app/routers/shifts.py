@@ -73,9 +73,60 @@ async def day_open(body: day_open_in, db: AsyncSession = Depends(get_db), user: 
 
 
 @router.post("/day/reopen")
-async def day_reopen(outlet_id: int = Query(0), db: AsyncSession = Depends(get_db),
-                     user: current_user_dep = Depends(manager)):
-    return await _run(svc.day_reopen(db, outlet_id, user))
+async def day_reopen(outlet_id: int = Query(0), reason: str = Query(..., min_length=5, max_length=300), db: AsyncSession = Depends(get_db),
+                     user: current_user_dep = Depends(get_current_user)):
+    return await _run(svc.day_reopen(db, outlet_id, user, reason))
+
+
+@router.get("/closing-board")
+async def closing_board(business_date: Optional[date] = None, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    from app.services import day_close_service
+    from app.services.mfg_stock_service import today
+    return await day_close_service.board(db, business_date or today())
+
+
+@router.get("/day/{day_id}/checklist")
+async def day_checklist(day_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    from app.services import day_close_service
+    day = (await db.execute(text("SELECT * FROM business_days WHERE id = :i"), {"i": day_id})).mappings().first()
+    if not day:
+        raise HTTPException(404, "Business day not found")
+    access.check_outlet(day["outlet_id"])
+    return await day_close_service.checklist(db, dict(day))
+
+
+class review_in(BaseModel):
+    note: Optional[str] = None
+
+
+@router.post("/day/{day_id}/approve")
+async def day_approve(day_id: int, b: review_in, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    from app.services import day_close_service
+    return await day_close_service.review(db, day_id, "approve", b.note, user)
+
+
+@router.post("/day/{day_id}/reject")
+async def day_reject(day_id: int, b: review_in, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    from app.services import day_close_service
+    return await day_close_service.review(db, day_id, "reject", b.note, user)
+
+
+class closing_settings_in(BaseModel):
+    closing_time: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    closing_review: bool = False
+
+
+@router.put("/closing-settings/{outlet_id}")
+async def closing_settings(outlet_id: int, b: closing_settings_in, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    access.check_outlet(outlet_id)
+    await db.execute(text("UPDATE outlets SET closing_time = CAST(:t AS TIME), closing_review = :r WHERE id = :o"),
+                     {"t": b.closing_time, "r": b.closing_review, "o": outlet_id})
+    from app.services.auth_service import write_audit
+    await write_audit(db=db, module="day_shift", action="closing_settings", record_id=outlet_id, record_no=str(outlet_id),
+                      description=f"Closing time {b.closing_time or '-'}, review {'on' if b.closing_review else 'off'}",
+                      user_id=user.user_id, user_name=user.username)
+    await db.commit()
+    return {"success": True}
 
 
 @router.get("/days")

@@ -220,19 +220,19 @@ async def day_open(db: AsyncSession, outlet_id: int, business_date: date, remark
     return await get_day(db, new_id)
 
 
-async def day_reopen(db: AsyncSession, outlet_id: int, user) -> dict:
-    """Same-day only (NCG rule): older days' totals are final."""
-    if await open_day(db, outlet_id):
-        raise ValueError("A business day is already open")
-    row = (await db.execute(text("""
-        SELECT id FROM business_days WHERE outlet_id = :loc AND business_date = CURRENT_DATE AND status = 'closed'"""),
-        {"loc": outlet_id})).scalar()
-    if not row:
-        raise ValueError("Only today's closed business day can be reopened")
-    await db.execute(text("UPDATE business_days SET status = 'open', closed_by = NULL, closed_at = NULL WHERE id = :i"), {"i": row})
-    await _audit(db, user, "day_shift", "day_reopen", row, f"Day reopened at {await outlet_name(db, outlet_id)}")
+async def day_reopen(db: AsyncSession, outlet_id: int, user, reason: str = "") -> dict:
+    """Reopen the store's latest closed business day — through Approvals (DAY_REOPEN policy); a reason is required."""
+    from app.services import approval_service, day_close_service
+    day = await day_close_service.reopen_target(db, outlet_id)
+    r = await approval_service.submit(db, request_type="DAY_REOPEN", user=user, reason=reason, outlet_id=outlet_id,
+                                      payload={"day_id": day["id"], "outlet_id": outlet_id},
+                                      summary=f"Reopen business day {day['business_date']:%d-%m-%Y} at {await outlet_name(db, outlet_id)}",
+                                      ref_type="business_day", ref_id=day["id"], ref_no=str(day["business_date"]),
+                                      old_value={"status": "closed"}, new_value={"status": "open"})
     await db.commit()
-    return await get_day(db, row)
+    if r["status"] == "APPROVED":
+        return {**await get_day(db, day["id"]), "approval": r}
+    return {"approval": r, "message": f"Reopen request {r['request_no']} sent for approval"}
 
 
 async def day_close(db: AsyncSession, day_id: int, remarks: Optional[str], force: bool, user,
@@ -247,6 +247,11 @@ async def day_close(db: AsyncSession, day_id: int, remarks: Optional[str], force
         {"o": day["outlet_id"]})).scalar()
     if pending:
         raise ValueError(f"{pending} expense(s) are waiting for approval — approve or reject them first")
+    from app.services import day_close_service
+    checks = await day_close_service.checklist(db, dict(day))
+    stop = [c for c in checks if c["blocking"] and c["key"] not in ("open_shifts", "pending_expenses")]
+    if stop:
+        raise ValueError("Finish these before closing: " + "; ".join(f"{c['label']}: {c['count']}" for c in stop))
     fig = await day_figures(db, day)
     if fig["open_shifts"]:
         names = ", ".join(f"{s['cashier_name']} (#{s['id']})" for s in fig["open_shifts"])
@@ -273,6 +278,7 @@ async def day_close(db: AsyncSession, day_id: int, remarks: Optional[str], force
         **{k: v for k, v in fig.items() if k not in ("modes", "shifts", "open_shifts")},
         "modes": json.dumps({k: str(v) for k, v in fig["modes"].items()}),
         **safe, "u": user.user_id, "r": remarks, "i": day_id})
+    await day_close_service.after_close(db, day_id, checks)
     await _audit(db, user, "day_shift", "day_close", day_id,
                  f"Day close {day['business_date']} at {await outlet_name(db, day['outlet_id'])}: net {fig['net_sales']}")
     await db.commit()

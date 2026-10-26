@@ -106,6 +106,7 @@ export interface invoice_create {
   round_off?: boolean
   payments?: { payment_mode: string; amount: number }[]  // split payment
   apply_schemes?: boolean  // POS: server applies active schemes
+  discount_approval_no?: string  // approved High Discount request (used once)
 }
 
 export interface estimate_item_in {

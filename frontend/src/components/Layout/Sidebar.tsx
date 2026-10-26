@@ -13,6 +13,12 @@ const NAV_SECTIONS = [
     color: '#3b82f6', // Blue
   },
   {
+    label: 'Head Office',
+    to: '/ho-dashboard',
+    icon: 'fas fa-building',
+    color: '#6366f1',
+  },
+  {
     label: 'Approvals',
     to: '/approvals',
     icon: 'fas fa-check-double',
@@ -217,6 +223,8 @@ const NAV_SECTIONS = [
       { label: 'Company Profile', to: '/settings/company', icon: 'fas fa-building' },
       { label: 'Users & Locations', to: '/settings/users', icon: 'fas fa-user-shield' },
       { label: 'Payment Modes', to: '/settings/payment-modes', icon: 'fas fa-wallet' },
+      { label: 'Discount Control', to: '/settings/discounts', icon: 'fas fa-percent' },
+      { label: 'Loyalty Programme', to: '/loyalty', icon: 'fas fa-gift' },
       { label: 'Dashboard Builder', to: '/settings/dashboard-builder', icon: 'fas fa-th-large' },
       { label: 'Theme & Styling', to: '/settings/theme', icon: 'fas fa-palette' },
       { label: 'System Help', to: '/help', icon: 'fas fa-question-circle' },

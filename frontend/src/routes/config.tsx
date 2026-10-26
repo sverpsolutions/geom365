@@ -127,6 +127,9 @@ import MfgPlantDashboard from '../pages/manufacturing/MfgPlantDashboard';
 import Approvals from '../pages/retail/Approvals';
 import ExpiryControl from '../pages/retail/Expiry';
 import PaymentModes from '../pages/retail/PaymentModes';
+import HeadOffice from '../pages/retail/HeadOffice';
+import Loyalty from '../pages/retail/Loyalty';
+import DiscountPolicy from '../pages/retail/DiscountPolicy';
 
 export interface RouteConfig {
   id: string;
@@ -282,6 +285,9 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '1501', path: '/approvals', component: Approvals, title: 'Approvals' },
   { id: '1502', path: '/inventory/expiry-control', component: ExpiryControl, title: 'Expiry Control' },
   { id: '1503', path: '/settings/payment-modes', component: PaymentModes, title: 'Payment Modes' },
+  { id: '1504', path: '/ho-dashboard', component: HeadOffice, title: 'Head Office Dashboard' },
+  { id: '1505', path: '/loyalty', component: Loyalty, title: 'Loyalty Programme' },
+  { id: '1506', path: '/settings/discounts', component: DiscountPolicy, title: 'Discount Control' },
 ];
 
 function ComingSoon({ name }: { name: string }) {

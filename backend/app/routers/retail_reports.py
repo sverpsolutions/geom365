@@ -117,5 +117,62 @@ async def approval_register(db, f: F):
             "rows": rows}
 
 
+@report("day_closing", "Store day-end closing register", "Store Operations", "day_shift", ("date", "outlet"),
+        note="Every store business day: expected vs counted cash, difference, collections by payment mode, review and reopen history.")
+async def day_closing(db, f: F):
+    p = {"fd": f.fd, "td": f.td}
+    rows = await _rows(db, f"""SELECT d.business_date, o.outlet_name AS store, d.status, d.review_status, d.reopen_count, d.last_reopen_reason,
+        (SELECT string_agg(DISTINCT u.name, ', ') FROM cashier_shifts s JOIN users u ON u.id = s.cashier_id WHERE s.business_day_id = d.id) AS cashiers,
+        (SELECT COALESCE(SUM(s.expected_cash), 0) FROM cashier_shifts s WHERE s.business_day_id = d.id) AS expected_cash,
+        (SELECT COALESCE(SUM(s.actual_cash), 0) FROM cashier_shifts s WHERE s.business_day_id = d.id) AS actual_cash,
+        d.total_shortage, d.total_excess, d.net_sales, d.total_collected, d.mode_totals::text AS collections, d.safe_variance,
+        cu.name AS closed_by, ru.name AS reviewed_by, d.review_note
+        FROM business_days d LEFT JOIN outlets o ON o.id = d.outlet_id LEFT JOIN users cu ON cu.id = d.closed_by LEFT JOIN users ru ON ru.id = d.reviewed_by
+        WHERE d.business_date BETWEEN :fd AND :td {_where(f, p, "d.outlet_id")} ORDER BY d.business_date DESC, o.outlet_name""", p)
+    for r in rows:
+        r["difference"] = (r["actual_cash"] or 0) - (r["expected_cash"] or 0)
+    return {"columns": [col("business_date", "Business date", "date"), col("store", "Store"), col("status", "Day"), col("review_status", "Review"),
+                        col("cashiers", "Cashiers"), col("expected_cash", "Expected cash", "money"), col("actual_cash", "Counted cash", "money"),
+                        col("difference", "Difference", "money"), col("net_sales", "Net sales", "money"), col("total_collected", "Collected", "money"),
+                        col("collections", "By payment mode"), col("safe_variance", "Safe variance", "money"), col("reopen_count", "Reopened", "num"),
+                        col("last_reopen_reason", "Reopen reason"), col("closed_by", "Closed by"), col("reviewed_by", "Reviewed by"),
+                        col("review_note", "Review note")], "rows": rows}
+
+
+@report("discount_audit", "Discount audit (type, %, approval)", "Store Operations", "rep_sales", ("date", "outlet", "search"),
+        note="Bills with any discount: item / scheme / bill / loyalty split, total %, and the High Discount approval used.")
+async def discount_audit(db, f: F):
+    p = {"fd": f.fd, "td": f.td, "q": f"%{f.search.strip()}%"}
+    rows = await _rows(db, f"""SELECT i.invoice_date, i.invoice_no, o.outlet_name AS store, u.name AS cashier, i.total_amount,
+        (i.discount_breakdown->>'item')::numeric AS item_disc, (i.discount_breakdown->>'scheme')::numeric AS scheme_disc,
+        (i.discount_breakdown->>'bill')::numeric AS bill_disc, (i.discount_breakdown->>'loyalty')::numeric AS loyalty,
+        (i.discount_breakdown->>'pct')::numeric AS pct, i.discount_breakdown->'types' AS types, i.discount_approval_no
+        FROM unit_wise_invoices i LEFT JOIN outlets o ON o.id = i.outlet_id LEFT JOIN users u ON u.id = i.created_by
+        WHERE i.invoice_date BETWEEN :fd AND :td AND i.discount_breakdown IS NOT NULL AND jsonb_array_length(i.discount_breakdown->'types') > 0
+          AND i.status <> 'cancelled' AND (:q = '%%' OR i.invoice_no ILIKE :q OR i.discount_approval_no ILIKE :q) {_where(f, p, "i.outlet_id")}
+        ORDER BY pct DESC NULLS LAST""", p)
+    for r in rows:
+        r["types"] = ", ".join(r["types"] or [])
+    return {"columns": [col("invoice_date", "Date", "date"), col("invoice_no", "Bill"), col("store", "Store"), col("cashier", "Cashier"),
+                        col("total_amount", "Bill total", "money"), col("item_disc", "Item", "money"), col("scheme_disc", "Scheme", "money"),
+                        col("bill_disc", "Bill", "money"), col("loyalty", "Loyalty", "money"), col("pct", "Discount %", "pct"), col("types", "Types"),
+                        col("discount_approval_no", "Approval")], "rows": rows}
+
+
+@report("loyalty_ledger", "Loyalty points ledger", "Store Operations", "loyalty", ("date", "outlet", "search"))
+async def loyalty_ledger(db, f: F):
+    p = {"fd": f.fd, "td": f.td, "q": f"%{f.search.strip()}%"}
+    rows = await _rows(db, f"""SELECT CAST(l.created_at + INTERVAL '5 hours 30 minutes' AS date) AS day, c.name AS customer, c.loyalty_no, o.outlet_name AS store,
+        l.txn_type, l.points, l.reference, l.amount, l.eligible_amount, l.expires_on, l.reason, u.name AS by_user
+        FROM loyalty_ledger l JOIN customers c ON c.id = l.customer_id LEFT JOIN outlets o ON o.id = l.outlet_id LEFT JOIN users u ON u.id = l.created_by
+        WHERE CAST(l.created_at + INTERVAL '5 hours 30 minutes' AS date) BETWEEN :fd AND :td
+          AND (:q = '%%' OR c.name ILIKE :q OR c.phone ILIKE :q OR c.loyalty_no ILIKE :q OR l.reference ILIKE :q) {_where(f, p, "l.outlet_id")} ORDER BY l.id""", p)
+    return {"columns": [col("day", "Date", "date"), col("customer", "Customer"), col("loyalty_no", "Loyalty no"), col("store", "Store"), col("txn_type", "Type"),
+                        col("points", "Points", "num"), col("reference", "Bill / ref"), col("amount", "Redeemed ₹", "money"),
+                        col("eligible_amount", "Eligible ₹", "money"), col("expires_on", "Expires", "date"), col("reason", "Reason"), col("by_user", "By")],
+            "rows": rows}
+
+
 access.register_paths({f"/reports/x/{k}": REPORTS[k]["module"] for k in ("exp_near_expiry", "exp_expired", "exp_batch_inventory", "exp_summary",
-                                                                           "exp_category", "exp_removals", "exp_corrections", "approval_register")})
+                                                                           "exp_category", "exp_removals", "exp_corrections", "approval_register",
+                                                                           "day_closing", "discount_audit", "loyalty_ledger")})

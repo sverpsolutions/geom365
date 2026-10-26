@@ -11,7 +11,7 @@ from app.routers import (
     billing, estimates, outlets, sync, reports, company, states,
     warehouse, packaging, import_export, wms, purchases, channels,
     audit_logs, inventory, logistic, stock_reports, shop, returns, purchase_returns, dashboard, shifts, cash, accounts,
-    stock_take, batches, vendor_portal, dashboard_builder, schemes, access, report_engine, manufacturing, mfg_setup, mfg_printing, mfg_production, mfg_sales, mfg_reports, approvals, payment_modes, expiry, retail_reports  # noqa: F401
+    stock_take, batches, vendor_portal, dashboard_builder, schemes, access, report_engine, manufacturing, mfg_setup, mfg_printing, mfg_production, mfg_sales, mfg_reports, approvals, payment_modes, expiry, retail_reports, retail_ops  # noqa: F401
 )
 
 _settings = get_settings()
@@ -96,6 +96,8 @@ app.include_router(manufacturing.router, prefix=API_PREFIX)
 app.include_router(mfg_setup.router, prefix=API_PREFIX)
 for _r in (mfg_printing, mfg_production, mfg_sales, approvals, payment_modes, expiry):
     app.include_router(_r.router, prefix=API_PREFIX)
+for _r in retail_ops.routers:
+    app.include_router(_r, prefix=API_PREFIX)
 
 
 from fastapi.staticfiles import StaticFiles

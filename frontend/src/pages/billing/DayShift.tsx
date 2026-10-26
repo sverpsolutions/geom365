@@ -319,9 +319,10 @@ export default function DayShift() {
                     <button className="btn btn-primary flex-1" disabled={busy} onClick={() => act(() => shifts_api.day_open({ outlet_id: outletId, ...openForm }), 'Business day opened')}>
                       <i className="fas fa-door-open mr-2" />Day Open
                     </button>
-                    {st.last_closed_date === today() && (
-                      <button className="btn btn-secondary" disabled={busy} title="Reopen today's closed day"
-                        onClick={() => confirm("Reopen today's business day?") && act(() => shifts_api.day_reopen(outletId), 'Business day reopened')}>Reopen</button>
+                    {st.last_closed_date && (
+                      <button className="btn btn-secondary" disabled={busy} title="Reopen the last closed day (goes to Approvals)"
+                        onClick={() => { const r = prompt(`Reason for reopening ${dmy(st.last_closed_date!)} (required)`); if (r && r.trim().length >= 5)
+                          act(() => shifts_api.day_reopen(outletId, r.trim()), 'Reopen request sent — it opens once approved'); else if (r) toast.error('Give a reason of at least 5 characters') }}>Reopen…</button>
                     )}
                   </div>
                 </div>
@@ -331,6 +332,7 @@ export default function DayShift() {
             <>
               <p className="text-[12px] text-text-muted m-0">Opened {dt(day.opened_at)} by {day.opened_by_name || '—'}{day.open_remarks && ` · ${day.open_remarks}`}</p>
               <DaySummary day={day} />
+              <Checklist dayId={day.id} />
               <h4 className="text-[12px] font-semibold uppercase tracking-wider text-primary border-b border-border pb-1">Shifts today</h4>
               <ShiftsTable rows={day.shifts} onPrint={printShift}
                 onClose={st.can_manage_day ? s => setCloseShiftId(s.id) : undefined} />
@@ -474,6 +476,19 @@ export default function DayShift() {
           </div>
         )}
       </Modal>
+    </div>
+  )
+}
+
+function Checklist({ dayId }: { dayId: number }) {
+  const [rows, setRows] = useState<{ key: string; label: string; count: number; blocking: boolean }[]>([])
+  useEffect(() => { shifts_api.day_checklist(dayId).then(r => setRows(r.data)).catch(() => setRows([])) }, [dayId])
+  const open = rows.filter(r => r.count > 0)
+  if (!rows.length) return null
+  return (
+    <div className={`text-[12px] border rounded p-2 ${open.some(r => r.blocking) ? 'border-red-300 bg-red-50' : open.length ? 'border-amber-300 bg-amber-50' : 'border-emerald-300 bg-emerald-50'}`}>
+      <b>Closing checklist:</b> {open.length === 0 ? 'nothing pending ✓' : open.map(r => (
+        <span key={r.key} className={`ml-2 ${r.blocking ? 'text-red-700 font-semibold' : 'text-amber-800'}`}>{r.label}: {r.count}{r.blocking ? ' (must clear)' : ''}</span>))}
     </div>
   )
 }

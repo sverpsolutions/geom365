@@ -249,6 +249,10 @@ async def create_return(db: AsyncSession, data, user_id: Optional[int]) -> invoi
         orig.due_amount = Decimal(orig.due_amount) - adjusted
         orig.status = bill_status(orig.due_amount, Decimal(orig.total_amount))
 
+    if Decimal(orig.total_amount or 0) > 0:      # take back the points this share of the bill earned (and return redeemed ones)
+        from app.services import loyalty_service
+        await loyalty_service.reverse_bill(db, orig.id, user_id, share=min(total / Decimal(orig.total_amount), Decimal(1)),
+                                           reason=f"Return {cn.invoice_no}", ref=cn.invoice_no)
     await db.commit()
     from app.services.auth_service import write_audit
     await write_audit(db=db, module="billing", action="create_credit_note", record_id=cn.id, record_no=cn.invoice_no,

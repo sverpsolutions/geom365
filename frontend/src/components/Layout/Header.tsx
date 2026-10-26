@@ -10,6 +10,7 @@ import BackupModal from '../common/BackupModal';
 import CommandPalette from '../common/CommandPalette';
 import { useThemeStore } from '../../store/themeStore';
 import { isFull, keepFull, toggleFull } from '../../utils/fullscreen';
+import StoreSwitcher from './StoreSwitcher';
 
 interface HeaderProps {
   onSidebarToggle: () => void;
@@ -208,6 +209,7 @@ export default function Header({ onSidebarToggle }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-4 ml-auto">
+        <StoreSwitcher />
         {/* Global Tools */}
         <div className="flex items-center gap-1 pr-4 border-r border-border">
           <button

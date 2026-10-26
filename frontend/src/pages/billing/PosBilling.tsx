@@ -15,12 +15,13 @@ import { shifts_api, type shift_status } from '../../api/shifts'
 import { useAuthStore } from '../../store/authStore'
 import { printReceipt } from '../../utils/printReceipt'
 import { schemes_api, type eval_result } from '../../api/schemes'
+import api from '../../api/axios'
 
 interface Line { key: number; product_id: number; name: string; item_code: string | null; barcode: string | null
   hsn_code: string | null; unit: string; mrp: number; rate: number; qty: number; gst: number }
 interface Held { at: string; customer: Cust; lines: Line[] }
 interface Cust { id: number; name: string; phone?: string }
-type SplitMode = 'cash' | 'card' | 'upi'
+type SplitMode = string   // any active SALE mode of the Payment Mode Master (incl. loyalty points)
 
 const WALK_IN: Cust = { id: 1, name: 'Walk-in Customer' }
 const NAVY = '#1D2D3D', NAVY_SOFT = '#2C455D', ACCENT = '#5980A6'
@@ -41,6 +42,11 @@ export default function PosBilling() {
   const searchRef = useRef<HTMLInputElement>(null)
 
   const [customer, setCustomer] = useState<Cust>(WALK_IN)
+  useEffect(() => {   // loyalty balance of the selected customer (members only)
+    setPoints(null)
+    if (customer.id && customer.id !== WALK_IN.id) api.get(`/loyalty/customers/${customer.id}`)
+      .then(r => r.data.balance && setPoints({ current: r.data.balance.current, point_value: r.data.balance.point_value })).catch(() => {})
+  }, [customer.id])
   const [custQ, setCustQ] = useState('')
   const [custHits, setCustHits] = useState<customer_list_item[]>([])
   const [custHi, setCustHi] = useState(-1)  // arrow-key highlight in customer dropdown, -1 = none
@@ -50,8 +56,8 @@ export default function PosBilling() {
   const userOutlet = useAuthStore(s => s.user?.outlet_id) ?? null
   const [outlets, setOutlets] = useState<{ id: number; unit_code: string; outlet_name: string }[]>([])
   const [outletId, setOutletId] = useState<number | null>(() => {
-    if (userOutlet) return userOutlet
-    try { return Number(localStorage.getItem(OUTLET_KEY)) || null } catch { return null }
+    try { const picked = Number(localStorage.getItem(OUTLET_KEY)); if (picked) return picked } catch { /* storage blocked */ }   // header store switcher
+    return userOutlet
   })
   useEffect(() => {
     masters_api.get_outlets().then(r => {
@@ -62,6 +68,10 @@ export default function PosBilling() {
     }).catch(() => {})
   }, [])
   useEffect(() => { if (outletId && !userOutlet) try { localStorage.setItem(OUTLET_KEY, String(outletId)) } catch { /* storage blocked */ } }, [outletId, userOutlet])
+  useEffect(() => {
+    if (outletId) api.get('/payment-modes', { params: { active_only: true, applies_to: 'SALE', outlet_id: outletId } })
+      .then(r => r.data?.length && setPayModes(r.data.filter((m: any) => m.code !== 'credit'))).catch(() => {})
+  }, [outletId])
   const [invDate, setInvDate] = useState(new Date().toISOString().slice(0, 10))
   // day/shift control: bills are dated on the open business day; the API blocks billing when the day is closed
   const [dayShift, setDayShift] = useState<shift_status | null>(null)
@@ -83,6 +93,9 @@ export default function PosBilling() {
   const [mode, setMode] = useState<'cash' | 'card' | 'upi' | 'credit' | 'split'>('cash')
   const [split, setSplit] = useState<{ mode: SplitMode; amt: string }[]>([{ mode: 'cash', amt: '' }, { mode: 'upi', amt: '' }])
   const [cdPct, setCdPct] = useState(0)
+  const [discApproval, setDiscApproval] = useState('')
+  const [payModes, setPayModes] = useState<{ code: string; name: string }[]>([{ code: 'cash', name: 'Cash' }, { code: 'card', name: 'Card' }, { code: 'upi', name: 'UPI' }])
+  const [points, setPoints] = useState<{ current: number; point_value: number } | null>(null)
   const [roundOff, setRoundOff] = useState(true)
   const [tendered, setTendered] = useState('')
   const [notes, setNotes] = useState('')
@@ -228,7 +241,7 @@ export default function PosBilling() {
   }
 
   function reset() {
-    setLines([]); setCustomer(WALK_IN); setCustQ(''); setCdPct(0); setTendered(''); setNotes(''); setMode('cash'); setSplit([{ mode: 'cash', amt: '' }, { mode: 'upi', amt: '' }])
+    setLines([]); setCustomer(WALK_IN); setCustQ(''); setCdPct(0); setDiscApproval(''); setTendered(''); setNotes(''); setMode('cash'); setSplit([{ mode: 'cash', amt: '' }, { mode: 'upi', amt: '' }])
     setPayOpen(false); setActive(null); setStatus(''); setInvDate(new Date().toISOString().slice(0, 10)); searchRef.current?.focus()
   }
 
@@ -266,6 +279,7 @@ export default function PosBilling() {
       const res = await billing_api.create_invoice({
         outlet_id: outletId ?? undefined, customer_id: customer.id, invoice_type: invType, invoice_date: invDate, payment_mode: mode,
         cd_percent: cdPct, round_off: roundOff, notes: notes.trim() || undefined, paid_amount: paid, payments, apply_schemes: true,
+        discount_approval_no: discApproval.trim() || undefined,
         items: lines.map(l => ({
           product_id: l.product_id, item_code: l.item_code ?? undefined, name: l.name, qty: l.qty, unit: l.unit,
           rate: exRate(l), disc_val: 0, disc_type: '₹',
@@ -566,6 +580,18 @@ export default function PosBilling() {
                   </button>
                 ))}
               </div>
+              {points && <p className="text-xs text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-1">
+                Loyalty: <b>{points.current} pts</b> = {inr(points.current * points.point_value)} — use Split with “Loyalty Points” to redeem.</p>}
+              <div className="flex gap-2 items-center text-xs">
+                <input value={discApproval} onChange={e => setDiscApproval(e.target.value)} placeholder="High-discount approval no (if asked)"
+                  className="flex-1 border px-2 py-1 bg-white" />
+                <button type="button" className="underline text-slate-600" onClick={async () => {
+                  const pct = prompt('Discount % needed for this bill'); const why = pct && prompt('Reason')
+                  if (!pct || !why || !outletId) return
+                  try { const r = await api.post('/discount-policy/request', { outlet_id: outletId, discount_pct: Number(pct), bill_amount: t.grand, customer: customer.name, reason: why })
+                    toast.success(`Request ${r.data.request_no} sent — enter it here once approved`) } catch (e) { toast.error(errMsg(e)) }
+                }}>Request approval</button>
+              </div>
               {mode === 'credit' && <p className="text-xs text-red-700">Credit bill — full amount stays due on {customer.name}{customer.id === WALK_IN.id ? ' (select a customer first)' : ''}.</p>}
               {mode === 'split' ? (
                 <div className="border border-sky-300 bg-sky-50 p-2 space-y-2">
@@ -573,7 +599,7 @@ export default function PosBilling() {
                     <div key={i} className="flex gap-2">
                       <select value={p.mode} onChange={e => setSplit(split.map((x, j) => j === i ? { ...x, mode: e.target.value as SplitMode } : x))}
                         className="w-28 border px-2 py-1.5 font-bold bg-white">
-                        <option value="cash">Cash</option><option value="card">Card</option><option value="upi">UPI</option>
+                        {payModes.map(m => <option key={m.code} value={m.code}>{m.name}</option>)}
                       </select>
                       <input type="number" min={0} step="1" autoFocus={i === 0} value={p.amt} placeholder={i === 1 ? String(splitAmts[1]) : 'Amount'}
                         onChange={e => setSplit(split.map((x, j) => j === i ? { ...x, amt: e.target.value } : x))}

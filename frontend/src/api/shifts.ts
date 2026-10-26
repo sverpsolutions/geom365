@@ -53,7 +53,8 @@ export interface shift_status {
 export const shifts_api = {
   status: (outlet_id: number) => api.get<shift_status>('/shifts/status', { params: { outlet_id } }),
   day_open: (body: { outlet_id: number; business_date: string; remarks?: string }) => api.post<day_detail>('/shifts/day/open', body),
-  day_reopen: (outlet_id: number) => api.post<day_detail>('/shifts/day/reopen', null, { params: { outlet_id } }),
+  day_reopen: (outlet_id: number, reason: string) => api.post<any>('/shifts/day/reopen', null, { params: { outlet_id, reason } }),
+  day_checklist: (day_id: number) => api.get<{ key: string; label: string; count: number; blocking: boolean }[]>(`/shifts/day/${day_id}/checklist`),
   day_close: (id: number, body: { remarks?: string; force?: boolean; safe_counted?: number }) => api.post<day_detail>(`/shifts/day/${id}/close`, body),
   day: (id: number) => api.get<day_detail>(`/shifts/day/${id}`),
   days: (params: { outlet_id?: number; from_date?: string; to_date?: string }) => api.get<day_row[]>('/shifts/days', { params }),

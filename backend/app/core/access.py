@@ -51,6 +51,8 @@ MODULES: list[tuple[str, str, str, list[str]]] = [
     ("approvals", "Approvals", "module", ["view", "approve", "edit"]),
     ("payment_modes", "Payment Mode Master", "module", ["view", "create", "edit", "delete"]),
     ("expiry", "Expiry, Batch Correction & Expired Removal", "module", ["view", "remove_expired", "change_batch", "edit", "export"]),
+    ("loyalty", "Loyalty Programme", "module", ["view", "create", "edit", "export"]),
+    ("discounts", "Discount Control", "module", ["view", "edit"]),
     ("users", "User Management", "module", ["view", "create", "edit", "delete"]),
     ("settings", "Company & System Settings", "module", ["view", "edit"]),
     ("audit", "Audit Logs", "module", ["view", "export"]),
@@ -99,7 +101,8 @@ PATHS: dict[str, str] = {
     "/cash": "cash", "/accounts": "accounts", "/schemes": "schemes", "/import-export": "import_export",
     "/users": "users", "/roles": "users", "/permissions": "users", "/access": "users", "/company": "settings",
     "/audit-logs": "audit", "/stock-reports": "rep_stock", "/manufacturing": "manufacturing",
-    "/approvals": "approvals", "/payment-modes": "payment_modes", "/expiry": "expiry",
+    "/approvals": "approvals", "/payment-modes": "payment_modes", "/expiry": "expiry", "/loyalty": "loyalty",
+    "/discount-policy": "discounts", "/ho-dashboard": "dashboard",
     "/reports": "rep_analytics",
     **{f"/reports/{p}": "rep_sales" for p in ("sales", "hourly", "sales-trend", "top-items", "category-sales",
                                                "customer-analytics", "unit-dashboard", "hierarchy", "item-velocity")},
@@ -116,7 +119,9 @@ _PATHS_SORTED = sorted(PATHS.items(), key=lambda kv: -len(kv[0]))
 ACTION_PATHS: dict[tuple[str, str], str] = {
     ("POST", "/expiry/removals"): "remove_expired", ("POST", "/expiry/batch-correction"): "change_batch",
     ("POST", "/expiry/expiry-correction"): "edit", ("PUT", "/expiry/bands"): "edit",
-    ("PUT", "/approvals/policies"): "edit", ("POST", "/approvals/file"): "view", ("POST", "/approvals/resubmit"): "view", ("POST", "/approvals/cancel"): "view",
+    ("PUT", "/approvals/policies"): "edit", ("POST", "/shifts/day/reopen"): "reopen", ("PUT", "/shifts/closing-settings"): "approve",
+    ("PUT", "/discount-policy"): "edit", ("PUT", "/loyalty/config"): "edit", ("PUT", "/loyalty/rules"): "edit", ("POST", "/loyalty/adjust"): "view", ("POST", "/discount-policy/request"): "view",
+    ("POST", "/approvals/file"): "view", ("POST", "/approvals/resubmit"): "view", ("POST", "/approvals/cancel"): "view",
 }
 
 

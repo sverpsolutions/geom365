@@ -3,6 +3,7 @@ Billing Service — Phase 5
 Handles: invoice CRUD, GST calc, stock ledger, invoice numbering, estimates
 """
 from datetime import date, datetime
+import json
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
@@ -17,7 +18,7 @@ from app.models.invoice import (
 )
 from app.models.product import product as product_model
 from app.models.outlet import outlet as outlet_model
-from app.services import shift_service, batch_service, scheme_service
+from app.services import shift_service, batch_service, scheme_service, discount_service, loyalty_service
 from app.core import access
 from app.schemas.invoice import (
     invoice_create, payment_in,
@@ -224,9 +225,15 @@ async def _update_product_stock(db: AsyncSession, product_id: int, delta: Decima
                               "WHERE outlet_id = :o AND product_id = :p"), {"d": delta, "o": outlet_id, "p": product_id})
 
 
-async def check_payment_modes(db: AsyncSession, modes, outlet_id: Optional[int]):
+async def check_payment_modes(db: AsyncSession, modes, outlet_id: Optional[int], strict: bool = False):
     """Payment Mode Master: a deactivated mode, or one not allowed at this outlet, cannot be used on a new bill.
-    Codes not in the master (older POS sync agents) are still accepted."""
+    Split payments (strict) must use a mode from the master; the single legacy payment_mode of older POS sync agents
+    is still accepted when it is not in the master."""
+    if strict:
+        known = set((await db.execute(text("SELECT LOWER(code) FROM payment_modes"))).scalars().all())
+        unknown = sorted({str(m or "").lower() for m in modes} - known)
+        if unknown:
+            raise HTTPException(400, f"Unknown payment mode: {', '.join(unknown)} (add it in Settings → Payment Modes).")
     bad = (await db.execute(text("""SELECT name FROM payment_modes WHERE LOWER(code) = ANY(:m)
         AND (NOT is_active OR (outlet_ids IS NOT NULL AND NOT (CAST(:o AS INT) = ANY(outlet_ids))) OR NOT ('SALE' = ANY(applies_to)))"""),
         {"m": [str(m or "").lower() for m in modes], "o": outlet_id})).scalars().all()
@@ -243,7 +250,10 @@ async def create_invoice(
 ) -> invoice:
     access.check_outlet(data.outlet_id)
     await access.check_products(db, [it.product_id for it in data.items])
-    await check_payment_modes(db, [p.payment_mode for p in data.payments] if data.payments else [data.payment_mode], data.outlet_id)
+    for p in data.payments:
+        p.payment_mode = p.payment_mode.strip().lower()
+    await check_payment_modes(db, [p.payment_mode for p in data.payments] if data.payments else [data.payment_mode], data.outlet_id,
+                              strict=bool(data.payments))
     shift_id = await shift_service.guard(db, data.outlet_id, user_id, data.invoice_date)
     invoice_no = await _next_invoice_no(db, data.outlet_id)
 
@@ -252,6 +262,7 @@ async def create_invoice(
     items_data = []
     location_id = data.outlet_id or 1
 
+    manual_item_disc = any((it.disc_val or 0) > 0 for it in data.items)   # before schemes merge into disc_val
     schemes = None
     if data.apply_schemes and data.items:
         modes = {p.payment_mode for p in data.payments} if data.payments else {data.payment_mode}
@@ -358,6 +369,23 @@ async def create_invoice(
     due  = _two(totals["total_amount"] - paid)
     status = "paid" if due <= Decimal("0") else ("partial" if paid > Decimal("0") else "unpaid")
 
+    # discount control (server-side; the till cannot bypass it) and loyalty tender
+    loyalty_amt = _two(sum((p.amount for p in data.payments if (p.payment_mode or "").lower() == "loyalty"), Decimal("0")))
+    if (data.payment_mode or "").lower() == "loyalty" and not data.payments:
+        loyalty_amt = paid
+    breakdown, approval_used = None, None
+    if data.invoice_type not in ("return", "credit_note"):
+        scheme_amt = _two(sum((Decimal(str(a["discount"])) for a in schemes["applied"]), Decimal("0"))) if schemes else Decimal("0")
+        bill_amt = _two(sum((i["cd_taxable"] for i in items_data), Decimal("0")))
+        gross = sum((Decimal(str(i["qty"])) * Decimal(str(i["rate"])) for i in items_data), Decimal("0"))
+        pct = ((totals["discount"] + bill_amt) / gross * 100).quantize(Decimal("0.01")) if gross > 0 else Decimal("0")
+        used = {k for k, on in (("item", manual_item_disc), ("bill", data.cd_percent > 0), ("scheme", scheme_amt > 0), ("loyalty", loyalty_amt > 0)) if on}
+        role = (await db.execute(text("SELECT role FROM users WHERE id = :u"), {"u": user_id})).scalar() or ""
+        approval_used = await discount_service.enforce(db, used=used, pct=pct, outlet_id=data.outlet_id, role=role,
+                                                       approval_no=data.discount_approval_no, invoice_no=invoice_no)
+        breakdown = {"item": str(_two(totals["discount"] - scheme_amt)), "scheme": str(scheme_amt), "bill": str(bill_amt),
+                     "loyalty": str(loyalty_amt), "pct": str(pct), "types": sorted(used)}
+
     inv = invoice(
         outlet_id=data.outlet_id,
         invoice_no=invoice_no,
@@ -428,6 +456,17 @@ async def create_invoice(
     if schemes and schemes["applied"]:
         await scheme_service.log_applied(db, invoice_id=inv.id, invoice_no=invoice_no, outlet_id=data.outlet_id,
                                          customer_id=data.customer_id, result=schemes, user_id=user_id)
+
+    if breakdown is not None:
+        await db.execute(text("UPDATE unit_wise_invoices SET discount_breakdown = CAST(:b AS JSONB), discount_approval_no = :a WHERE id = :i"),
+                         {"b": json.dumps(breakdown), "a": approval_used, "i": inv.id})
+    if loyalty_amt > 0:
+        await loyalty_service.redeem(db, customer_id=data.customer_id, outlet_id=data.outlet_id, amount=loyalty_amt,
+                                     bill_total=totals["total_amount"], invoice_id=inv.id, invoice_no=invoice_no, user_id=user_id)
+    if data.invoice_type not in ("return", "credit_note", "proforma"):
+        await loyalty_service.earn(db, customer_id=data.customer_id, outlet_id=data.outlet_id, on=data.invoice_date,
+                                   lines=[(i["product_id"], i["total"]) for i in items_data], paid_by_points=loyalty_amt,
+                                   invoice_id=inv.id, invoice_no=invoice_no, user_id=user_id)
 
     await db.commit()
     await db.refresh(inv)
@@ -611,6 +650,7 @@ async def cancel_invoice(
             )
 
     inv.status = "cancelled"
+    await loyalty_service.reverse_bill(db, inv.id, user_id, reason="Bill cancelled")
     await db.commit()
     await db.refresh(inv)
 

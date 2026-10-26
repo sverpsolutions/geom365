@@ -83,7 +83,7 @@ class payment_out(BaseModel):
 # ─── Invoice Create / Update ─────────────────────────────────────────────────
 
 class split_payment_in(BaseModel):
-    payment_mode: Literal["cash", "card", "upi"]
+    payment_mode: str = Field(min_length=1, max_length=20)   # any active mode of the Payment Mode Master (checked in billing)
     amount: Decimal = Field(gt=0)
 
 
@@ -105,6 +105,8 @@ class invoice_create(BaseModel):
     payments: list[split_payment_in] = []
     # POS: run the scheme engine server-side and add its discounts / free lines (client never sends them)
     apply_schemes: bool = False
+    # request number of an approved High Discount request, when the bill's discount is above the approval limit
+    discount_approval_no: Optional[str] = None
 
 
 class invoice_update(BaseModel):
