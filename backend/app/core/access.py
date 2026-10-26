@@ -19,18 +19,19 @@ from sqlalchemy import text
 from app.core.database import async_session_factory
 from app.core.security import decode_token
 
-ACTIONS = ["view", "create", "edit", "delete", "approve", "cancel", "print", "export", "import"]
+ACTIONS = ["view", "create", "edit", "delete", "approve", "cancel", "print", "export", "import", "submit", "reopen", "email",
+           "change_price", "change_batch", "remove_expired"]
 A_ALL = ACTIONS
 
 # key, label, kind (module | report), actions offered
 MODULES: list[tuple[str, str, str, list[str]]] = [
     ("dashboard", "Dashboard", "module", ["view"]),
-    ("items", "Item Master", "module", ["view", "create", "edit", "delete", "import", "export"]),
+    ("items", "Item Master", "module", ["view", "create", "edit", "delete", "import", "export", "change_price"]),
     ("masters", "Masters (brand, category, HSN, units…)", "module", ["view", "create", "edit", "delete"]),
     ("suppliers", "Supplier Master", "module", ["view", "create", "edit", "delete", "approve", "export"]),
     ("customers", "Customer Master", "module", ["view", "create", "edit", "delete", "export"]),
     ("outlets", "Outlet Master", "module", ["view", "create", "edit", "delete"]),
-    ("purchase_order", "Purchase Order", "module", ["view", "create", "edit", "delete", "approve", "cancel", "print", "export"]),
+    ("purchase_order", "Purchase Order", "module", ["view", "create", "edit", "delete", "approve", "cancel", "print", "export", "email"]),
     ("grn", "GRN / Purchase Inward", "module", ["view", "create", "edit", "cancel", "print", "export"]),
     ("purchase_return", "Purchase Return", "module", ["view", "create", "approve", "cancel", "print"]),
     ("stock_transfer", "Stock Transfer / Dispatch", "module", ["view", "create", "edit", "approve", "cancel", "print"]),
@@ -40,13 +41,16 @@ MODULES: list[tuple[str, str, str, list[str]]] = [
     ("billing", "Sales & Billing (POS)", "module", ["view", "create", "edit", "cancel", "print", "export"]),
     ("sales_return", "Sales Return / Credit Note", "module", ["view", "create", "cancel", "print"]),
     ("estimates", "Estimates", "module", ["view", "create", "edit", "delete"]),
-    ("day_shift", "Day & Shift Open/Close", "module", ["view", "create", "approve"]),
+    ("day_shift", "Day & Shift Open/Close", "module", ["view", "create", "approve", "submit", "reopen"]),
     ("cash", "Cash, Expense & Bank Deposit", "module", ["view", "create", "approve", "cancel"]),
     ("accounts", "Accounts Payable", "module", ["view", "create", "edit", "approve"]),
     ("schemes", "Schemes & Bulk Discount", "module", ["view", "create", "edit", "delete"]),
     ("shop", "Online Shop", "module", ["view", "create", "edit", "delete"]),
     ("manufacturing", "Manufacturing / Production", "module", ["view", "create", "edit", "delete", "approve", "cancel", "print", "export"]),
     ("import_export", "Data Import / Export", "module", ["view", "import", "export"]),
+    ("approvals", "Approvals", "module", ["view", "approve", "edit"]),
+    ("payment_modes", "Payment Mode Master", "module", ["view", "create", "edit", "delete"]),
+    ("expiry", "Expiry, Batch Correction & Expired Removal", "module", ["view", "remove_expired", "change_batch", "edit", "export"]),
     ("users", "User Management", "module", ["view", "create", "edit", "delete"]),
     ("settings", "Company & System Settings", "module", ["view", "edit"]),
     ("audit", "Audit Logs", "module", ["view", "export"]),
@@ -95,6 +99,7 @@ PATHS: dict[str, str] = {
     "/cash": "cash", "/accounts": "accounts", "/schemes": "schemes", "/import-export": "import_export",
     "/users": "users", "/roles": "users", "/permissions": "users", "/access": "users", "/company": "settings",
     "/audit-logs": "audit", "/stock-reports": "rep_stock", "/manufacturing": "manufacturing",
+    "/approvals": "approvals", "/payment-modes": "payment_modes", "/expiry": "expiry",
     "/reports": "rep_analytics",
     **{f"/reports/{p}": "rep_sales" for p in ("sales", "hourly", "sales-trend", "top-items", "category-sales",
                                                "customer-analytics", "unit-dashboard", "hierarchy", "item-velocity")},
@@ -107,6 +112,14 @@ PATHS: dict[str, str] = {
 _PATHS_SORTED = sorted(PATHS.items(), key=lambda kv: -len(kv[0]))
 
 
+# (method, path prefix) -> action, for endpoints whose action is not one of the generic verbs
+ACTION_PATHS: dict[tuple[str, str], str] = {
+    ("POST", "/expiry/removals"): "remove_expired", ("POST", "/expiry/batch-correction"): "change_batch",
+    ("POST", "/expiry/expiry-correction"): "edit", ("PUT", "/expiry/bands"): "edit",
+    ("PUT", "/approvals/policies"): "edit", ("POST", "/approvals/file"): "view", ("POST", "/approvals/resubmit"): "view", ("POST", "/approvals/cancel"): "view",
+}
+
+
 def register_paths(paths: dict[str, str]):
     """Routers that define their own sub-paths (the report engine) add them to the central map."""
     PATHS.update(paths)
@@ -114,7 +127,7 @@ def register_paths(paths: dict[str, str]):
 
 # GETs every logged-in user may make: pickers and lookups other screens need (results are still scope-filtered)
 LOOKUP_PREFIXES = ("/masters/", "/products/lookup/", "/products/search")
-LOOKUPS = ("/products/search", "/outlets", "/masters", "/states", "/customers", "/suppliers", "/company",
+LOOKUPS = ("/products/search", "/outlets", "/payment-modes", "/expiry/bands", "/masters", "/states", "/customers", "/suppliers", "/company",
            "/shifts/status", "/reports/filters", "/access/me", "/schemes/types", "/dashboard/user-scope", "/reports/x")
 POST_VIEW = ("search", "lookup", "lookup_ajax", "evaluate", "check-invoice", "preview")
 API_PREFIX = "/api/v1"
@@ -131,6 +144,9 @@ def classify(path: str, method: str) -> Optional[tuple[str, str]]:
     if not module or "/guest/" in p:          # guest PO links for vendors are public by design
         return None
     segs = set(p.lower().split("/"))
+    for (m, pre), act in ACTION_PATHS.items():
+        if method == m and (p == pre or p.startswith(pre + "/")):
+            return (module, act)
     if method in ("GET", "HEAD"):
         if p in LOOKUPS or p.startswith(LOOKUP_PREFIXES):
             return ("*", "view")

@@ -310,7 +310,7 @@ export const purchases_api = {
     api.post(`/purchases/po/${po_id}/distribution`, data),
 
   // GRN CRUD
-  list_grn: (params?: { page?: number; per_page?: number; supplier_id?: number; status?: string }) =>
+  list_grn: (params?: { page?: number; per_page?: number; supplier_id?: number; status?: string; search?: string; from_date?: string; to_date?: string }) =>
     api.get<{ data: purchase_list_item[]; total: number; page: number; per_page: number }>('/purchases/grn', { params }),
 
   create_grn: (data: purchase_create_payload) =>

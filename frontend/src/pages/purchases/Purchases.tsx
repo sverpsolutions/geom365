@@ -135,7 +135,7 @@ export default function Purchases() {
   // 2. Load GRN list
   const loadList = () => {
     set_loading(true)
-    purchases_api.list_grn({ page, per_page, status: statusFilter || undefined })
+    purchases_api.list_grn({ page, per_page, status: statusFilter || undefined, search: search.trim() || undefined })
       .then(r => {
         set_rows(r.data.data || [])
         set_total(r.data.total || 0)
@@ -145,8 +145,9 @@ export default function Purchases() {
   }
 
   useEffect(() => {
-    loadList()
-  }, [page, statusFilter])
+    const t = setTimeout(loadList, search ? 350 : 0)   // server search: GRN no / last 4 digits / supplier / PO / item
+    return () => clearTimeout(t)
+  }, [page, statusFilter, search])
 
   // 3. Handle query params (e.g. ?action=new or ?po_id=...) or route :id
   useEffect(() => {
@@ -418,15 +419,7 @@ export default function Purchases() {
   }
 
   // Filtered rows for client search
-  const filteredRows = rows.filter(r => {
-    if (!search.trim()) return true
-    const s = search.toLowerCase()
-    return (
-      r.purchase_no?.toLowerCase().includes(s) ||
-      r.supplier_name?.toLowerCase().includes(s) ||
-      r.invoice_no?.toLowerCase().includes(s)
-    )
-  })
+  const filteredRows = rows   // filtered on the server (GRN no / last digits / supplier / PO / item)
 
   const total_pages = Math.ceil(total / per_page)
 
@@ -483,7 +476,7 @@ export default function Purchases() {
             <i className="fas fa-search absolute left-3 top-2.5 text-slate-400 text-xs"></i>
             <input
               type="text"
-              placeholder="Search GRN #, Supplier, Invoice…"
+              placeholder="GRN # or last 4 digits, supplier, PO, item…"
               value={search}
               onChange={e => set_search(e.target.value)}
               className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"

@@ -13,6 +13,12 @@ const NAV_SECTIONS = [
     color: '#3b82f6', // Blue
   },
   {
+    label: 'Approvals',
+    to: '/approvals',
+    icon: 'fas fa-check-double',
+    color: '#f59e0b',
+  },
+  {
     label: 'Store Health',
     to: '/stores/health',
     icon: 'fas fa-heartbeat',
@@ -96,6 +102,7 @@ const NAV_SECTIONS = [
     color: '#a855f7', // Purple
     children: [
       { label: 'Expiry & Batches', to: '/inventory/expiry-dashboard', icon: 'fas fa-calendar-times' },
+      { label: 'Expiry Control (Remove / Correct)', to: '/inventory/expiry-control', icon: 'fas fa-hourglass-half' },
       { label: 'Batch Master Register', to: '/inventory/batches', icon: 'fas fa-cubes' },
       { label: 'Stock Status', to: '/inventory/status', icon: 'fas fa-list' },
       { label: 'Rack / Location', to: '/masters/warehouse-racking', icon: 'fas fa-th-large' },
@@ -209,6 +216,7 @@ const NAV_SECTIONS = [
     children: [
       { label: 'Company Profile', to: '/settings/company', icon: 'fas fa-building' },
       { label: 'Users & Locations', to: '/settings/users', icon: 'fas fa-user-shield' },
+      { label: 'Payment Modes', to: '/settings/payment-modes', icon: 'fas fa-wallet' },
       { label: 'Dashboard Builder', to: '/settings/dashboard-builder', icon: 'fas fa-th-large' },
       { label: 'Theme & Styling', to: '/settings/theme', icon: 'fas fa-palette' },
       { label: 'System Help', to: '/help', icon: 'fas fa-question-circle' },

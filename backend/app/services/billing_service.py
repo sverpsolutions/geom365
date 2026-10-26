@@ -224,6 +224,16 @@ async def _update_product_stock(db: AsyncSession, product_id: int, delta: Decima
                               "WHERE outlet_id = :o AND product_id = :p"), {"d": delta, "o": outlet_id, "p": product_id})
 
 
+async def check_payment_modes(db: AsyncSession, modes, outlet_id: Optional[int]):
+    """Payment Mode Master: a deactivated mode, or one not allowed at this outlet, cannot be used on a new bill.
+    Codes not in the master (older POS sync agents) are still accepted."""
+    bad = (await db.execute(text("""SELECT name FROM payment_modes WHERE LOWER(code) = ANY(:m)
+        AND (NOT is_active OR (outlet_ids IS NOT NULL AND NOT (CAST(:o AS INT) = ANY(outlet_ids))) OR NOT ('SALE' = ANY(applies_to)))"""),
+        {"m": [str(m or "").lower() for m in modes], "o": outlet_id})).scalars().all()
+    if bad:
+        raise HTTPException(400, f"Payment mode not allowed here: {', '.join(bad)} (Payment Mode Master).")
+
+
 # ─── Invoice Service ──────────────────────────────────────────────────────────
 
 async def create_invoice(
@@ -233,6 +243,7 @@ async def create_invoice(
 ) -> invoice:
     access.check_outlet(data.outlet_id)
     await access.check_products(db, [it.product_id for it in data.items])
+    await check_payment_modes(db, [p.payment_mode for p in data.payments] if data.payments else [data.payment_mode], data.outlet_id)
     shift_id = await shift_service.guard(db, data.outlet_id, user_id, data.invoice_date)
     invoice_no = await _next_invoice_no(db, data.outlet_id)
 

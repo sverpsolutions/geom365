@@ -84,7 +84,7 @@ export function ItemPicker({ value, label, onPick }: { value?: number | null; la
 export const useList = <T,>(url: string, params?: any): [T[], () => void] => {
   const [rows, setRows] = useState<T[]>([]);
   const key = JSON.stringify(params || {});
-  const load = () => { api.get(url, { params }).then((r) => setRows(r.data)).catch(err); };
+  const load = () => { if (!url) return setRows([]); api.get(url, { params }).then((r) => setRows(r.data)).catch(err); };
   useEffect(load, [url, key]); // eslint-disable-line react-hooks/exhaustive-deps
   return [rows, load];
 };

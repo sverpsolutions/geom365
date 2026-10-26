@@ -124,6 +124,9 @@ import MfgPrinting from './pages/manufacturing/MfgPrinting';
 import MfgProduction from './pages/manufacturing/MfgProduction';
 import MfgCustomerOrders from './pages/manufacturing/MfgCustomerOrders';
 import MfgPlantDashboard from './pages/manufacturing/MfgPlantDashboard';
+import Approvals from './pages/retail/Approvals';
+import ExpiryControl from './pages/retail/Expiry';
+import PaymentModes from './pages/retail/PaymentModes';
 
 // Placeholder components for other modules
 const Masters = () => <div className="h-96 flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl text-slate-400">Masters Module (Phase 3)</div>;
@@ -308,6 +311,9 @@ const App = () => {
             <Route path="manufacturing/production" element={<MfgProduction />} />
             <Route path="manufacturing/customer-orders" element={<MfgCustomerOrders />} />
             <Route path="manufacturing/plant" element={<MfgPlantDashboard />} />
+            <Route path="approvals" element={<Approvals />} />
+            <Route path="inventory/expiry-control" element={<ExpiryControl />} />
+            <Route path="settings/payment-modes" element={<PaymentModes />} />
 
             {/* Any other path: keep the shell; TabbedOutlet renders it from routes/config.tsx */}
             <Route path="*" element={null} />

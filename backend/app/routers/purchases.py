@@ -956,6 +956,9 @@ async def list_purchases(
     per_page: int = Query(default=25, ge=1, le=100),
     supplier_id: int | None = Query(default=None),
     status: str | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=60),
+    from_date: date | None = Query(default=None),
+    to_date: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
@@ -964,6 +967,25 @@ async def list_purchases(
         q = q.where(purchase.supplier_id == supplier_id)
     if status:
         q = q.where(purchase.status == status)
+    if from_date:
+        q = q.where(purchase.invoice_date >= from_date)
+    if to_date:
+        q = q.where(purchase.invoice_date <= to_date)
+    s = (search or "").strip()
+    if s:
+        # digits only (e.g. 1258): GRN / invoice number ending with those digits; otherwise GRN, invoice, supplier, PO or item
+        if s.isdigit() and len(s) <= 6:
+            q = q.where(or_(func.regexp_replace(purchase.purchase_no, r"\D", "", "g").like(f"%{s}"),
+                            func.regexp_replace(func.coalesce(purchase.invoice_no, ""), r"\D", "", "g").like(f"%{s}"),
+                            purchase.purchase_no == s))
+        else:
+            like = f"%{s}%"
+            q = q.where(or_(purchase.purchase_no.ilike(like), purchase.invoice_no.ilike(like),
+                            purchase.supplier_id.in_(text("SELECT id FROM suppliers WHERE name ILIKE :like OR supplier_code ILIKE :like "
+                                                          "OR trade_name ILIKE :like").bindparams(like=like)),
+                            purchase.po_id.in_(text("SELECT id FROM po_headers WHERE po_no ILIKE :like2").bindparams(like2=like)),
+                            purchase.id.in_(text("""SELECT pi.purchase_id FROM unit_wise_purchase_items pi JOIN products p ON p.id = pi.product_id
+                                WHERE p.name ILIKE :like3 OR p.item_code ILIKE :like3 OR pi.batch_no ILIKE :like3""").bindparams(like3=like))))
 
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     rows  = (await db.execute(q.offset((page - 1) * per_page).limit(per_page))).scalars().all()
@@ -979,6 +1001,7 @@ async def list_purchases(
             "total_amount": float(r.total_amount or 0), "paid_amount": float(r.paid_amount or 0),
             "due_amount": float(r.due_amount or 0), "payment_mode": r.payment_mode or "credit",
             "status": r.status or "draft", "created_at": str(r.created_at) if r.created_at else "",
+            "outlet_id": r.outlet_id, "po_id": r.po_id,
         })
 
     return {"data": result, "total": total, "page": page, "per_page": per_page}

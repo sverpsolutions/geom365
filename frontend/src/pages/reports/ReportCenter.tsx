@@ -89,6 +89,16 @@ const SECTIONS: { title: string; cards: Card[] }[] = [
     C('/reports/r/sensitive_actions', '⚠️', 'Sensitive Actions', 'Deletes, cancels, approvals, adjustments, day close, password resets', red, 'audit'),
     C('/reports/r/activity_by_module', '📊', 'Activity by Module', 'How often each action happens, and by how many users', info, 'audit'),
   ] },
+  { title: 'Expiry & Batches', cards: [
+    C('/reports/r/exp_near_expiry', '⏳', 'Near-Expiry Batches', 'Store-wise batches inside the warning bands, with GRN', 'text-amber-500', 'rep_stock'),
+    C('/reports/r/exp_expired', '⛔', 'Expired Stock in Stores', 'Expired batches still holding stock', 'text-red-600', 'rep_stock'),
+    C('/reports/r/exp_summary', '🗂️', 'Expiry Summary (HO)', 'Store × band: batches, qty, value', 'text-blue-600', 'rep_stock'),
+    C('/reports/r/exp_category', '🏷️', 'Expiry by Category', 'Expired and near-expiry qty / value per category', 'text-slate-800', 'rep_stock'),
+    C('/reports/r/exp_batch_inventory', '📦', 'Batch-wise Inventory', 'Every batch with GRN, mfg & expiry, qty, value', 'text-slate-500', 'rep_stock'),
+    C('/reports/r/exp_removals', '🗑️', 'Expired Stock Removed', 'Approved expired-item-out register', 'text-red-600', 'rep_stock'),
+    C('/reports/r/exp_corrections', '🔁', 'Batch & Expiry Corrections', 'Original vs corrected batch / expiry, who approved', 'text-amber-500', 'rep_stock'),
+    C('/reports/r/approval_register', '✅', 'Approval Register', 'All approval requests and decisions', 'text-emerald-600', 'approvals'),
+  ] },
   { title: 'Manufacturing (Nutribray)', cards: [
     C('/reports/r/mfg_store_stock', '🏭', 'Department Stock', 'Physical, reserved & available per department store', ok, 'manufacturing'),
     C('/reports/r/mfg_item_stock', '📦', 'Item-wise Plant Stock', 'Available / WIP / QC / rejected / damaged — counted once', grey, 'manufacturing'),
