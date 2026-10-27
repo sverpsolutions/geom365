@@ -792,6 +792,7 @@ class product_list_out(BaseModel):
     id: int
     name: str
     item_code: str | None
+    item_type: str | None = None
     category: str
     brand: str | None
     unit: str

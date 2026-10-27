@@ -121,6 +121,7 @@ async def list_products(
     category_id: int | None = Query(None),
     brand_id: int | None = Query(None),
     classification_id: int | None = Query(None),
+    item_type: str | None = Query(None, pattern="^(FG|RM|PM|SFG|CONS|OTH)$"),
     base_uom_id: int | None = Query(None),
     purchase_uom_id: int | None = Query(None),
     storage_type_id: int | None = Query(None),
@@ -146,6 +147,8 @@ async def list_products(
         product_conditions.append(product_model.brand_id == brand_id)
     if classification_id:
         product_conditions.append(product_model.classification_id == classification_id)
+    if item_type:
+        product_conditions.append(product_model.item_type == item_type)
     if is_active is not None:
         product_conditions.append(product_model.is_active == is_active)
     if low_stock:

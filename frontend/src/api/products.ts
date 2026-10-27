@@ -1,6 +1,7 @@
 import api from './axios'
 
 export interface product_list_item {
+  item_type?: string | null
   id: number
   name: string
   item_code: string | null
@@ -125,7 +126,7 @@ export const products_api = {
   list: (params?: {
     page?: number; per_page?: number; search?: string
     category_id?: number; brand_id?: number; classification_id?: number
-    is_active?: boolean; low_stock?: boolean
+    is_active?: boolean; low_stock?: boolean; item_type?: string
     base_uom_id?: number; purchase_uom_id?: number; storage_type_id?: number
   }) => api.get<paginated<product_list_item>>('/products', { params }),
 

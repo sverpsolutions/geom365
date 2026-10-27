@@ -35,6 +35,7 @@ const ItemMaster = () => {
     if (s) setActiveSection(s);
   }, [location.search]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [itemType, setItemType] = useState('');   // FG / RM / PM / SFG / CONS / OTH
   const [resultCount, setResultCount] = useState(0);
 
   // ── Product list state ────────────────────────────────────────────────────
@@ -46,19 +47,19 @@ const ItemMaster = () => {
   const loadProducts = useCallback(async (p: number, s: string) => {
     setLoading(true);
     try {
-      const res = await products_api.list({ page: p, per_page: PER_PAGE, search: s });
+      const res = await products_api.list({ page: p, per_page: PER_PAGE, search: s, item_type: itemType || undefined });
       setResult(res.data);
     } catch (e) {
       console.error('Failed to load products', e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [itemType]);
 
-  // Load products on mount and when section switches to products
+  // Load products on mount, when section switches to products, and when the item type filter changes (back to page 1)
   useEffect(() => {
-    if (activeSection === 'products') loadProducts(page, searchQuery);
-  }, [activeSection]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (activeSection === 'products') { setPage(1); loadProducts(1, searchQuery); }
+  }, [activeSection, itemType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSearch = (val: string) => {
     setSearchQuery(val);
@@ -215,6 +216,13 @@ const ItemMaster = () => {
                 onChange={e => handleSearch(e.target.value)}
               />
             </div>
+            {activeSection === 'products' && (
+              <select value={itemType} onChange={e => setItemType(e.target.value)} title="Item type"
+                className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-full py-2 px-3 text-xs font-semibold outline-none dark:text-slate-200">
+                <option value="">All item types</option>
+                {Object.entries(ITEM_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            )}
             <div className="bg-orange-500 text-white text-[11px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-lg shadow-orange-500/20">
               {counterLabel}
             </div>
@@ -244,6 +252,7 @@ const ItemMaster = () => {
                         <th className="px-4 py-3 font-bold uppercase tracking-tighter w-10">#</th>
                         <th className="px-4 py-3 font-bold uppercase tracking-tighter">Code</th>
                         <th className="px-4 py-3 font-bold uppercase tracking-tighter">Item Name</th>
+                        <th className="px-4 py-3 font-bold uppercase tracking-tighter">Type</th>
                         <th className="px-4 py-3 font-bold uppercase tracking-tighter">Category</th>
                         <th className="px-4 py-3 font-bold uppercase tracking-tighter">Brand</th>
                         <th className="px-4 py-3 font-bold uppercase tracking-tighter text-center">Unit</th>
@@ -265,7 +274,7 @@ const ItemMaster = () => {
                         </tr>
                       ) : rows.length === 0 ? (
                         <tr>
-                          <td colSpan={12} className="py-20 text-center text-slate-400 italic">
+                          <td colSpan={13} className="py-20 text-center text-slate-400 italic">
                             No items found{searchQuery ? ` for "${searchQuery}"` : ''}
                           </td>
                         </tr>
@@ -297,6 +306,7 @@ const ItemMaster = () => {
                               <div className="text-[10px] text-slate-400 text-numeric">{item.barcode}</div>
                             )}
                           </td>
+                          <td className="px-4 py-2.5"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ITEM_TYPES[item.item_type || 'FG']?.cls}`}>{ITEM_TYPES[item.item_type || 'FG']?.label}</span></td>
                           <td className="px-4 py-2.5 text-slate-500 max-w-[120px] truncate">{item.category}</td>
                           <td className="px-4 py-2.5 text-slate-500 max-w-[100px] truncate">{item.brand || '—'}</td>
                           <td className="px-4 py-2.5 text-center">
@@ -425,6 +435,15 @@ const ItemMaster = () => {
       </main>
     </div>
   );
+};
+
+export const ITEM_TYPES: Record<string, { label: string; cls: string }> = {
+  FG: { label: 'Finished Goods', cls: 'bg-emerald-100 text-emerald-800' },
+  RM: { label: 'Raw Material', cls: 'bg-amber-100 text-amber-800' },
+  PM: { label: 'Packing Material', cls: 'bg-sky-100 text-sky-800' },
+  SFG: { label: 'Semi-Finished', cls: 'bg-violet-100 text-violet-800' },
+  CONS: { label: 'Consumable', cls: 'bg-slate-200 text-slate-700' },
+  OTH: { label: 'Other', cls: 'bg-slate-100 text-slate-600' },
 };
 
 export default ItemMaster;
