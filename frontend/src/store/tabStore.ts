@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+export const MAX_TABS = 3;
+
 export interface Tab {
   id: string;
   title: string;
@@ -23,14 +25,13 @@ export const useTabStore = create<TabState>()(
       activeTabId: null,
       addTab: (tab) =>
         set((state) => {
+          // keep only the last MAX_TABS screens: reopening one moves it to the end, opening a new one drops the oldest
           const exists = state.tabs.find((t) => t.path === tab.path);
-          if (exists) {
-            return { activeTabId: exists.id };
-          }
-          const newTab = { ...tab, active: true };
+          const rest = state.tabs.filter((t) => t.path !== tab.path);
+          const current = exists ?? { ...tab, active: true };
           return {
-            tabs: [...state.tabs, newTab],
-            activeTabId: tab.id,
+            tabs: [...rest, current].slice(-MAX_TABS),
+            activeTabId: current.id,
           };
         }),
       removeTab: (id) =>
@@ -49,6 +50,12 @@ export const useTabStore = create<TabState>()(
     }),
     {
       name: 'app-tabs',
+      // tabs saved before the limit existed: keep the newest ones only
+      merge: (saved, current) => {
+        const p = (saved ?? {}) as Partial<TabState>;
+        const tabs = (p.tabs ?? []).slice(-MAX_TABS);
+        return { ...current, ...p, tabs, activeTabId: tabs.some((t) => t.id === p.activeTabId) ? p.activeTabId! : tabs[tabs.length - 1]?.id ?? null };
+      },
     }
   )
 );
