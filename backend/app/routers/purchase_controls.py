@@ -16,7 +16,7 @@ from app.services import item_request_service, po_email_service, vendor_gst
 from app.services.auth_service import write_audit
 
 gst = APIRouter(prefix="/suppliers", tags=["vendor gst"])
-items = APIRouter(prefix="/products/requests", tags=["item requests"])
+items = APIRouter(prefix="/item-requests", tags=["item requests"])
 mail = APIRouter(prefix="/purchases/po-email", tags=["po email"])
 routers = (gst, items, mail)
 

@@ -102,7 +102,7 @@ PATHS: dict[str, str] = {
     "/cash": "cash", "/accounts": "accounts", "/schemes": "schemes", "/import-export": "import_export",
     "/users": "users", "/roles": "users", "/permissions": "users", "/access": "users", "/company": "settings",
     "/audit-logs": "audit", "/stock-reports": "rep_stock", "/manufacturing": "manufacturing",
-    "/purchases/po-email": "purchase_order", "/imports": "imports", "/approvals": "approvals", "/payment-modes": "payment_modes", "/expiry": "expiry", "/loyalty": "loyalty",
+    "/purchases/po-email": "purchase_order", "/imports": "imports", "/item-requests": "items", "/approvals": "approvals", "/payment-modes": "payment_modes", "/expiry": "expiry", "/loyalty": "loyalty",
     "/discount-policy": "discounts", "/ho-dashboard": "dashboard",
     "/reports": "rep_analytics",
     **{f"/reports/{p}": "rep_sales" for p in ("sales", "hourly", "sales-trend", "top-items", "category-sales",

@@ -46,7 +46,7 @@ export function NewItemRequest({ purchaseRef, supplierId, onClose }: { purchaseR
     for (const k of ['barcode', 'hsn_code']) if (f[k]) product[k] = f[k].trim();
     for (const k of ['gst_percent', 'basic_cost', 'cost_price', 'mrp', 'selling_price', 'wsp', 'shelf_life_days']) if (f[k] !== '') product[k] = Number(f[k]);
     try {
-      const r = await api.post('/products/requests', { purchase_ref: f.purchase_ref, reason: f.reason, product });
+      const r = await api.post('/item-requests', { purchase_ref: f.purchase_ref, reason: f.reason, product });
       toast.success(r.data.status === 'APPROVED' ? `Item created: ${r.data.posted_ref}` : `Request ${r.data.request_no} sent for approval`); onClose();
     } catch (e) { err(e); }
   };
