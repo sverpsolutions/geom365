@@ -1195,6 +1195,19 @@ const ProductAdd = () => {
     }
   };
 
+  // Item Type drives the Stock Classification ticks (only when the user changes the type; saved items keep their ticks)
+  const TYPE_FLAGS: Record<string, Record<string, boolean>> = {
+    FG:   { is_sellable: true,  is_raw_material: false, is_raw_non_sellable: false, is_consumable: false },
+    RM:   { is_sellable: false, is_raw_material: true,  is_raw_non_sellable: true,  is_consumable: false },
+    PM:   { is_sellable: false, is_raw_material: false, is_raw_non_sellable: true,  is_consumable: false },
+    SFG:  { is_sellable: false, is_raw_material: false, is_raw_non_sellable: true,  is_consumable: false },
+    CONS: { is_sellable: false, is_raw_material: false, is_raw_non_sellable: false, is_consumable: true },
+  };
+  const applyItemType = (t: string) => {
+    Object.entries(TYPE_FLAGS[t] || {}).forEach(([k, v]) => setValue(k, v, { shouldDirty: true }));
+    if (t !== 'FG') setValue('bom_applicable', t === 'SFG', { shouldDirty: true });
+  };
+
   const onSubmit = async (data: any) => {
     if (!hsnSearch.trim()) {
       toast.error('HSN / SAC Code is required');
@@ -1791,7 +1804,7 @@ const ProductAdd = () => {
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                         <div className="md:col-span-3">
                           <Label required>Item Type</Label>
-                          <select {...register('item_type')} className={`${selectCls} font-semibold`}>
+                          <select {...register('item_type', { onChange: e => applyItemType(e.target.value) })} className={`${selectCls} font-semibold`}>
                             <option value="FG">Finished Goods</option><option value="RM">Raw Material</option><option value="PM">Packing Material</option>
                             <option value="SFG">Semi-Finished Goods</option><option value="CONS">Consumables</option><option value="OTH">Other Inventory</option>
                           </select>
