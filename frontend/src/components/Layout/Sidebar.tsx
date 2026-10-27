@@ -94,6 +94,7 @@ const NAV_SECTIONS = [
     icon: 'fas fa-shopping-cart',
     color: '#ef4444', // Red
     children: [
+      { label: 'Excel Import (PO / GRN / Bill / Items / Prices)', to: '/imports', icon: 'fas fa-file-excel' },
       { label: 'PO List', to: '/purchases/po', icon: 'fas fa-file-invoice' },
       { label: 'Create New PO', to: '/purchases/po/create', icon: 'fas fa-plus-circle' },
       { label: 'GRN — Inward', to: '/purchases/grn', icon: 'fas fa-truck-loading' },

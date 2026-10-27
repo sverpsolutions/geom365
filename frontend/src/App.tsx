@@ -130,6 +130,7 @@ import PaymentModes from './pages/retail/PaymentModes';
 import HeadOffice from './pages/retail/HeadOffice';
 import Loyalty from './pages/retail/Loyalty';
 import DiscountPolicy from './pages/retail/DiscountPolicy';
+import ExcelImport from './pages/retail/ExcelImport';
 import { PoEmailSettings } from './pages/retail/purchaseControls';
 
 // Placeholder components for other modules
@@ -322,6 +323,7 @@ const App = () => {
             <Route path="loyalty" element={<Loyalty />} />
             <Route path="settings/discounts" element={<DiscountPolicy />} />
             <Route path="settings/po-email" element={<PoEmailSettings />} />
+            <Route path="imports" element={<ExcelImport />} />
 
             {/* Any other path: keep the shell; TabbedOutlet renders it from routes/config.tsx */}
             <Route path="*" element={null} />
