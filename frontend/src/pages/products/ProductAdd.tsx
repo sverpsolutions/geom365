@@ -1789,10 +1789,10 @@ const ProductAdd = () => {
 
                       {/* Classification & Full Item Name */}
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                        <div>
+                        <div className="md:col-span-3">
                           <Label required>Item Type</Label>
                           <select {...register('item_type')} className={`${selectCls} font-semibold`}>
-                            <option value="FG">Finished Goods</option><option value="RM">Raw Material</option><option value="PM">Packing Material (tin, cap, label, carton…)</option>
+                            <option value="FG">Finished Goods</option><option value="RM">Raw Material</option><option value="PM">Packing Material</option>
                             <option value="SFG">Semi-Finished Goods</option><option value="CONS">Consumables</option><option value="OTH">Other Inventory</option>
                           </select>
                         </div>
@@ -1803,7 +1803,7 @@ const ProductAdd = () => {
                             {classifications.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                           </select>
                         </div>
-                        <div className="md:col-span-9">
+                        <div className="md:col-span-6">
                           <Label>Full Item Name</Label>
                           <input 
                             {...register('full_item_name')} 
