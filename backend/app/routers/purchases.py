@@ -464,7 +464,11 @@ async def create_po(
                           description=f"PO {h.po_no} created for {h.total_amount}",
                           user_id=user.user_id, user_name=user.username)
         await db.commit()
-        return {"success": True, "po_id": h.id, "po_no": h.po_no}
+        email = None
+        if h.approval_status == "approved":       # Save & Approve
+            from app.routers.purchase_controls import on_po_approved
+            email = await on_po_approved(db, h.id, user.user_id)
+        return {"success": True, "po_id": h.id, "po_no": h.po_no, "email": email}
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -786,7 +790,11 @@ async def approve_po(
                       description=f"PO {h.po_no} status changed to {body.status}",
                       user_id=user.user_id, user_name=user.username)
     await db.commit()
-    return {"success": True, "new_status": body.status}
+    email = None
+    if body.status == "approved":
+        from app.routers.purchase_controls import on_po_approved
+        email = await on_po_approved(db, po_id, user.user_id)
+    return {"success": True, "new_status": body.status, "email": email}
 
 
 # ── DISTRIBUTION ─────────────────────────────────────────────────────────────

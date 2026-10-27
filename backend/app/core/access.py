@@ -101,7 +101,7 @@ PATHS: dict[str, str] = {
     "/cash": "cash", "/accounts": "accounts", "/schemes": "schemes", "/import-export": "import_export",
     "/users": "users", "/roles": "users", "/permissions": "users", "/access": "users", "/company": "settings",
     "/audit-logs": "audit", "/stock-reports": "rep_stock", "/manufacturing": "manufacturing",
-    "/approvals": "approvals", "/payment-modes": "payment_modes", "/expiry": "expiry", "/loyalty": "loyalty",
+    "/purchases/po-email": "purchase_order", "/approvals": "approvals", "/payment-modes": "payment_modes", "/expiry": "expiry", "/loyalty": "loyalty",
     "/discount-policy": "discounts", "/ho-dashboard": "dashboard",
     "/reports": "rep_analytics",
     **{f"/reports/{p}": "rep_sales" for p in ("sales", "hourly", "sales-trend", "top-items", "category-sales",
@@ -119,7 +119,7 @@ _PATHS_SORTED = sorted(PATHS.items(), key=lambda kv: -len(kv[0]))
 ACTION_PATHS: dict[tuple[str, str], str] = {
     ("POST", "/expiry/removals"): "remove_expired", ("POST", "/expiry/batch-correction"): "change_batch",
     ("POST", "/expiry/expiry-correction"): "edit", ("PUT", "/expiry/bands"): "edit",
-    ("PUT", "/approvals/policies"): "edit", ("POST", "/shifts/day/reopen"): "reopen", ("PUT", "/shifts/closing-settings"): "approve",
+    ("PUT", "/approvals/policies"): "edit", ("POST", "/purchases/po-email"): "email", ("PUT", "/purchases/po-email/settings"): "edit", ("POST", "/shifts/day/reopen"): "reopen", ("PUT", "/shifts/closing-settings"): "approve",
     ("PUT", "/discount-policy"): "edit", ("PUT", "/loyalty/config"): "edit", ("PUT", "/loyalty/rules"): "edit", ("POST", "/loyalty/adjust"): "view", ("POST", "/discount-policy/request"): "view",
     ("POST", "/approvals/file"): "view", ("POST", "/approvals/resubmit"): "view", ("POST", "/approvals/cancel"): "view",
 }

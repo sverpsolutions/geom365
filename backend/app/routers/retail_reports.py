@@ -5,7 +5,7 @@ from app.services.expiry_service import today
 
 G = "Expiry & Batches"
 BASE = """FROM product_batch_stock s JOIN product_batches b ON b.id = s.batch_id JOIN products p ON p.id = s.product_id
-    LEFT JOIN categories c ON c.id = p.category_id LEFT JOIN outlets o ON o.id = s.location_id
+    LEFT JOIN item_categories c ON c.id = p.category_id LEFT JOIN outlets o ON o.id = s.location_id
     LEFT JOIN LATERAL (SELECT u.purchase_no, u.invoice_date AS grn_date FROM unit_wise_purchase_items pi JOIN unit_wise_purchases u ON u.id = pi.purchase_id
         WHERE pi.batch_id = b.id ORDER BY u.id LIMIT 1) g ON TRUE"""
 STATUS = """CASE WHEN b.exp_date IS NULL THEN 'No expiry' WHEN b.exp_date <= :today THEN 'Already expired' ELSE

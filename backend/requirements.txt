@@ -17,3 +17,4 @@ pymysql
 pandas
 openpyxl
 bcrypt
+fpdf2==2.7.9

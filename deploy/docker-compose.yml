@@ -27,6 +27,14 @@ services:
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in deploy/.env}
       ALLOWED_ORIGINS: https://${DOMAIN}
       DEBUG: "false"
+      # Outlook PO e-mail (Microsoft Graph, app-only Mail.Send) and authorised GST lookup — set in deploy/.env, optional
+      MS_TENANT_ID: ${MS_TENANT_ID:-}
+      MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+      MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
+      MS_SENDER: ${MS_SENDER:-}
+      GST_API_URL: ${GST_API_URL:-}
+      GST_API_KEY: ${GST_API_KEY:-}
+      GST_API_KEY_HEADER: ${GST_API_KEY_HEADER:-}
     volumes:
       - uploads:/app/uploads
 

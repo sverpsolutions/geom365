@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { suppliers_api } from '../../api/suppliers'
 import PageHeader from '../../components/ui/PageHeader'
+import { GstCheck } from '../retail/purchaseControls'
 
 interface form_state {
   name: string; phone: string; supplier_code: string; supplier_type: string
@@ -132,6 +133,8 @@ export default function supplier_form_page() {
         <div className="grid grid-cols-2 gap-4">
           {inp('GST Number', 'gst_number', 'text', '07ABCDE1234F1Z5')}
           {inp('PAN Number', 'pan_number', 'text', 'ABCDE1234F')}
+          <GstCheck gstin={form.gst_number} supplierId={id ? Number(id) : undefined}
+            onFill={d => set_form(f => ({ ...f, name: f.name || d.name || '', address: f.address || d.address || '' }))} />
         </div>
 
         {sec('Financial & Terms')}

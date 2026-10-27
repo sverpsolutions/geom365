@@ -76,7 +76,7 @@ async def batches(outlet_id: Optional[int] = None, within_days: Optional[int] = 
         (SELECT COALESCE(SUM((a.payload->>'qty')::numeric), 0) FROM approval_requests a WHERE a.request_type = 'EXPIRED_REMOVAL'
            AND a.status = 'PENDING' AND a.payload->>'batch_outlet' = b.id || ':' || s.location_id) AS removal_pending
         FROM product_batch_stock s JOIN product_batches b ON b.id = s.batch_id JOIN products p ON p.id = s.product_id
-        LEFT JOIN categories c ON c.id = p.category_id LEFT JOIN outlets o ON o.id = s.location_id
+        LEFT JOIN item_categories c ON c.id = p.category_id LEFT JOIN outlets o ON o.id = s.location_id
         LEFT JOIN LATERAL (SELECT u.purchase_no, u.invoice_date AS grn_date FROM unit_wise_purchase_items pi JOIN unit_wise_purchases u ON u.id = pi.purchase_id
             WHERE pi.batch_id = b.id ORDER BY u.id LIMIT 1) g ON TRUE
         WHERE (:inc OR s.current_qty > 0) AND b.exp_date IS NOT NULL

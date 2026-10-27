@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom'
 import { purchases_api, type po_detail } from '../../api/purchases'
 import { getCompanySettings, type CompanySettings } from '../../api/company'
 import { QRCodeSVG } from 'qrcode.react'
+import { NewItemRequest, PoEmailPanel } from '../retail/purchaseControls'
 
 const STATUS_COLOR: Record<string, string> = {
   draft:            'bg-slate-100 text-slate-600 border-slate-300',
@@ -39,6 +40,7 @@ export default function PODetail() {
   const navigate = useNavigate()
 
   const [po, set_po]           = useState<po_detail | null>(null)
+  const [new_item, set_new_item] = useState(false)
   const [loading, set_loading] = useState(true)
   const [approving, set_approving] = useState(false)
   const [remarks, set_remarks]     = useState('')
@@ -286,6 +288,10 @@ export default function PODetail() {
               <i className="fas fa-truck-loading mr-1.5"></i> Process Inward / GRN
             </button>
           )}
+          <button onClick={() => set_new_item(true)} title="Item not in the master? Request it against this PO"
+            className="px-4 py-2 border border-indigo-200 text-indigo-700 text-sm font-semibold rounded-xl hover:bg-indigo-50 transition-colors">
+            <i className="fas fa-plus mr-1" /> New Item
+          </button>
           <button
             onClick={() => navigate('/purchases/po')}
             className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-semibold rounded-xl hover:bg-slate-50 transition-colors">
@@ -293,6 +299,9 @@ export default function PODetail() {
           </button>
         </div>
       </div>
+
+      {new_item && <NewItemRequest purchaseRef={po.po_no} supplierId={(po as any).supplier_id} onClose={() => set_new_item(false)} />}
+      <div className="print:hidden"><PoEmailPanel poId={po.id} approved={po.approval_status === 'approved'} /></div>
 
       {/* Approve modal */}
       {show_approve && (
