@@ -158,6 +158,7 @@ const NAV_SECTIONS = [
     children: [
       { label: 'Plant Dashboard', to: '/manufacturing/plant', icon: 'fas fa-gauge-high' },
       { label: 'Customer Orders & Dispatch', to: '/manufacturing/customer-orders', icon: 'fas fa-file-signature' },
+      { label: 'Material Planning & Shortages', to: '/manufacturing/material-planning', icon: 'fas fa-clipboard-check' },
       { label: 'Printing Job Work', to: '/manufacturing/printing', icon: 'fas fa-print' },
       { label: 'Production', to: '/manufacturing/production', icon: 'fas fa-industry' },
       { label: 'Department Stores', to: '/manufacturing/stores', icon: 'fas fa-warehouse' },

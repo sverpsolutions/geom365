@@ -71,7 +71,7 @@ class mfg_bom_item(base):
     bom_id: Mapped[int] = mapped_column(Integer, ForeignKey("mfg_boms.id", ondelete="CASCADE"), nullable=False)
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id"), nullable=False)
     material_type: Mapped[str] = mapped_column(String(30), default="RAW_MATERIAL")  # RAW_MATERIAL, PACKAGING, PREMIX, CONSUMABLE, SUB_ASSEMBLY
-    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), nullable=False)
     unit: Mapped[str] = mapped_column(String(20), default="KG")
     wastage_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
     cost_per_unit: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
@@ -80,6 +80,8 @@ class mfg_bom_item(base):
     sub_bom_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("mfg_boms.id", ondelete="SET NULL"), nullable=True)
     stage: Mapped[str] = mapped_column(String(50), default="Mixing")
     sequence: Mapped[int] = mapped_column(Integer, default=1)
+    round_up: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    preferred_store_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships

@@ -124,6 +124,7 @@ import MfgPrinting from '../pages/manufacturing/MfgPrinting';
 import MfgProduction from '../pages/manufacturing/MfgProduction';
 import MfgCustomerOrders from '../pages/manufacturing/MfgCustomerOrders';
 import MfgPlantDashboard from '../pages/manufacturing/MfgPlantDashboard';
+import MfgPlanning from '../pages/manufacturing/MfgPlanning';
 import Approvals from '../pages/retail/Approvals';
 import ExpiryControl from '../pages/retail/Expiry';
 import PaymentModes from '../pages/retail/PaymentModes';
@@ -284,6 +285,7 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '1412', path: '/manufacturing/production', component: MfgProduction, title: 'Production' },
   { id: '1413', path: '/manufacturing/customer-orders', component: MfgCustomerOrders, title: 'Customer Orders & Dispatch' },
   { id: '1414', path: '/manufacturing/plant', component: MfgPlantDashboard, title: 'Plant Dashboard' },
+  { id: '1415', path: '/manufacturing/material-planning', component: MfgPlanning, title: 'Material Planning' },
   { id: '1501', path: '/approvals', component: Approvals, title: 'Approvals' },
   { id: '1502', path: '/inventory/expiry-control', component: ExpiryControl, title: 'Expiry Control' },
   { id: '1503', path: '/settings/payment-modes', component: PaymentModes, title: 'Payment Modes' },

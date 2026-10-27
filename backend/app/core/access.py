@@ -20,7 +20,7 @@ from app.core.database import async_session_factory
 from app.core.security import decode_token
 
 ACTIONS = ["view", "create", "edit", "delete", "approve", "cancel", "print", "export", "import", "submit", "reopen", "email",
-           "change_price", "change_batch", "remove_expired", "po", "grn", "wholesale", "items", "prices"]
+           "change_price", "change_batch", "remove_expired", "po", "grn", "wholesale", "items", "prices", "release", "override"]
 A_ALL = ACTIONS
 
 # key, label, kind (module | report), actions offered
@@ -46,7 +46,7 @@ MODULES: list[tuple[str, str, str, list[str]]] = [
     ("accounts", "Accounts Payable", "module", ["view", "create", "edit", "approve"]),
     ("schemes", "Schemes & Bulk Discount", "module", ["view", "create", "edit", "delete"]),
     ("shop", "Online Shop", "module", ["view", "create", "edit", "delete"]),
-    ("manufacturing", "Manufacturing / Production", "module", ["view", "create", "edit", "delete", "approve", "cancel", "print", "export"]),
+    ("manufacturing", "Manufacturing / Production", "module", ["view", "create", "edit", "delete", "approve", "cancel", "print", "export", "release", "override"]),
     ("import_export", "Data Import / Export", "module", ["view", "import", "export"]),
     ("approvals", "Approvals", "module", ["view", "approve", "edit"]),
     ("payment_modes", "Payment Mode Master", "module", ["view", "create", "edit", "delete"]),
@@ -171,7 +171,7 @@ def classify(path: str, method: str) -> Optional[tuple[str, str]]:
         return ("*", "view")                          # the endpoint itself checks it is your own password
     if segs & set(POST_VIEW):
         return (module, "view")
-    for words, act in (({"approve", "reject", "finalize", "confirm", "close-day", "verify"}, "approve"),
+    for words, act in (({"production-release"}, "release"), ({"approve", "reject", "finalize", "confirm", "close-day", "verify"}, "approve"),
                        ({"cancel", "void"}, "cancel"), ({"import", "upload", "process"}, "import"),
                        ({"export", "email"}, "export"), ({"print", "mark-printed"}, "print"),
                        ({"toggle", "receive", "dispatch", "dispatch-confirm", "items", "boxes", "reset-password"}, "edit")):

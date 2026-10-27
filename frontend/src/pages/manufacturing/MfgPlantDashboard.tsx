@@ -22,6 +22,19 @@ export default function MfgPlantDashboard() {
   return (
     <div className="p-4 max-w-7xl mx-auto space-y-5">
       <h1 className="text-xl font-bold text-slate-800"><i className="fas fa-gauge-high text-indigo-600 mr-2" />Plant Dashboard</h1>
+      {d.planning && section('Material planning', [
+        <Stat key="1" label="Open production orders" value={d.planning.open_orders} onClick={go('/manufacturing/material-planning')} />,
+        <Stat key="2" label="Ready for production" value={d.planning.ready} tone="green" onClick={go('/manufacturing/material-planning')} />,
+        <Stat key="3" label="Orders with shortages" value={d.planning.with_shortage} tone={d.planning.with_shortage ? 'amber' : 'slate'} onClick={go('/reports/r/mfg_shortage')} />,
+        <Stat key="4" label="Blocked by shortage" value={d.planning.blocked} tone={d.planning.blocked ? 'red' : 'slate'} onClick={go('/manufacturing/material-planning')} />,
+        <Stat key="5" label="Raw materials short" value={d.planning.rm_short} tone={d.planning.rm_short ? 'red' : 'slate'} onClick={go('/reports/r/mfg_shortage')} />,
+        <Stat key="6" label="Packing materials short" value={d.planning.pm_short} tone={d.planning.pm_short ? 'red' : 'slate'} onClick={go('/reports/r/mfg_shortage')} />,
+        <Stat key="7" label="Awaiting purchase" value={d.planning.awaiting_purchase} onClick={go('/manufacturing/material-planning')} />,
+        <Stat key="8" label="Awaiting transfer" value={d.planning.awaiting_transfer} onClick={go('/manufacturing/material-planning')} />,
+        <Stat key="9" label="Low-stock materials" value={d.planning.low_stock} tone={d.planning.low_stock ? 'amber' : 'slate'} />,
+        <Stat key="10" label="Pending GRNs" value={d.planning.pending_grn} onClick={go('/purchases')} />,
+        <Stat key="11" label="Pending material transfers" value={d.planning.pending_transfers} onClick={go('/manufacturing/stores')} />,
+      ])}
       {section('Stores', [
         <Stat key="1" label="Raw material" value={fmt(c.raw_material)} onClick={go('/manufacturing/stores')} />,
         <Stat key="2" label="Packaging material" value={fmt(c.packaging)} onClick={go('/manufacturing/stores')} />,

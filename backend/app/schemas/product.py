@@ -1,3 +1,4 @@
+from typing import Literal
 from datetime import datetime, date
 from decimal import Decimal
 from pydantic import BaseModel, field_validator
@@ -358,6 +359,12 @@ class sub_category_brand_out(BaseModel):
 # ── Product ───────────────────────────────────────────────────────────────────
 
 class product_create(BaseModel):
+    item_type: Literal["FG", "RM", "PM", "SFG", "CONS", "OTH"] = "FG"
+    bom_applicable: bool = False
+    default_store_id: int | None = None
+    item_remarks: str | None = None
+    purchase_pack_qty: Decimal | None = None
+    min_order_qty: Decimal | None = None
     name: str
     bill_print_name: str | None = None
     full_item_name: str | None = None
@@ -504,6 +511,12 @@ class product_create(BaseModel):
 
 
 class product_update(BaseModel):
+    item_type: Literal["FG", "RM", "PM", "SFG", "CONS", "OTH"] | None = None
+    bom_applicable: bool | None = None
+    default_store_id: int | None = None
+    item_remarks: str | None = None
+    purchase_pack_qty: Decimal | None = None
+    min_order_qty: Decimal | None = None
     name: str | None = None
     bill_print_name: str | None = None
     full_item_name: str | None = None
@@ -647,6 +660,12 @@ class barcode_out(BaseModel):
 
 
 class product_out(BaseModel):
+    item_type: Literal["FG", "RM", "PM", "SFG", "CONS", "OTH"] | None = None
+    bom_applicable: bool | None = None
+    default_store_id: int | None = None
+    item_remarks: str | None = None
+    purchase_pack_qty: Decimal | None = None
+    min_order_qty: Decimal | None = None
     id: int
     name: str
     bill_print_name: str | None = None

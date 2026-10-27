@@ -444,9 +444,10 @@ class transfer_in(BaseModel):
 
 @router.get("/transfers")
 async def list_transfers(status: Optional[str] = None, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
-    heads = await _rows(db, """SELECT t.*, fs.name AS from_store, ts.name AS to_store, ru.name AS requested_by_name, au.name AS approved_by_name,
+    heads = await _rows(db, """SELECT t.*, COALESCE(fs.name, 'Warehouse: ' || wo.outlet_name) AS from_store, ts.name AS to_store, ru.name AS requested_by_name, au.name AS approved_by_name,
         TO_CHAR(t.requested_at + INTERVAL '5 hours 30 minutes', 'DD Mon YYYY HH24:MI') AS requested
-        FROM mfg_transfers t JOIN mfg_stores fs ON fs.id = t.from_store_id JOIN mfg_stores ts ON ts.id = t.to_store_id
+        FROM mfg_transfers t LEFT JOIN mfg_stores fs ON fs.id = t.from_store_id LEFT JOIN outlets wo ON wo.id = t.from_outlet_id
+        JOIN mfg_stores ts ON ts.id = t.to_store_id
         LEFT JOIN users ru ON ru.id = t.requested_by LEFT JOIN users au ON au.id = t.approved_by
         WHERE (CAST(:s AS TEXT) IS NULL OR t.status = :s) ORDER BY t.id DESC LIMIT 500""", {"s": status})
     if heads:
@@ -488,6 +489,23 @@ async def approve_transfer(tid: int, db: AsyncSession = Depends(get_db), user=De
         raise HTTPException(400, f"Transfer {t['transfer_no']} is already {t['status'].lower()}.")
     _not_own(t["requested_by"], user)
     lines = (await db.execute(text("SELECT * FROM mfg_transfer_lines WHERE transfer_id = :i ORDER BY id"), {"i": tid})).mappings().all()
+    if t["from_outlet_id"]:                       # warehouse (GRN location) -> plant store: leaves the outlet stock at the same moment
+        from app.services.billing_service import _update_product_stock, _write_stock_ledger
+        for ln in lines:
+            q = stk.d(ln["qty"])
+            have = stk.d((await db.execute(text("SELECT stock_qty FROM outlet_stock WHERE outlet_id = :o AND product_id = :p FOR UPDATE"),
+                                           {"o": t["from_outlet_id"], "p": ln["product_id"]})).scalar())
+            if have < q:
+                it = await stk.item(db, ln["product_id"])
+                raise HTTPException(400, f"Warehouse has only {have.normalize():f} {it['unit']} of '{it['name']}' (requested {q.normalize():f}).")
+            await _update_product_stock(db, ln["product_id"], -q, t["from_outlet_id"])
+            await _write_stock_ledger(db=db, product_id=ln["product_id"], txn_type="mfg_inward", qty=-q, ref_id=tid, ref_type="mfg_transfer",
+                                      outlet_id=t["from_outlet_id"], notes=f"{t['transfer_no']} to plant store", user_id=user.user_id,
+                                      batch_no=ln["batch_no"] or None)
+            await stk.post(db, txn_type="INWARD", product_id=ln["product_id"], qty_base=q, from_store=None, to_store=t["to_store_id"],
+                           user_id=user.user_id, batch_no=ln["batch_no"], brand_id=ln["brand_id"], ref_type="transfer", ref_id=tid,
+                           ref_no=t["transfer_no"], doc_no=t["transfer_no"], request_key=f"trf:{tid}:{ln['id']}", remarks="From warehouse")
+        lines = []
     for ln in lines:
         await stk.post(db, txn_type="TRANSFER", product_id=ln["product_id"], qty_base=ln["qty"], from_store=t["from_store_id"],
                        to_store=t["to_store_id"], user_id=user.user_id, batch_no=ln["batch_no"], brand_id=ln["brand_id"],

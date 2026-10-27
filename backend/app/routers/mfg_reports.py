@@ -418,3 +418,60 @@ async def mfg_pending_orders(db, f: F):
 
 
 access.register_paths({f"/reports/x/{k}": M for k in REPORTS if k.startswith("mfg_")})
+
+
+# ── planning: order-wise shortage & production variance ──────────────────────
+TYPE_NAME = {"FG": "Finished Goods", "RM": "Raw Material", "PM": "Packing Material", "SFG": "Semi-Finished", "CONS": "Consumable", "OTH": "Other"}
+
+
+@report("mfg_shortage", "Order-wise raw material & packing material shortage", G_PRD, M, ("search",),
+        note="Every open production / customer order, allocated in priority order so stock is never counted twice. Pending POs are expected "
+             "supply, not stock. Search: customer, order, product, material, 'RM' / 'PM', or 'short' for shortages only.")
+async def mfg_shortage(db, f: F):
+    from app.services import mfg_planning as mp
+    q = f.search.strip().lower()
+    rows = []
+    for o in await mp.open_orders(db):
+        for l in o["lines"]:
+            r = {"customer": o["customer"] or "Own stock", "so_no": o["so_no"], "order_no": o["order_no"] if o["kind"] == "MO" else "(not planned)",
+                 "product": o["product"], "ordered": float(o["qty"]), "need_by": o["need_by"], "bom": o.get("bom"), "item_code": l["item_code"],
+                 "item": l["item"], "item_type": TYPE_NAME.get(l["item_type"], l["item_type"]), "unit": l["unit"], "required": float(l["net_required"]),
+                 "usable": float(l["plant"]), "reserved": float(l["reserved_other"]), "available": float(l["available"]), "shortage": float(l["shortage"]),
+                 "warehouse": float(l["warehouse"]), "qc_hold": float(l["qc_hold"]), "pending_po": float(l["pending_po"]), "po_eta": l["po_eta"],
+                 "transfer": float(l["transfer_suggested"]), "purchase": float(l["purchase_suggested"]), "status": l["status"],
+                 "order_status": o["overall"]["color"]}
+            hay = " ".join(str(v) for v in r.values()).lower()
+            if q == "short" and not r["shortage"] or q in ("rm", "pm") and l["item_type"] != q.upper() or q not in ("", "short", "rm", "pm") and q not in hay:
+                continue
+            rows.append(r)
+    return {"columns": [col("customer", "Customer"), col("so_no", "Customer order"), col("order_no", "Production order"), col("product", "Finished product"),
+                        col("ordered", "Ordered", "qty"), col("need_by", "Required by", "date"), col("bom", "BOM version"), col("item_code", "Code"),
+                        col("item", "Component"), col("item_type", "Type"), col("unit", "Unit"), col("required", "Required", "qty"),
+                        col("usable", "Usable stock", "qty"), col("reserved", "Reserved (other orders)", "qty"), col("available", "Available", "qty"),
+                        col("shortage", "Shortage", "qty"), col("warehouse", "Warehouse", "qty"), col("qc_hold", "QC hold", "qty"),
+                        col("pending_po", "PO pending", "qty"), col("po_eta", "Expected", "date"), col("transfer", "Suggested transfer", "qty"),
+                        col("purchase", "Suggested purchase", "qty"), col("status", "Status"), col("order_status", "Order")], "rows": rows}
+
+
+@report("mfg_variance", "Production variance: BOM standard vs actual", G_PRD, M, ("date", "search"),
+        note="Standard = BOM quantity per unit x good output (+ expected wastage). Actual = posted consumption + damage (returns excluded).")
+async def mfg_variance(db, f: F):
+    rows = await _rows(db, f"""SELECT o.order_no, p.name AS product, o.completed_qty AS output, m.item_code, m.name AS material,
+        ROUND(bi.quantity / NULLIF(bo.batch_size, 0) * o.completed_qty, 4) AS standard, bi.wastage_pct,
+        ROUND(bi.quantity / NULLIF(bo.batch_size, 0) * o.completed_qty * (1 + COALESCE(bi.wastage_pct, 0) / 100), 4) AS standard_with_wastage,
+        i.issued_qty, i.consumed_qty + i.damaged_qty AS actual, i.returned_qty, i.cost_per_unit, i.variance_reason
+        {MO} JOIN mfg_boms bo ON bo.id = o.bom_id JOIN mfg_order_items i ON i.mfg_order_id = o.id JOIN products m ON m.id = i.product_id
+        LEFT JOIN LATERAL (SELECT quantity, wastage_pct FROM mfg_bom_items x WHERE x.bom_id = o.bom_id AND x.product_id = i.product_id ORDER BY id LIMIT 1) bi ON TRUE
+        WHERE o.planned_start_date BETWEEN :fd AND :td AND o.completed_qty > 0 AND {MOQ} ORDER BY o.id, i.id""", _q(f))
+    for r in rows:
+        r["variance"] = round((r["actual"] or 0) - (r["standard"] or 0), 4)
+        r["variance_pct"] = round(r["variance"] / r["standard"] * 100, 2) if r["standard"] else None
+        r["variance_cost"] = round(r["variance"] * (r["cost_per_unit"] or 0), 2)
+    return {"columns": [col("order_no", "Order"), col("product", "Product"), col("output", "Good output", "qty"), col("item_code", "Code"),
+                        col("material", "Material"), col("standard", "Standard", "qty"), col("wastage_pct", "Wastage %", "pct"),
+                        col("standard_with_wastage", "Standard + wastage", "qty"), col("issued_qty", "Issued", "qty"), col("actual", "Actual consumed", "qty"),
+                        col("returned_qty", "Returned", "qty"), col("variance", "Variance", "qty"), col("variance_pct", "Variance %", "pct"),
+                        col("variance_cost", "Variance cost", "money"), col("variance_reason", "Reason")], "rows": rows}
+
+
+access.register_paths({"/reports/x/mfg_shortage": M, "/reports/x/mfg_variance": M})

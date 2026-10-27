@@ -124,6 +124,7 @@ import MfgPrinting from './pages/manufacturing/MfgPrinting';
 import MfgProduction from './pages/manufacturing/MfgProduction';
 import MfgCustomerOrders from './pages/manufacturing/MfgCustomerOrders';
 import MfgPlantDashboard from './pages/manufacturing/MfgPlantDashboard';
+import MfgPlanning from './pages/manufacturing/MfgPlanning';
 import Approvals from './pages/retail/Approvals';
 import ExpiryControl from './pages/retail/Expiry';
 import PaymentModes from './pages/retail/PaymentModes';
@@ -316,6 +317,7 @@ const App = () => {
             <Route path="manufacturing/production" element={<MfgProduction />} />
             <Route path="manufacturing/customer-orders" element={<MfgCustomerOrders />} />
             <Route path="manufacturing/plant" element={<MfgPlantDashboard />} />
+            <Route path="manufacturing/material-planning" element={<MfgPlanning />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="inventory/expiry-control" element={<ExpiryControl />} />
             <Route path="settings/payment-modes" element={<PaymentModes />} />

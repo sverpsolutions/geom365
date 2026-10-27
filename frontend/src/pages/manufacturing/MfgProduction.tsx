@@ -145,7 +145,16 @@ function OrderDetail({ id, onClose, onOpen }: { id: number; onClose: () => void;
             <button className={btnSec} onClick={() => { const r = prompt('Cancel reason'); if (r) post(`orders/${id}/cancel`, { reason: r }, 'Cancelled'); }}>Cancel</button></>}
           {['APPROVED', 'MATERIAL_SHORTAGE', 'READY', 'IN_PRODUCTION'].includes(o.status) && <button className={btnSec} onClick={async () => {
             const r = await post(`orders/${id}/reserve`, undefined, 'Reservation updated'); if (r?.shortages?.length) toast.error(`${r.shortages.length} material(s) short`); }}>Reserve materials</button>}
-          {active && <button className={btnPri} onClick={() => setMode('issue')}>Issue material</button>}
+          {active && !o.released_at && <button className={btnPri} onClick={async () => {
+            try {
+              const r = (await api.get(`/manufacturing/prod/orders/${id}/readiness`)).data;
+              if (r.ready) { if (confirm('All materials are available. Release this order for production?')) await post(`orders/${id}/production-release`, {}, 'Released for production'); return; }
+              const why = prompt(`NOT READY:\n- ${r.problems.join('\n- ')}\n\nTo release anyway (needs the override permission) give the reason:`);
+              if (why) await post(`orders/${id}/production-release`, { override_reason: why }, 'Released with override');
+            } catch (e) { err(e); }
+          }}><i className="fas fa-flag-checkered mr-1" />Release for production</button>}
+          {o.released_at && <span className="text-xs text-emerald-700 self-center"><i className="fas fa-check mr-1" />Released{o.release_override_reason ? ` (override: ${o.release_override_reason})` : ''}</span>}
+          {active && o.released_at && <button className={btnPri} onClick={() => setMode('issue')}>Issue material</button>}
           {['IN_PRODUCTION', 'AWAITING_QC', 'PARTIALLY_COMPLETED'].includes(o.status) && <button className={btnPri} onClick={() => setMode('report')}>Report production</button>}
           {active && o.status !== 'APPROVED' && <button className={btnSec} onClick={() => {
             const v = o.unexplained ? prompt('Material still unexplained in production. Variance reason (manager) — leave blank to cancel') : '';
@@ -166,6 +175,10 @@ function OrderDetail({ id, onClose, onOpen }: { id: number; onClose: () => void;
           ['Damaged', (i) => fmt(i.damaged_qty), 'text-right'], ['Returned', (i) => fmt(i.returned_qty), 'text-right'],
           ['In process', (i) => <b className={Number(i.in_process) ? 'text-amber-700' : ''}>{fmt(i.in_process)}</b>, 'text-right'],
           ['Where', (i) => <span className="text-[11px]">{i.locations.map((l: any) => `${l.code}${l.batch_no ? `/${l.batch_no}` : ''}: ${fmt(l.qty)}`).join(', ') || '—'}</span>],
+          ['Variance reason', (i) => <button className="text-[11px] text-indigo-700 underline text-left" onClick={() => {
+            const r = prompt(`Reason for excess consumption / wastage of ${i.item}`, i.variance_reason || '');
+            if (r !== null) api.put(`/manufacturing/prod/orders/${id}/variance-reasons`, [{ order_item_id: i.id, reason: r }]).then(() => { toast.success('Saved'); load(); }).catch(err);
+          }}>{i.variance_reason || 'add'}</button>],
         ]} />
         <h3 className="font-semibold text-sm">Output & finished-goods QC</h3>
         <Table rows={o.outputs} empty="No output reported yet." cols={[

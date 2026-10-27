@@ -197,12 +197,14 @@ async def _items(db, h, rows, user, job, b):
                 body = product_create(**{k: v for k, v in dict(name=r["item_name"], item_code=r.get("item_code"), barcode=r.get("barcode"),
                     category_id=r["category_id"], brand_id=r.get("brand_id"), hsn_code=r.get("hsn"), gst_percent=r.get("gst_pct"), unit=(r.get("unit") or "PCS").upper(),
                     basic_cost=r.get("basic_cost"), cost_price=r.get("cp"), mrp=r.get("mrp"), selling_price=r.get("sp"), wsp=r.get("wsp"),
-                    has_batch_tracking=bool(r.get("batch_tracking"))).items() if v is not None})
+                    has_batch_tracking=bool(r.get("batch_tracking")), item_type=(r.get("item_type") or "").upper() or None).items() if v is not None})
                 p = await create_product(body, db, user.user_id, user.username)       # zero stock
                 made.append(p.item_code)
             else:
                 sets, prm = [], {"i": r["product_id"]}
-                for col, field in (("item_name", "name"), ("hsn", "hsn_code"), ("gst_pct", "gst_percent"), ("category_id", "category_id"), ("brand_id", "brand_id")):
+                if r.get("item_type"):
+                    r["item_type"] = r["item_type"].upper()
+                for col, field in (("item_type", "item_type"), ("item_name", "name"), ("hsn", "hsn_code"), ("gst_pct", "gst_percent"), ("category_id", "category_id"), ("brand_id", "brand_id")):
                     if r.get(col) is not None:
                         sets.append(f"{field} = :{field}")
                         prm[field] = r[col]

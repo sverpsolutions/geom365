@@ -392,6 +392,13 @@ class product(base):
     min_stock: Mapped[Decimal] = mapped_column(Numeric(15, 3), default=0.000)
     reorder_level: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0.00)
     max_stock_level: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0.00)
+    # manufacturing inventory: FG finished, RM raw material, PM packing material, SFG semi-finished, CONS consumable, OTH other
+    item_type: Mapped[str] = mapped_column(String(4), default="FG", server_default="FG")
+    bom_applicable: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    default_store_id: Mapped[int | None] = mapped_column(Integer)
+    item_remarks: Mapped[str | None] = mapped_column(Text)
+    purchase_pack_qty: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    min_order_qty: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
     shelf_life_days: Mapped[int | None] = mapped_column(Integer)
     rack_no: Mapped[str | None] = mapped_column(String(20))
     aisle_no: Mapped[str | None] = mapped_column(String(20))

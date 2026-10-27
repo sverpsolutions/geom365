@@ -111,6 +111,7 @@ export default function BomEditorModal({ open, onClose, onSuccess, editingBom }:
       cost_per_unit: Number(p.cost_price || p.purchase_price || 100),
       total_cost: Number(p.cost_price || p.purchase_price || 100),
       is_critical: true,
+      round_up: isPack,          // packing material is issued in whole units per order (21 cartons, not 20.83)
       stage: isPack ? 'Packaging' : 'Mixing',
       sequence: items.length + 1,
     };
@@ -173,6 +174,7 @@ export default function BomEditorModal({ open, onClose, onSuccess, editingBom }:
         wastage_pct: it.wastage_pct,
         cost_per_unit: it.cost_per_unit,
         is_critical: it.is_critical,
+        round_up: !!(it as any).round_up,
         stage: it.stage,
         sequence: idx + 1,
       })),
@@ -383,6 +385,7 @@ export default function BomEditorModal({ open, onClose, onSuccess, editingBom }:
                   <th className="p-2 w-28">Type</th>
                   <th className="p-2 w-24 text-right">Qty / Batch</th>
                   <th className="p-2 w-16">Unit</th>
+                  <th className="p-2 w-12 text-center" title="Round up to whole units per order (cartons, tins)">Whole</th>
                   <th className="p-2 w-20 text-right">Waste %</th>
                   <th className="p-2 w-24 text-right">Cost / Unit</th>
                   <th className="p-2 w-24 text-right">Total Cost</th>
@@ -427,6 +430,8 @@ export default function BomEditorModal({ open, onClose, onSuccess, editingBom }:
                         />
                       </td>
                       <td className="p-2 font-bold text-slate-600">{it.unit}</td>
+                      <td className="p-2 text-center"><input type="checkbox" checked={!!(it as any).round_up} title="Round up to whole units per order"
+                        onChange={(e) => updateItem(idx, 'round_up' as any, e.target.checked as any)} /></td>
                       <td className="p-2 text-right">
                         <input
                           type="number"

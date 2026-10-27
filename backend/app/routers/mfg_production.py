@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import access
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.routers.mfg_setup import ADMIN, _audit, _not_own, _rows
@@ -93,23 +94,8 @@ async def _create_order(db, b: order_in, user) -> dict:
         if not so or so["brand_id"] != b.brand_id or so["product_id"] != bom["product_id"] or so["status"] in ("CANCELLED", "CLOSED", "COMPLETED"):
             raise HTTPException(400, "The customer order is closed or is for another brand / product.")
     planned = await stk.to_base(db, bom["product_id"], b.planned_qty, b.unit, spec["units_per_carton"] if spec else None)
-    # packaging that belongs to a brand: this spec's items carry the order's brand, other brands' items are refused
-    own_items = {spec[k] for k in ("printed_tin_item_id", "cap_item_id", "label_item_id", "carton_item_id")} - {None} if spec else set()
-    foreign = {r[0]: r[1] for r in (await db.execute(text("""SELECT x.item, b.name FROM mfg_pack_specs s JOIN mfg_brands b ON b.id = s.brand_id,
-        LATERAL (VALUES (s.printed_tin_item_id), (s.cap_item_id), (s.label_item_id), (s.carton_item_id)) x(item)
-        WHERE s.brand_id <> :b AND s.status = 'APPROVED' AND x.item IS NOT NULL"""), {"b": b.brand_id})).all()}
-    items = (await db.execute(text("SELECT * FROM mfg_bom_items WHERE bom_id = :b ORDER BY sequence, id"), {"b": b.bom_id})).mappings().all()
-    if not items:
-        raise HTTPException(400, "The BOM has no materials.")
-    scale = planned / stk.d(bom["batch_size"])
-    rows = []
-    for it in items:
-        if it["product_id"] in foreign and it["product_id"] not in own_items:
-            raise HTTPException(400, f"BOM material #{it['product_id']} is {foreign[it['product_id']]}'s packaging — another customer's "
-                                     "printed material is never substituted. Use a BOM for this brand.")
-        req = stk.d(it["quantity"]) * scale * (1 + stk.d(it["wastage_pct"]) / 100)
-        req = await stk.to_base(db, it["product_id"], req, it["unit"]) if req > 0 else D0
-        rows.append((it, req.quantize(Decimal("0.0001"))))
+    from app.services import mfg_planning
+    comps = await mfg_planning.requirements(db, dict(bom), planned, b.brand_id, dict(spec) if spec else None)   # same rules as planning
     no = await get_next_order_no(db, "MO-")
     oid = (await db.execute(text("""INSERT INTO mfg_orders (order_no, product_id, bom_id, planned_qty, completed_qty, rejected_qty, scrap_qty, unit,
         department, planned_start_date, planned_end_date, status, qc_status, estimated_cost, actual_cost, notes, created_by, stock_mode, brand_id,
@@ -119,13 +105,12 @@ async def _create_order(db, b: order_in, user) -> dict:
         {"no": no, "p": bom["product_id"], "bom": b.bom_id, "q": planned, "s": b.planned_start_date, "e": b.planned_end_date, "n": b.notes,
          "u": user.user_id, "br": b.brand_id, "sp": b.spec_id, "so": b.sales_order_id, "par": b.parent_order_id, "po": b.customer_po_no,
          "sup": b.supervisor_name, "qr": b.quality_requirements or (spec["quality_requirements"] if spec else None)})).scalar()
-    for it, req in rows:
+    for c in comps:
         await db.execute(text("""INSERT INTO mfg_order_items (mfg_order_id, product_id, material_type, required_qty, reserved_qty, issued_qty,
             consumed_qty, returned_qty, unit, cost_per_unit, total_cost, status, brand_id)
-            VALUES (:o, :p, :t, :r, 0, 0, 0, 0, (SELECT UPPER(COALESCE(unit, 'PCS')) FROM products WHERE id = :p), :c, :tc, 'PENDING', :br)"""),
-            {"o": oid, "p": it["product_id"], "t": it["material_type"], "r": req, "c": it["cost_per_unit"],
-             "tc": (stk.d(it["cost_per_unit"]) * req).quantize(Decimal("0.01")),
-             "br": b.brand_id if it["product_id"] in own_items else 0})
+            VALUES (:o, :p, :t, :r, 0, 0, 0, 0, :u, :c, :tc, 'PENDING', :br)"""),
+            {"o": oid, "p": c["product_id"], "t": c["material_type"], "r": c["required"], "u": c["unit"], "c": c["cost"],
+             "tc": (c["cost"] * c["required"]).quantize(Decimal("0.01")), "br": c["brand_id"]})
     await _audit(db, user, "create_production_order", oid, no, f"Production order {no}: {planned.normalize():f} for brand {brand['name']}")
     return {"id": oid, "order_no": no}
 
@@ -252,6 +237,8 @@ async def issue(oid: int, b: issue_in, db: AsyncSession = Depends(get_db), user=
     o = await _order(db, oid, lock=True)
     if o["status"] not in ("APPROVED", "MATERIAL_SHORTAGE", "READY", "IN_PRODUCTION", "AWAITING_QC", "PARTIALLY_COMPLETED"):
         raise HTTPException(400, f"Materials cannot be issued to an order that is {o['status'].lower()}.")
+    if not o["released_at"]:
+        raise HTTPException(400, f"{o['order_no']} is not released for production — run the release check first.")
     usable = set((await db.execute(text(USABLE))).scalars().all())
     no = await stk.next_doc(db, "MIS")
     mwip = await stk.store(db, "MWIP")
@@ -696,6 +683,22 @@ async def plant_dashboard(db: AsyncSession = Depends(get_db), _=Depends(get_curr
         (SELECT COUNT(*) FROM mfg_print_jobs WHERE status IN ('ISSUED','PARTIAL') AND expected_return < CURRENT_DATE) AS overdue_printing"""))[0]
     printing = (await one("""SELECT COUNT(*) AS jobs, COALESCE(SUM(qty_issued - accepted_qty - rejected_qty - damaged_qty - lost_qty - returned_qty), 0) AS pending
         FROM mfg_print_jobs WHERE status IN ('ISSUED','PARTIAL')"""))[0]
+    from app.services import mfg_planning
+    plan = await mfg_planning.open_orders(db)
+    lines = [l for o in plan for l in o["lines"]]
+    low = (await one("""SELECT COUNT(*) AS n FROM products p WHERE p.item_type IN ('RM','PM') AND COALESCE(p.is_active, TRUE)
+        AND COALESCE(p.reorder_level, p.min_stock, 0) > 0 AND COALESCE((SELECT SUM(m.qty) FROM mfg_stock m JOIN mfg_stores st ON st.id = m.store_id
+            WHERE m.product_id = p.id AND st.usable AND NOT st.is_wip), 0) < COALESCE(p.reorder_level, p.min_stock)"""))[0]
+    grn = (await one("SELECT COUNT(*) AS n FROM unit_wise_purchases WHERE status = 'draft'"))[0]
+    planning = {
+        "open_orders": len(plan), "ready": sum(1 for o in plan if o["overall"]["color"] == "GREEN"),
+        "with_shortage": sum(1 for o in plan if o["overall"]["color"] != "GREEN"), "blocked": sum(1 for o in plan if o["overall"]["color"] == "RED"),
+        "rm_short": len({l["product_id"] for l in lines if l["item_type"] == "RM" and l["shortage"] > 0}),
+        "pm_short": len({l["product_id"] for l in lines if l["item_type"] == "PM" and l["shortage"] > 0}),
+        "awaiting_purchase": sum(1 for l in lines if l["purchase_suggested"] > 0 or l["status"] == "Awaiting Purchase"),
+        "awaiting_transfer": sum(1 for l in lines if l["transfer_suggested"] > 0), "low_stock": low["n"], "pending_grn": grn["n"],
+        "pending_transfers": approvals["transfers"],
+    }
     k = lambda kind: float(by_kind.get(kind, {}).get("qty", 0))  # noqa: E731
     good, rej = float(today["good"]), float(today["rejected"])
     return {
@@ -712,4 +715,90 @@ async def plant_dashboard(db: AsyncSession = Depends(get_db), _=Depends(get_curr
             "orders_pending": so["pending"], "orders_ready_billing": so["ready_billing"], "orders_overdue": so["overdue"], "dispatch_store": k("DISPATCH"),
         },
         "approvals": approvals,
+        "planning": planning,
     }
+
+
+# ── production release & variance reasons ─────────────────────────────────────
+class release_in(BaseModel):
+    override_reason: Optional[str] = Field(None, max_length=300)
+
+
+async def _readiness(db, oid: int) -> dict:
+    from app.services import mfg_planning
+    o = dict(await _order(db, oid))
+    bom = (await db.execute(text("SELECT * FROM mfg_boms WHERE id = :b"), {"b": o["bom_id"]})).mappings().first()
+    problems = []
+    today = stk.today()
+    if not bom or bom["status"] != "APPROVED":
+        problems.append("BOM is not approved")
+    elif (bom["valid_from"] and bom["valid_from"] > today) or (bom["valid_to"] and bom["valid_to"] < today):
+        problems.append(f"BOM {bom['bom_no']} r{bom['revision']} is not valid today ({bom['valid_from']} - {bom['valid_to'] or 'open'})")
+    comps = [{"product_id": r["product_id"], "item_code": r["item_code"], "item": r["name"], "item_type": r["item_type"], "material_type": r["material_type"],
+              "unit": r["unit"], "required": stk.d(r["required_qty"]), "theoretical": stk.d(r["required_qty"]), "brand_id": r["brand_id"],
+              "cost": stk.d(r["cost_per_unit"])}
+             for r in (await db.execute(text("""SELECT i.*, p.name, p.item_code, p.item_type FROM mfg_order_items i JOIN products p ON p.id = i.product_id
+                 WHERE i.mfg_order_id = :o ORDER BY i.id"""), {"o": oid})).mappings()]
+    if not comps:
+        problems.append("Order has no materials")
+    for c in comps:
+        try:
+            await stk.factor(db, c["product_id"], c["unit"])
+        except HTTPException as e:
+            problems.append(f"{c['item']}: {e.detail}")
+    lines = await mfg_planning.check(db, comps, o)
+    for ln in lines:
+        if ln["status"] != "Available":
+            problems.append(f"{ln['item']}: {ln['status']} - short {ln['shortage'].normalize():f} {ln['unit']}")
+    return {"order_no": o["order_no"], "ready": not problems, "problems": problems, "lines": lines,
+            "overall": mfg_planning.overall(lines) if lines else None, "released_at": o["released_at"],
+            "override_reason": o["release_override_reason"]}
+
+
+@router.get("/prod/orders/{oid}/readiness")
+async def readiness(oid: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    return await _readiness(db, oid)
+
+
+@router.post("/prod/orders/{oid}/production-release")
+async def release(oid: int, b: release_in, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """Release for production after the readiness check. A shortage can be overridden only with the override permission and a reason."""
+    o = await _order(db, oid, lock=True)
+    if o["status"] == "DRAFT":
+        raise HTTPException(400, f"{o['order_no']} is a draft - approve it first.")
+    if o["status"] in ("COMPLETED", "CANCELLED"):
+        raise HTTPException(400, f"{o['order_no']} is {o['status'].lower()}.")
+    if o["released_at"]:
+        raise HTTPException(400, f"{o['order_no']} is already released.")
+    r = await _readiness(db, oid)
+    if not r["ready"]:
+        if not b.override_reason:
+            raise HTTPException(400, "Not ready for production: " + "; ".join(r["problems"]))
+        perms = {"manufacturing.override"} if user.role in ADMIN else await access.effective_permissions(db, user.user_id, user.role, user.role_id)
+        if "manufacturing.override" not in perms:
+            raise HTTPException(403, "You do not have permission to override a production shortage.")
+        bom_issues = [p for p in r["problems"] if p.startswith("BOM")]
+        if bom_issues:
+            raise HTTPException(400, "A BOM problem cannot be overridden: " + "; ".join(bom_issues))
+    await db.execute(text("UPDATE mfg_orders SET released_at = NOW(), released_by = :u, release_override_reason = :r WHERE id = :i"),
+                     {"u": user.user_id, "r": None if r["ready"] else b.override_reason, "i": oid})
+    note = " - all materials available" if r["ready"] else f" WITH SHORTAGE OVERRIDE: {b.override_reason} | " + "; ".join(r["problems"])
+    await _audit(db, user, "production_release" if r["ready"] else "production_release_override", oid, o["order_no"], f"{o['order_no']} released{note}")
+    await db.commit()
+    return {"released": True, "override": not r["ready"]}
+
+
+class variance_line(BaseModel):
+    order_item_id: int
+    reason: str = Field("", max_length=300)
+
+
+@router.put("/prod/orders/{oid}/variance-reasons")
+async def variance_reasons(oid: int, rows: list[variance_line], db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    o = await _order(db, oid)
+    for r in rows:
+        await db.execute(text("UPDATE mfg_order_items SET variance_reason = :r WHERE id = :i AND mfg_order_id = :o"),
+                         {"r": r.reason or None, "i": r.order_item_id, "o": oid})
+    await _audit(db, user, "variance_reasons", oid, o["order_no"], f"{o['order_no']}: {len(rows)} variance reason(s) recorded")
+    await db.commit()
+    return {"success": True}

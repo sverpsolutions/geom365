@@ -136,6 +136,8 @@ async def create_bom(db: AsyncSession, data: Any, user_id: Optional[int]) -> mfg
                 stage=it.stage or "Mixing",
                 sequence=it.sequence or idx,
                 notes=it.notes,
+                round_up=getattr(it, "round_up", False),
+                preferred_store_id=getattr(it, "preferred_store_id", None),
             )
         )
 
@@ -244,6 +246,8 @@ async def clone_bom_revision(db: AsyncSession, bom_id: int, user_id: int) -> mfg
                 stage=item.stage,
                 sequence=item.sequence,
                 notes=item.notes,
+                round_up=item.round_up,
+                preferred_store_id=item.preferred_store_id,
             )
         )
     new_bom.items = new_items

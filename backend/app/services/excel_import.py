@@ -41,7 +41,7 @@ COLUMNS = {
     "WHOLESALE": ITEM + [("unit", "Unit", False, "text"), ("qty", "Quantity", True, "num"), ("rate", "Rate (blank = WSP / SP)", False, "num"),
                          ("discount_pct", "Discount %", False, "num"), ("batch_no", "Batch Number", False, "text"), ("remarks", "Line Remarks", False, "text")],
     "ITEMS": [("item_code", "Item Code", False, "text"), ("item_name", "Item Name", True, "text"), ("barcode", "Barcode/EAN", False, "text"),
-              ("category", "Category", True, "text"), ("brand", "Brand", False, "text"), ("hsn", "HSN", False, "text"), ("gst_pct", "GST %", False, "num"),
+              ("item_type", "Item Type (FG/RM/PM/SFG/CONS/OTH)", False, "text"), ("category", "Category", True, "text"), ("brand", "Brand", False, "text"), ("hsn", "HSN", False, "text"), ("gst_pct", "GST %", False, "num"),
               ("unit", "Unit", False, "text"), ("basic_cost", "Basic Cost", False, "num"), ("cp", "CP", False, "num"), ("mrp", "MRP", False, "num"),
               ("sp", "SP", False, "num"), ("wsp", "WSP", False, "num"), ("batch_tracking", "Batch Tracking (Y/N)", False, "bool"),
               ("active", "Active (Y/N)", False, "bool")],
@@ -52,7 +52,7 @@ COLUMNS = {
 EXAMPLE = {"PO": ["ITM001", "8901234567890", "Example item", "PCS", 10, 45.5, 60, 0, 5, ""],
            "GRN": ["ITM001", "", "Example item", "PCS", 10, 10, 0, 0, 45.5, 60, 58, 0, 5, "B2410", "2026-09-01", "2027-08-31", ""],
            "WHOLESALE": ["ITM001", "", "Example item", "PCS", 24, "", 0, "", ""],
-           "ITEMS": ["", "Example item 500g", "8901234567890", "Grocery", "Brand X", "0902", 5, "PCS", 40, 42, 60, 55, 50, "N", "Y"],
+           "ITEMS": ["", "Example item 500g", "8901234567890", "FG", "Grocery", "Brand X", "0902", 5, "PCS", 40, 42, 60, 55, 50, "N", "Y"],
            "PRICES": ["ITM001", "", "Example item", 40, 42, 60, 55, 50]}
 
 
@@ -312,6 +312,8 @@ async def _validate_item(db, r: dict, header: dict):
         if not b:
             e.append(f"Unknown brand '{r['brand']}'")
         r["brand_id"] = b
+    if r.get("item_type") and r["item_type"].upper() not in ("FG", "RM", "PM", "SFG", "CONS", "OTH"):
+        e.append("Item Type must be FG, RM, PM, SFG, CONS or OTH")
     if r.get("gst_pct") is not None and r["gst_pct"] not in {Decimal(x) for x in ("0", "0.25", "3", "5", "12", "18", "28", "40")}:
         e.append(f"GST {r['gst_pct']}% is not a valid rate")
     ex = None

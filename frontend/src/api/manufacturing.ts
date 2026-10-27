@@ -10,6 +10,8 @@ export interface MfgBomItem {
   quantity: number;
   unit: string;
   wastage_pct: number;
+  round_up?: boolean;
+  preferred_store_id?: number | null;
   cost_per_unit: number;
   total_cost?: number;
   is_critical: boolean;

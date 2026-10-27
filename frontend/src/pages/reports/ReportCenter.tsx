@@ -116,6 +116,8 @@ const SECTIONS: { title: string; cards: Card[] }[] = [
     C('/reports/r/mfg_print_recon', '⚖️', 'Printing Reconciliation', 'Issued = accepted + rejected + damaged + lost + returned', dark, 'manufacturing'),
     C('/reports/r/mfg_prod_register', '🗓️', 'Production Plan & Register', 'Orders, planned vs good output, shortfall', blue, 'manufacturing'),
     C('/reports/r/mfg_material_req', '🧮', 'Material Requirement & Shortage', 'Required, reserved, free, shortage, locations', red, 'manufacturing'),
+    C('/reports/r/mfg_shortage', '🚨', 'Order-wise RM & PM Shortage', 'Per customer / production order: required, available, shortage, transfer & purchase suggestion', red, 'manufacturing'),
+    C('/reports/r/mfg_variance', '📏', 'Production Variance', 'BOM standard vs actual consumption, cost and reasons', warn, 'manufacturing'),
     C('/reports/r/mfg_issue_register', '📤', 'Material Issue Register', 'Issue slips and unused returns', grey, 'manufacturing'),
     C('/reports/r/mfg_consumption', '📐', 'Actual vs Standard Consumption', 'BOM standard vs actual, with reconciliation', warn, 'manufacturing'),
     C('/reports/r/mfg_output', '🥫', 'Production Output (Batch)', 'Good, rejected, QC approved by batch', ok, 'manufacturing'),

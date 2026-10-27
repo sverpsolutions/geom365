@@ -28,6 +28,8 @@ class BomItemBase(BaseModel):
     stage: str = "Mixing"
     sequence: int = 1
     notes: Optional[str] = None
+    round_up: bool = False                 # whole units per order (cartons, tins); else keep decimals
+    preferred_store_id: Optional[int] = None
 
 
 class BomItemCreate(BomItemBase):

@@ -220,6 +220,7 @@ const ProductAdd = () => {
       is_sellable: true, is_active: true, gst_percent: '0',
       carton_size: 1, low_stock_threshold: 5,
       min_stock: '0', reorder_level: '0', max_stock_level: '0',
+      item_type: 'FG', bom_applicable: false,
       multiplier_to_base: '1', conversion_factor: '1',
       allow_sale: true, allow_purchase: true, status: 'ACTIVE',
       is_asset: false,
@@ -1099,7 +1100,7 @@ const ProductAdd = () => {
       country_id: indiaId, unit_id: '', purchase_unit: '', unit: '',
       carton_size: 1, basic_cost: '', purchase_price: '', cost_price: '', selling_price: '', wsp: '', mrp: '',
       gst_percent: '0', purchase_tax_percent: '0', sale_tax_percent: '0',
-      description: '', plu_code: '', low_stock_threshold: 5, min_stock: '0', reorder_level: '0', max_stock_level: '0',
+      description: '', plu_code: '', low_stock_threshold: 5, min_stock: '0', reorder_level: '0', max_stock_level: '0', item_type: 'FG', bom_applicable: false,
       shelf_life_days: '', rack_no: '', aisle_no: '', weight_kg: '', variant: '', size: '', ref_item_code: '', model_no: '',
       allow_neg_stock: false, is_asset: false,
       is_dual_unit: false, is_consumable: false, is_raw_material: false, is_raw_non_sellable: false,
@@ -2336,6 +2337,36 @@ const ProductAdd = () => {
                   </Field>
                 </div>
               )}
+            </div>
+
+            {/* ── MANUFACTURING INVENTORY ── */}
+            <div className={cardCls}>
+              <SectionHeader icon="fa-industry" title="Manufacturing Inventory" color="cyan" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field>
+                  <Label>Item Type</Label>
+                  <select {...register('item_type')} className={inputCls}>
+                    <option value="FG">Finished Goods</option><option value="RM">Raw Material</option><option value="PM">Packing Material</option>
+                    <option value="SFG">Semi-Finished Goods</option><option value="CONS">Consumables</option><option value="OTH">Other Inventory</option>
+                  </select>
+                </Field>
+                <Field>
+                  <Label>Purchase Pack Qty</Label>
+                  <input {...register('purchase_pack_qty')} type="number" step="any" className={`${inputCls} font-mono`} placeholder="e.g. 50 per bundle" />
+                </Field>
+                <Field>
+                  <Label>Minimum Order Qty</Label>
+                  <input {...register('min_order_qty')} type="number" step="any" className={`${inputCls} font-mono`} placeholder="MOQ" />
+                </Field>
+                <Field>
+                  <Label>&nbsp;</Label>
+                  <label className="flex items-center gap-2 text-sm mt-2"><input type="checkbox" {...register('bom_applicable')} />Has a BOM (manufactured)</label>
+                </Field>
+                <div className="col-span-2 md:col-span-4">
+                  <Label>Remarks</Label>
+                  <input {...register('item_remarks')} className={inputCls} placeholder="e.g. customer-specific red cap" />
+                </div>
+              </div>
             </div>
 
             {/* ── STOCK THRESHOLDS ── */}
