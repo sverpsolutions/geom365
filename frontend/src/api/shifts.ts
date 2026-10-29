@@ -48,6 +48,21 @@ export interface day_row {
 export interface shift_status {
   outlet_id: number; outlet_name: string; day: day_detail | null; my_shift: shift_detail | null
   suggested_opening: string; last_closed_date: string | null; can_manage_day: boolean
+  operating_mode: 'STANDARD' | '24H'; shift_plan: shift_slot[] | null; auto_rollover: boolean; current_slot: string | null; today: string
+}
+
+export interface shift_slot { name: string; start: string; end: string }
+
+export interface store_setting {
+  outlet_id: number; store: string; operating_mode: 'STANDARD' | '24H'; shift_plan: shift_slot[] | null
+  auto_rollover: boolean; closing_time: string | null; closing_review: boolean | null
+}
+
+export interface monitor_row {
+  outlet_id: number; store: string; mode: 'STANDARD' | '24H'; auto_rollover: boolean; current_slot: string | null
+  plan: shift_slot[] | null; overdue: boolean
+  shifts: { id: number; shift_name: string; status: 'open' | 'closed'; opened_at: string; planned_end: string | null
+    closed_at: string | null; auto_closed: boolean; cashier: string; overdue: boolean }[]
 }
 
 export const shifts_api = {
@@ -64,4 +79,10 @@ export const shifts_api = {
   list: (params: { outlet_id?: number; day_id?: number; from_date?: string; to_date?: string }) => api.get<shift_row[]>('/shifts', { params }),
   close: (id: number, body: { actual: Record<string, number>; denominations?: Record<string, number>; remarks?: string }) =>
     api.post<shift_detail>(`/shifts/${id}/close`, body),
+  close_and_open: (day_id: number, body: { safe_counted: number; remarks?: string }) =>
+    api.post<{ closed: day_detail; next_day: day_detail | null; message?: string }>(`/shifts/day/${day_id}/close-and-open`, body),
+  store_settings: () => api.get<store_setting[]>('/shifts/store-settings'),
+  save_store_settings: (body: { outlet_ids: number[]; operating_mode: 'STANDARD' | '24H'; shift_plan?: shift_slot[]; auto_rollover: boolean }) =>
+    api.put<{ updated: number }>('/shifts/store-settings', body),
+  monitor: () => api.get<monitor_row[]>('/shifts/monitor'),
 }

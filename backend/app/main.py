@@ -25,6 +25,8 @@ async def lifespan(app: FastAPI):
     import asyncio
     from app.services import po_email_service
     asyncio.create_task(po_email_service.worker())   # vendor PO e-mails (Outlook) — queued / retry rows
+    from app.services import store_shifts
+    asyncio.create_task(store_shifts.rollover_task())  # 24-hour stores: keep billing across midnight
     
     yield
     await engine.dispose()

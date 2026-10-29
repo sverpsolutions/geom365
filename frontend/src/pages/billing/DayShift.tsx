@@ -6,6 +6,7 @@ import { shifts_api, type day_detail, type day_row, type shift_detail, type shif
 import { getCompanySettings } from '../../api/company'
 import PageHeader from '../../components/ui/PageHeader'
 import Modal from '../../components/ui/Modal'
+import StoreShifts from './StoreShifts'
 
 const OUTLET_KEY = 'pos_outlet_id'  // same counter location as the POS screen
 const DENOMS = [500, 200, 100, 50, 20, 10, 5, 2, 1]
@@ -267,7 +268,8 @@ export default function DayShift() {
   const load = () => {
     shifts_api.status(outletId).then(r => {
       setSt(r.data)
-      setShiftForm(f => ({ ...f, opening_cash: f.opening_cash || String(Number(r.data.suggested_opening) || '') }))
+      setShiftForm(f => ({ ...f, opening_cash: f.opening_cash || String(Number(r.data.suggested_opening) || ''),
+        shift_name: r.data.current_slot || (r.data.shift_plan ? f.shift_name : SHIFT_NAMES.includes(f.shift_name) ? f.shift_name : 'General') }))
     }).catch(e => toast.error(errMsg(e)))
     shifts_api.days({ outlet_id: outletId }).then(r => setDays(r.data)).catch(() => {})
     shifts_api.list({ outlet_id: outletId }).then(r => setHistory(r.data)).catch(() => {})
@@ -285,6 +287,8 @@ export default function DayShift() {
   const day = st?.day
   const mine = st?.my_shift
   const mineElsewhere = mine && mine.outlet_id !== outletId
+  const is24 = st?.operating_mode === '24H'
+  const slots = st?.shift_plan?.map(s => s.name) ?? SHIFT_NAMES
 
   return (
     <div className="p-4 space-y-4">
@@ -295,6 +299,16 @@ export default function DayShift() {
             {outlets.map(o => <option key={o.id} value={o.id}>{o.outlet_name}</option>)}
           </select>
         } />
+
+      {is24 && st && (
+        <div className="rounded-fiori border border-primary/30 bg-primary/5 px-4 py-2 text-[13px] flex flex-wrap gap-x-4 gap-y-1 items-center">
+          <span className="font-semibold text-primary"><i className="fas fa-clock mr-1" />24-hour store</span>
+          <span>Now: <b>{st.current_slot}</b> shift</span>
+          <span className="text-text-secondary">{st.shift_plan?.map(s => `${s.name} ${s.start}–${s.end}`).join(' · ')} · day-end 23:59</span>
+          {st.auto_rollover && <span className="text-text-muted">Day not closed by 00:15 → closed automatically and sent for review</span>}
+        </div>
+      )}
+      {outletId === 0 && <StoreShifts />}
 
       <div className="grid lg:grid-cols-2 gap-4">
         {/* ── business day ── */}
@@ -377,7 +391,7 @@ export default function DayShift() {
                 <span className="form-helper">Suggested from last closed shift: {inr(st.suggested_opening)}</span></div>
               <div><label className="form-label">Shift</label>
                 <select className="form-input" value={shiftForm.shift_name} onChange={e => setShiftForm(f => ({ ...f, shift_name: e.target.value }))}>
-                  {SHIFT_NAMES.map(n => <option key={n}>{n}</option>)}
+                  {slots.map(n => <option key={n} value={n}>{n}{n === st.current_slot ? ' (now)' : ''}</option>)}
                 </select></div>
               <div><label className="form-label">Counter / terminal</label>
                 <input className="form-input" placeholder="e.g. POS-1" value={shiftForm.terminal_no} onChange={e => setShiftForm(f => ({ ...f, terminal_no: e.target.value }))} /></div>
@@ -462,6 +476,21 @@ export default function DayShift() {
                 onClick={() => act(() => shifts_api.day_close(day.id, { remarks: dayClose.remarks || undefined, force: dayClose.force, safe_counted: Number(dayClose.safe) }), 'Business day closed').then(ok => ok && setDayClose(null))}>
                 <i className="fas fa-lock mr-2" />Close Day
               </button>
+              {is24 && (
+                <button className="btn btn-primary" title="Day-end, then open the next business day (from 23:30)"
+                  disabled={busy || day.open_shifts.length > 0 || dayClose.safe === ''
+                    || (Math.abs(Number(dayClose.safe) - Number(day.safe_expected_at_close)) >= 0.005 && !dayClose.remarks.trim())}
+                  onClick={async () => {
+                    setBusy(true)
+                    try {
+                      const { data } = await shifts_api.close_and_open(day.id, { safe_counted: Number(dayClose.safe), remarks: dayClose.remarks || undefined })
+                      toast.success(data.next_day ? `Day closed · ${dmy(data.next_day.business_date)} opened` : data.message || 'Business day closed')
+                      setDayClose(null); load()
+                    } catch (e) { toast.error(errMsg(e)) } finally { setBusy(false) }
+                  }}>
+                  <i className="fas fa-forward mr-2" />Day End &amp; Open Next Day
+                </button>
+              )}
             </div>
           </div>
         )}

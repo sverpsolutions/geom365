@@ -121,7 +121,7 @@ ACTION_PATHS: dict[tuple[str, str], str] = {
     ("POST", "/expiry/removals"): "remove_expired", ("POST", "/expiry/batch-correction"): "change_batch",
     ("POST", "/expiry/expiry-correction"): "edit", ("PUT", "/expiry/bands"): "edit",
     ("PUT", "/approvals/policies"): "edit", ("POST", "/purchases/po-email"): "email", ("POST", "/imports/po"): "po", ("POST", "/imports/grn"): "grn",
-    ("POST", "/imports/wholesale"): "wholesale", ("POST", "/imports/items"): "items", ("POST", "/imports/prices"): "prices", ("PUT", "/purchases/po-email/settings"): "edit", ("POST", "/shifts/day/reopen"): "reopen", ("PUT", "/shifts/closing-settings"): "approve",
+    ("POST", "/imports/wholesale"): "wholesale", ("POST", "/imports/items"): "items", ("POST", "/imports/prices"): "prices", ("PUT", "/purchases/po-email/settings"): "edit", ("POST", "/shifts/day/reopen"): "reopen", ("PUT", "/shifts/closing-settings"): "approve", ("PUT", "/shifts/store-settings"): "approve",
     ("PUT", "/discount-policy"): "edit", ("PUT", "/loyalty/config"): "edit", ("PUT", "/loyalty/rules"): "edit", ("POST", "/loyalty/adjust"): "view", ("POST", "/discount-policy/request"): "view",
     ("POST", "/approvals/file"): "view", ("POST", "/approvals/resubmit"): "view", ("POST", "/approvals/cancel"): "view",
 }

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time, timedelta
 from decimal import Decimal
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -64,7 +64,16 @@ async def status(outlet_id: int = Query(0), db: AsyncSession = Depends(get_db),
         "suggested_opening": await svc.suggested_opening(db, outlet_id),
         "last_closed_date": last_closed,
         "can_manage_day": user.role in svc.MANAGER_ROLES,
+        **await _store_info(db, outlet_id),
     }
+
+
+async def _store_info(db, outlet_id: int) -> dict:
+    from app.services import store_shifts as ss
+    st = await ss.settings(db, outlet_id)
+    return {"operating_mode": st["operating_mode"], "shift_plan": st["shift_plan"], "auto_rollover": st["auto_rollover"],
+            "current_slot": ss.current_slot(st["shift_plan"], ss.now_ist())["name"] if st["shift_plan"] else None,
+            "today": ss.now_ist().date()}
 
 
 @router.post("/day/open")
@@ -185,6 +194,90 @@ async def list_shifts(outlet_id: Optional[int] = Query(None), day_id: Optional[i
         ORDER BY s.opened_at DESC LIMIT :lim"""),
         {"loc": outlet_id, "day": day_id, "cid": cashier_id, "fd": from_date, "td": to_date, "lim": limit, **sp})).mappings().all()
     return [dict(r) for r in rows]
+
+
+# ── 24-hour stores: shift plan, day-end + next day, monitor ──────────────────
+class slot_in(BaseModel):
+    name: str = Field(min_length=1, max_length=30)
+    start: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    end: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+class store_settings_in(BaseModel):
+    outlet_ids: list[int] = Field(min_length=1)
+    operating_mode: str = Field(pattern="^(STANDARD|24H)$")
+    shift_plan: Optional[list[slot_in]] = None
+    auto_rollover: bool = False
+    closing_time: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    closing_review: Optional[bool] = None
+
+
+@router.get("/store-settings")
+async def store_settings(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    from app.services import store_shifts as ss
+    p: dict = {}
+    rows = (await db.execute(text(f"""SELECT id AS outlet_id, outlet_name AS store, operating_mode, shift_plan, auto_rollover, closing_time, closing_review
+        FROM outlets WHERE COALESCE(is_active, TRUE) {access.outlet_filter('id', p)} ORDER BY outlet_name"""), p)).mappings().all()
+    return [{**dict(r), "closing_time": r["closing_time"].strftime("%H:%M") if r["closing_time"] else None,
+             "shift_plan": r["shift_plan"] or (ss.DEFAULT_PLAN if r["operating_mode"] == "24H" else None)} for r in rows]
+
+
+@router.put("/store-settings")
+async def save_store_settings(b: store_settings_in, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """Set one or many stores (e.g. all 25) to 24-hour working with the same shift plan."""
+    import json
+    from app.services import store_shifts as ss
+    plan = None
+    if b.operating_mode == "24H":
+        try:
+            plan = ss.validate_plan([x.model_dump() for x in b.shift_plan] if b.shift_plan else ss.DEFAULT_PLAN)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    for oid in b.outlet_ids:
+        access.check_outlet(oid)
+        await db.execute(text("""UPDATE outlets SET operating_mode = CAST(:m AS VARCHAR), shift_plan = CAST(:p AS JSONB), auto_rollover = :a,
+            closing_time = CASE WHEN CAST(:m AS VARCHAR) = '24H' THEN TIME '23:59' ELSE COALESCE(CAST(:ct AS TIME), closing_time) END,
+            closing_review = COALESCE(CAST(:cr AS BOOLEAN), closing_review) WHERE id = :o"""),
+            {"m": b.operating_mode, "p": json.dumps(plan) if plan else None, "a": b.auto_rollover and b.operating_mode == "24H",
+             "ct": b.closing_time, "cr": b.closing_review, "o": oid})
+    from app.services.auth_service import write_audit
+    await write_audit(db=db, module="day_shift", action="store_shift_settings", record_id=0, record_no=f"{len(b.outlet_ids)} store(s)",
+                      new_data=json.dumps({"mode": b.operating_mode, "plan": plan, "auto_rollover": b.auto_rollover, "stores": b.outlet_ids}),
+                      description=f"{len(b.outlet_ids)} store(s) set to {b.operating_mode}" + (f" with shifts {', '.join(x['name'] for x in plan)}" if plan else ""),
+                      user_id=user.user_id, user_name=user.username)
+    await db.commit()
+    return {"updated": len(b.outlet_ids)}
+
+
+class close_open_in(BaseModel):
+    safe_counted: Decimal = Field(ge=0)
+    remarks: Optional[str] = None
+
+
+@router.post("/day/{day_id}/close-and-open")
+async def close_and_open(day_id: int, b: close_open_in, db: AsyncSession = Depends(get_db), user: current_user_dep = Depends(manager)):
+    """Day-end at 23:59 and the next business day opened straight away (24-hour stores)."""
+    from app.services.store_shifts import now_ist
+    day = (await db.execute(text("SELECT outlet_id, business_date FROM business_days WHERE id = :i"), {"i": day_id})).mappings().first()
+    if not day:
+        raise HTTPException(404, "Business day not found")
+    access.check_outlet(day["outlet_id"])
+    from app.services.store_shifts import settings as store_settings_of
+    closed = await _run(svc.day_close(db, day_id, b.remarks, False, user, b.safe_counted))
+    n = now_ist()
+    nxt = max(day["business_date"] + timedelta(days=1), n.date())          # an older day closed late -> open today
+    early = (await store_settings_of(db, day["outlet_id"]))["operating_mode"] == "24H" and n.time() >= time(23, 30)
+    if nxt > n.date() and not early:
+        return {"closed": closed, "next_day": None, "message": f"Day closed. Open {nxt:%d-%m-%Y} at 00:00."}
+    opened = await _run(svc.day_open(db, day["outlet_id"], nxt, "Opened right after day-end", user, allow_next_day=early))
+    return {"closed": closed, "next_day": opened}
+
+
+@router.get("/monitor")
+async def shift_monitor(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    """Head Office: every store's current shift slot, open shifts, overdue shifts."""
+    from app.services import store_shifts as ss
+    return await ss.monitor(db, access.allowed_outlets())
 
 
 @router.get("/{shift_id}")

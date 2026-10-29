@@ -195,8 +195,10 @@ async def _audit(db, user, module, action, record_id, description):
                       user_id=user.user_id, user_name=user.username)
 
 
-async def day_open(db: AsyncSession, outlet_id: int, business_date: date, remarks: Optional[str], user) -> dict:
-    if business_date > date.today():
+async def day_open(db: AsyncSession, outlet_id: int, business_date: date, remarks: Optional[str], user, allow_next_day: bool = False) -> dict:
+    from datetime import timedelta
+    from app.services.store_shifts import now_ist
+    if business_date > now_ist().date() + timedelta(days=1 if allow_next_day else 0):   # 24-hour stores may open tomorrow from 23:30          # India date: the server clock is UTC (00:00-05:30 IST is still 'yesterday' there)
         raise ValueError("Business date cannot be in the future")
     name = await outlet_name(db, outlet_id)
     cur = await open_day(db, outlet_id)
@@ -214,7 +216,7 @@ async def day_open(db: AsyncSession, outlet_id: int, business_date: date, remark
     except IntegrityError:
         await db.rollback()
         raise ValueError(f"Business day {business_date:%d-%m-%Y} was already opened for {name}"
-                         + (" — use Reopen if it was closed today" if business_date == date.today() else ""))
+                         + (" — use Reopen if it was closed today" if business_date == now_ist().date() else ""))
     await _audit(db, user, "day_shift", "day_open", new_id, f"Day open {business_date} at {name}")
     await db.commit()
     return await get_day(db, new_id)
@@ -236,7 +238,7 @@ async def day_reopen(db: AsyncSession, outlet_id: int, user, reason: str = "") -
 
 
 async def day_close(db: AsyncSession, day_id: int, remarks: Optional[str], force: bool, user,
-                    safe_counted: Optional[Decimal] = None) -> dict:
+                    safe_counted: Optional[Decimal] = None, allow_pending_expenses: bool = False) -> dict:
     day = (await db.execute(text("SELECT * FROM business_days WHERE id = :i FOR UPDATE"), {"i": day_id})).mappings().first()
     if not day or day["status"] != "open":
         raise ValueError("Business day is not open")
@@ -245,7 +247,7 @@ async def day_close(db: AsyncSession, day_id: int, remarks: Optional[str], force
     pending = (await db.execute(text("""
         SELECT COUNT(*) FROM cash_entries WHERE kind = 'expense' AND status = 'pending' AND outlet_id = :o"""),
         {"o": day["outlet_id"]})).scalar()
-    if pending:
+    if pending and not allow_pending_expenses:      # the midnight auto day-end leaves them pending for the next day
         raise ValueError(f"{pending} expense(s) are waiting for approval — approve or reject them first")
     from app.services import day_close_service
     checks = await day_close_service.checklist(db, dict(day))
@@ -298,12 +300,14 @@ async def shift_open(db: AsyncSession, outlet_id: int, opening_cash: Decimal, sh
     if opening_cash > 0:  # the float comes out of the safe: check before creating the shift
         await cash_service._require_funds(db, "safe", outlet_id, opening_cash,
             f"Safe at {await outlet_name(db, outlet_id)} (record its opening balance as a Pay-in first)")
+    from app.services.store_shifts import slot_for_open
+    shift_name, planned_end = await slot_for_open(db, outlet_id, day["business_date"], shift_name)   # 24-hour stores: Night / Morning / Evening
     try:
         sid = (await db.execute(text("""
             INSERT INTO cashier_shifts (business_day_id, outlet_id, business_date, cashier_id, shift_name,
-                                        terminal_no, status, opened_at, opening_cash, open_remarks)
-            VALUES (:day, :loc, :d, :u, :n, :t, 'open', NOW(), :c, :r) RETURNING id"""),
-            {"day": day["id"], "loc": outlet_id, "d": day["business_date"], "u": user.user_id,
+                                        terminal_no, status, opened_at, opening_cash, open_remarks, planned_end)
+            VALUES (:day, :loc, :d, :u, :n, :t, 'open', NOW(), :c, :r, :pe) RETURNING id"""),
+            {"pe": planned_end, "day": day["id"], "loc": outlet_id, "d": day["business_date"], "u": user.user_id,
              "n": shift_name or "General", "t": terminal_no, "c": opening_cash, "r": remarks})).scalar()
     except IntegrityError:
         await db.rollback()
