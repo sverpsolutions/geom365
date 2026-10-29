@@ -341,7 +341,7 @@ export default function PosBilling() {
           {dayShift && (dayShift.day
             ? <span>DAY: <strong className="text-white">{dayShift.day.business_date.split('-').reverse().join('-')}</strong>
                 {' · '}SHIFT: <strong className={dayShift.my_shift?.outlet_id === outletId ? 'text-white' : 'text-amber-300'}>
-                  {dayShift.my_shift?.outlet_id === outletId ? `#${dayShift.my_shift.id} ${dayShift.my_shift.shift_name}` : 'NOT OPEN'}</strong></span>
+                  {dayShift.my_shift?.outlet_id === outletId ? `Shift ${dayShift.my_shift.shift_no ?? dayShift.my_shift.id} · ${dayShift.my_shift.shift_name}` : 'NOT OPEN'}</strong></span>
             : <button onClick={() => nav('/billing/day-shift')} className="font-bold text-red-300 hover:text-white">
                 <i className="fas fa-exclamation-triangle mr-1" />DAY NOT OPEN — open Day &amp; Shift</button>)}
           <span>TIME: <strong className="text-white">{clock.toLocaleDateString('en-CA')} {clock.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</strong></span>

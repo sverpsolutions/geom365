@@ -168,7 +168,7 @@ async def day_figures(db: AsyncSession, day) -> dict:
         WHERE p.payment_date = :d AND {_outlet_sql('p.outlet_id')} AND (i.id IS NULL OR i.status <> 'cancelled')
         GROUP BY 1 HAVING SUM(p.amount) <> 0 ORDER BY 1"""), p)}
     shifts = [dict(r) for r in (await db.execute(text("""
-        SELECT s.id, s.shift_name, s.terminal_no, s.status, s.opened_at, s.closed_at, s.opening_cash,
+        SELECT s.id, s.shift_no, s.shift_name, s.terminal_no, s.status, s.opened_at, s.closed_at, s.opening_cash,
                s.total_bills, s.total_sales, s.expected_cash, s.actual_cash, s.short_amount, s.excess_amount,
                u.name AS cashier_name
         FROM cashier_shifts s JOIN users u ON u.id = s.cashier_id
@@ -301,13 +301,13 @@ async def shift_open(db: AsyncSession, outlet_id: int, opening_cash: Decimal, sh
         await cash_service._require_funds(db, "safe", outlet_id, opening_cash,
             f"Safe at {await outlet_name(db, outlet_id)} (record its opening balance as a Pay-in first)")
     from app.services.store_shifts import slot_for_open
-    shift_name, planned_end = await slot_for_open(db, outlet_id, day["business_date"], shift_name)   # 24-hour stores: Night / Morning / Evening
+    shift_name, planned_end, shift_no = await slot_for_open(db, outlet_id, day["id"], day["business_date"], shift_name)   # 24-hour stores: Night / Morning / Evening
     try:
         sid = (await db.execute(text("""
             INSERT INTO cashier_shifts (business_day_id, outlet_id, business_date, cashier_id, shift_name,
-                                        terminal_no, status, opened_at, opening_cash, open_remarks, planned_end)
-            VALUES (:day, :loc, :d, :u, :n, :t, 'open', NOW(), :c, :r, :pe) RETURNING id"""),
-            {"pe": planned_end, "day": day["id"], "loc": outlet_id, "d": day["business_date"], "u": user.user_id,
+                                        terminal_no, status, opened_at, opening_cash, open_remarks, planned_end, shift_no)
+            VALUES (:day, :loc, :d, :u, :n, :t, 'open', NOW(), :c, :r, :pe, :no) RETURNING id"""),
+            {"pe": planned_end, "no": shift_no, "day": day["id"], "loc": outlet_id, "d": day["business_date"], "u": user.user_id,
              "n": shift_name or "General", "t": terminal_no, "c": opening_cash, "r": remarks})).scalar()
     except IntegrityError:
         await db.rollback()

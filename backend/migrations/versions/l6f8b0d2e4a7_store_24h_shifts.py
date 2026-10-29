@@ -24,6 +24,9 @@ STATEMENTS = [
     "ALTER TABLE cashier_shifts ADD COLUMN IF NOT EXISTS auto_closed BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE business_days ADD COLUMN IF NOT EXISTS auto_closed BOOLEAN NOT NULL DEFAULT FALSE",
     "CREATE INDEX IF NOT EXISTS ix_cashier_shifts_open ON cashier_shifts (outlet_id, status)",
+    "ALTER TABLE cashier_shifts ADD COLUMN IF NOT EXISTS shift_no SMALLINT",
+    "UPDATE cashier_shifts c SET shift_no = x.n FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY business_day_id ORDER BY opened_at, id) AS n "
+    "FROM cashier_shifts) x WHERE x.id = c.id AND c.shift_no IS NULL",
 ]
 
 

@@ -18,6 +18,7 @@ const dmy = (v?: string | null) => v ? new Date(v).toLocaleDateString('en-GB', {
 const today = () => new Date().toLocaleDateString('en-CA')  // local YYYY-MM-DD
 const errMsg = (e: any) => e?.response?.data?.detail || e?.message || 'Something went wrong'
 const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+const sno = (s: { shift_no?: number | null; id: number }) => `Shift ${s.shift_no ?? s.id}`  // 1, 2, 3 … restarts every day
 const title = (m: string) => m.replace(/\b\w/g, c => c.toUpperCase())
 
 function Stat({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
@@ -46,12 +47,12 @@ function ShiftsTable({ rows, onClose, onPrint }: { rows: shift_row[]; onClose?: 
     <div className="overflow-x-auto">
       <table className="ent-table min-w-[760px]">
         <thead><tr>
-          <th>#</th><th>Cashier</th>{rows[0].business_date && <th>Date</th>}<th>Shift</th><th>Opened</th><th>Closed</th>
+          <th>Shift</th><th>Cashier</th>{rows[0].business_date && <th>Date</th>}<th>Slot</th><th>Opened</th><th>Closed</th>
           <th className="!text-right">Bills</th><th className="!text-right">Sales</th><th className="!text-right">Short / Excess</th><th></th>
         </tr></thead>
         <tbody>{rows.map(s => (
           <tr key={s.id}>
-            <td className="font-mono text-[12px]">{s.id}</td>
+            <td className="font-semibold" title={`ID ${s.id}`}>{s.shift_no ?? '—'}</td>
             <td>{s.cashier_name}</td>
             {rows[0].business_date && <td>{dmy(s.business_date)}</td>}
             <td>{s.shift_name}{s.terminal_no && <span className="text-text-muted"> · {s.terminal_no}</span>}</td>
@@ -117,7 +118,7 @@ async function printShift(id: number) {
   const phone = o?.store_phone || co.ho_phone, gstin = o?.gst_number || co.gstin
   const w = window.open('', '_blank', 'width=420,height=700')
   if (!w) return toast.error('Allow pop-ups to print')
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Shift #${s.id}</title><style>
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${sno(s)}</title><style>
     body{font:12px/1.35 monospace;width:76mm;margin:0 auto;color:#000} h3,p{margin:2px 0;text-align:center}
     table{width:100%;border-collapse:collapse} td,th{padding:1px 0;text-align:left} .r{text-align:right}
     hr{border:0;border-top:1px dashed #000;margin:6px 0} th{border-bottom:1px solid #000}
@@ -125,7 +126,7 @@ async function printShift(id: number) {
     ${logo ? `<p><img src="${esc(logo)}" style="max-height:48px;max-width:100%;object-fit:contain" onerror="this.remove()"></p>` : ''}
     <h3 style="text-transform:uppercase">${esc(co.brand_name || 'Shift Report')}</h3>
     <p style="font-size:10.5px">${esc(s.outlet_name)}<br>${o?.address ? addr.split('<br>').map(esc).join('<br>') : addr}${phone ? `<br>Ph: ${esc(phone)}` : ''}${gstin ? `<br>GSTIN: <b>${esc(gstin)}</b>` : ''}</p>
-    <hr><p><b>SHIFT CLOSE REPORT #${s.id}</b></p><hr>
+    <hr><p><b>SHIFT CLOSE REPORT · ${sno(s).toUpperCase()}</b></p><hr>
     <table>${line('Business date', dmy(s.business_date))}${line('Cashier', s.cashier_name)}${line('Shift', s.shift_name + (s.terminal_no ? ' / ' + s.terminal_no : ''))}
       ${line('Opened', dt(s.opened_at))}${line('Closed', dt(s.closed_at))}${s.closed_by_name ? line('Closed by', s.closed_by_name) : ''}</table><hr>
     <table>${line('Bills', s.total_bills)}</table>
@@ -186,7 +187,7 @@ function ShiftCloseModal({ shiftId, onClose, onDone }: { shiftId: number | null;
   }
 
   return (
-    <Modal open={!!shiftId} onClose={onClose} title={s ? `Close Shift #${s.id} • ${s.cashier_name}` : 'Close Shift'} width="max-w-4xl">
+    <Modal open={!!shiftId} onClose={onClose} title={s ? `Close ${sno(s)} • ${s.shift_name} • ${s.cashier_name}` : 'Close Shift'} width="max-w-4xl">
       {!s || !live ? <p className="text-center text-text-muted py-8">Loading…</p> : (
         <div className="grid md:grid-cols-2 gap-5">
           <div className="space-y-3">
@@ -365,7 +366,7 @@ export default function DayShift() {
         <section className="bg-app-card border border-border rounded-fiori p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-[15px] font-semibold m-0"><i className="fas fa-cash-register mr-2 text-primary" />My Shift</h3>
-            {mine && <span className="status-badge status-badge-active"><span className="dot dot-active" />Open #{mine.id}</span>}
+            {mine && <span className="status-badge status-badge-active"><span className="dot dot-active" />{sno(mine)} open</span>}
           </div>
           {!st ? null : mine ? (
             <>
@@ -450,7 +451,7 @@ export default function DayShift() {
           <div className="space-y-4">
             {day.open_shifts.length > 0 ? (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-700 space-y-2">
-                <div className="font-semibold"><i className="fas fa-exclamation-triangle mr-1" />{day.open_shifts.length} shift(s) still open: {day.open_shifts.map(s => `${s.cashier_name} (#${s.id})`).join(', ')}</div>
+                <div className="font-semibold"><i className="fas fa-exclamation-triangle mr-1" />{day.open_shifts.length} shift(s) still open: {day.open_shifts.map(s => `${s.cashier_name} (${sno(s)})`).join(', ')}</div>
                 <div>Close each shift with a cash count first. In an emergency you can force-close them at system figures (no count, flagged on the shift).</div>
                 <label className="flex items-center gap-2 font-medium">
                   <input type="checkbox" checked={dayClose.force} onChange={e => setDayClose(d => d && ({ ...d, force: e.target.checked }))} /> Force-close open shifts (emergency day close)

@@ -184,7 +184,7 @@ async def list_shifts(outlet_id: Optional[int] = Query(None), day_id: Optional[i
     sf = access.outlet_filter("s.outlet_id", sp)
     rows = (await db.execute(text(f"""
         SELECT s.id, s.business_day_id, s.outlet_id, COALESCE(o.outlet_name, 'Head Office') AS outlet_name,
-               s.business_date, s.shift_name, s.terminal_no, s.status, s.opened_at, s.closed_at,
+               s.business_date, s.shift_no, s.shift_name, s.terminal_no, s.status, s.opened_at, s.closed_at,
                u.name AS cashier_name, s.opening_cash, s.total_bills, s.total_sales,
                s.expected_cash, s.actual_cash, s.short_amount, s.excess_amount
         FROM cashier_shifts s JOIN users u ON u.id = s.cashier_id LEFT JOIN outlets o ON o.id = s.outlet_id

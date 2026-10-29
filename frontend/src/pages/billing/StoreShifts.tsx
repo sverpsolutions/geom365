@@ -57,7 +57,7 @@ export default function StoreShifts() {
               <td>{r.current_slot || '—'}</td>
               <td className="text-[12px]">{!r.shifts.length ? <span className="text-text-muted">No shift</span> : r.shifts.map(s => (
                 <div key={s.id} className={s.overdue ? 'text-red-600 font-semibold' : s.status === 'open' ? 'text-green-700' : 'text-text-muted'}>
-                  {s.shift_name} · {s.cashier} · {s.status === 'open' ? `open since ${tm(s.opened_at)}${s.planned_end ? `, due ${tm(s.planned_end)}` : ''}${s.overdue ? ' — OVERDUE' : ''}`
+                  Shift {s.shift_no} {s.shift_name} · {s.cashier} · {s.status === 'open' ? `open since ${tm(s.opened_at)}${s.planned_end ? `, due ${tm(s.planned_end)}` : ''}${s.overdue ? ' — OVERDUE' : ''}`
                     : `closed ${tm(s.closed_at)}${s.auto_closed ? ' (auto)' : ''}`}
                 </div>
               ))}</td>

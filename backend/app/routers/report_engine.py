@@ -372,7 +372,7 @@ async def day_end(db, f: F):
 async def counter_summary(db, f: F):
     p = {"fd": f.fd, "td": f.td}
     rows = await _rows(db, f"""
-        SELECT s.business_date AS day, o.outlet_name AS outlet, u.name AS cashier, s.terminal_no AS counter, s.shift_name AS shift,
+        SELECT s.business_date AS day, o.outlet_name AS outlet, u.name AS cashier, s.terminal_no AS counter, 'Shift ' || COALESCE(s.shift_no, 1) || ' · ' || s.shift_name AS shift,
                TO_CHAR(s.opened_at, 'HH24:MI') AS opened, TO_CHAR(s.closed_at, 'HH24:MI') AS closed, s.status,
                (SELECT COUNT(*) FROM unit_wise_invoices i WHERE i.shift_id = s.id AND {SALE}) AS bills,
                (SELECT COALESCE(SUM(i.total_amount), 0) FROM unit_wise_invoices i WHERE i.shift_id = s.id AND {SALE}) AS sales,

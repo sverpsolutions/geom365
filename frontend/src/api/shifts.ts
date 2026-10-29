@@ -1,7 +1,7 @@
 import api from './axios'
 
 export interface shift_row {
-  id: number; shift_name: string; terminal_no: string | null; status: 'open' | 'closed'
+  id: number; shift_no: number | null; shift_name: string; terminal_no: string | null; status: 'open' | 'closed'
   opened_at: string; closed_at: string | null; opening_cash: string; cashier_name: string
   total_bills: number; total_sales: string; expected_cash: string; actual_cash: string
   short_amount: string; excess_amount: string
@@ -61,7 +61,7 @@ export interface store_setting {
 export interface monitor_row {
   outlet_id: number; store: string; mode: 'STANDARD' | '24H'; auto_rollover: boolean; current_slot: string | null
   plan: shift_slot[] | null; overdue: boolean
-  shifts: { id: number; shift_name: string; status: 'open' | 'closed'; opened_at: string; planned_end: string | null
+  shifts: { id: number; shift_no: number | null; shift_name: string; status: 'open' | 'closed'; opened_at: string; planned_end: string | null
     closed_at: string | null; auto_closed: boolean; cashier: string; overdue: boolean }[]
 }
 

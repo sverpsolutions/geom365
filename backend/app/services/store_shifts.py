@@ -73,14 +73,16 @@ async def settings(db, outlet_id: int) -> dict:
             "auto_rollover": r["auto_rollover"]}
 
 
-async def slot_for_open(db, outlet_id: int, business_date: date, requested: Optional[str]) -> tuple[str, Optional[datetime]]:
-    """Shift name + planned end for a new cashier shift (24-hour stores: the current slot unless one is chosen)."""
+async def slot_for_open(db, outlet_id: int, business_day_id: int, business_date: date, requested: Optional[str]) -> tuple[str, Optional[datetime], int]:
+    """Shift name, planned end and shift number for a new cashier shift. The number restarts at 1 every business day:
+    24-hour stores use the slot position (Night 1, Morning 2, Evening 3); other stores count 1, 2, 3 … within the day."""
     st = await settings(db, outlet_id)
     if st["operating_mode"] != "24H":
-        return requested or "General", None
+        n = (await db.execute(text("SELECT COALESCE(MAX(shift_no), 0) + 1 FROM cashier_shifts WHERE business_day_id = :d"), {"d": business_day_id})).scalar()
+        return requested or "General", None, n
     plan = st["shift_plan"]
     slot = next((s for s in plan if s["name"] == requested), None) or current_slot(plan, now_ist())
-    return slot["name"], slot_end(business_date, slot)
+    return slot["name"], slot_end(business_date, slot), plan.index(slot) + 1
 
 
 async def rollover(db, outlet_id: int, system_user) -> Optional[str]:
@@ -148,7 +150,7 @@ async def monitor(db, outlet_ids: Optional[list[int]] = None) -> list[dict]:
     for o in (await db.execute(text("""SELECT id, outlet_name, operating_mode, shift_plan, auto_rollover FROM outlets
             WHERE COALESCE(is_active, TRUE) AND (CAST(:ids AS INT[]) IS NULL OR id = ANY(:ids)) ORDER BY outlet_name"""), {"ids": outlet_ids})).mappings():
         plan = o["shift_plan"] or (DEFAULT_PLAN if o["operating_mode"] == "24H" else None)
-        shifts = [dict(s) for s in (await db.execute(text("""SELECT s.id, s.shift_name, s.status, s.opened_at, s.planned_end, s.closed_at, s.auto_closed,
+        shifts = [dict(s) for s in (await db.execute(text("""SELECT s.id, s.shift_no, s.shift_name, s.status, s.opened_at, s.planned_end, s.closed_at, s.auto_closed,
             s.expected_cash, s.actual_cash, u.name AS cashier FROM cashier_shifts s JOIN users u ON u.id = s.cashier_id
             JOIN business_days d ON d.id = s.business_day_id WHERE s.outlet_id = :o AND (s.status = 'open' OR d.status = 'open')
             ORDER BY s.opened_at"""), {"o": o["id"]})).mappings()]
@@ -173,4 +175,5 @@ if __name__ == "__main__":
     assert current_slot(DEFAULT_PLAN, datetime(2026, 10, 29, 8, 0))["name"] == "Morning"
     assert current_slot(DEFAULT_PLAN, datetime(2026, 10, 29, 23, 59, 30))["name"] == "Evening"
     assert slot_end(date(2026, 10, 29), DEFAULT_PLAN[2]) == datetime(2026, 10, 29, 23, 59, 59)
+    assert [DEFAULT_PLAN.index(current_slot(DEFAULT_PLAN, datetime(2026, 10, 29, h))) + 1 for h in (0, 9, 17)] == [1, 2, 3]
     print("store_shifts OK")
