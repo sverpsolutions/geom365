@@ -13,7 +13,8 @@ from app.core.dependencies import get_current_user
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"], dependencies=[Depends(get_current_user)])
 
-SALE = "invoice_type <> 'return'"
+SALE = "invoice_type <> 'return' AND status <> 'cancelled'"   # cancelled bills are not sales (same rule as shift / day close)
+SALE_I = "i.invoice_type <> 'return' AND i.status <> 'cancelled'"
 
 
 async def _rows(db: AsyncSession, sql: str, **params):
@@ -50,7 +51,7 @@ async def summary(
           COUNT(*)                   FILTER (WHERE invoice_date = :d AND {SALE})                AS today_bills,
           COALESCE(SUM(total_amount) FILTER (WHERE invoice_date = CAST(:d AS date) - 1 AND {SALE}), 0)        AS yesterday_sales,
           COALESCE(SUM(total_amount) FILTER (WHERE invoice_date BETWEEN :m AND :d AND {SALE}), 0) AS month_sales,
-          COALESCE(SUM(total_amount) FILTER (WHERE invoice_date = :d AND invoice_type = 'return'), 0) AS today_returns,
+          COALESCE(SUM(total_amount) FILTER (WHERE invoice_date = :d AND invoice_type = 'return' AND status <> 'cancelled'), 0) AS today_returns,
           COALESCE(SUM(due_amount)   FILTER (WHERE due_amount > 0 AND {SALE}), 0)               AS receivables,
           COUNT(*)                   FILTER (WHERE due_amount > 0 AND {SALE})                   AS unpaid_bills
         FROM {V} AS unit_wise_invoices""", d=day, m=month_start, **sp))[0]
@@ -59,7 +60,7 @@ async def summary(
     daily = await _rows(db, f"""
         SELECT g::date AS day, COALESCE(SUM(i.total_amount), 0) AS sales, COUNT(i.id) AS bills
         FROM generate_series(CAST(:s AS date), CAST(:d AS date), interval '1 day') g
-        LEFT JOIN {V} i ON i.invoice_date = g::date AND i.{SALE}
+        LEFT JOIN {V} i ON i.invoice_date = g::date AND {SALE_I}
         GROUP BY g ORDER BY g""", s=start, d=day, **sp)
 
     stores = await _rows(db, f"""
@@ -69,7 +70,7 @@ async def summary(
                COALESCE(SUM(i.total_amount) FILTER (WHERE i.invoice_date BETWEEN :m AND :d), 0) AS month_sales,
                MAX(i.invoice_date)                                                              AS last_bill_date
         FROM outlets o
-        LEFT JOIN {V} i ON i.outlet_id = o.id AND i.{SALE}
+        LEFT JOIN {V} i ON i.outlet_id = o.id AND {SALE_I}
         WHERE o.is_active {access.outlet_filter("o.id", sp)}
         GROUP BY o.id ORDER BY today_sales DESC, month_sales DESC""", d=day, m=month_start, **sp)
 
@@ -77,7 +78,7 @@ async def summary(
         SELECT ii.item_code, MAX(ii.name) AS name, SUM(ii.qty) AS qty, SUM(ii.total) AS value
         FROM unit_wise_invoice_items ii JOIN unit_wise_invoices i ON i.id = ii.invoice_id
         {"JOIN products p ON p.item_code = ii.item_code" if pf else ""}
-        WHERE i.invoice_date BETWEEN :s AND :d AND i.{SALE} {of}{pf}
+        WHERE i.invoice_date BETWEEN :s AND :d AND {SALE_I} {of}{pf}
         GROUP BY ii.item_code ORDER BY value DESC LIMIT 8""", s=start, d=day, **sp)
 
     # reorder levels are unset and thresholds default on every item, so "low stock" =
@@ -89,7 +90,7 @@ async def summary(
           FROM unit_wise_invoice_items ii
           JOIN unit_wise_invoices i ON i.id = ii.invoice_id
           JOIN products p ON p.item_code = ii.item_code
-          WHERE i.invoice_date > CAST(:d AS date) - 30 AND i.{SALE} AND i.outlet_id IS NOT NULL {of}{pf}
+          WHERE i.invoice_date > CAST(:d AS date) - 30 AND {SALE_I} AND i.outlet_id IS NOT NULL {of}{pf}
           GROUP BY 1, 2)
         SELECT s.outlet_id, o.outlet_name AS outlet, p.id AS product_id, p.name, p.item_code,
                s.sold_qty, COALESCE(os.stock_qty, 0) AS stock_qty
@@ -105,7 +106,7 @@ async def summary(
           FROM unit_wise_invoice_items ii
           JOIN unit_wise_invoices i ON i.id = ii.invoice_id
           JOIN products p ON p.item_code = ii.item_code
-          WHERE i.invoice_date > CAST(:d AS date) - 30 AND i.{SALE} AND i.outlet_id IS NOT NULL {of}{pf}
+          WHERE i.invoice_date > CAST(:d AS date) - 30 AND {SALE_I} AND i.outlet_id IS NOT NULL {of}{pf}
           GROUP BY 1, 2) s
         LEFT JOIN outlet_stock os ON os.outlet_id = s.outlet_id AND os.product_id = s.product_id
         WHERE COALESCE(os.stock_qty, 0) <= 0"""), {"d": day, **sp})).scalar()
@@ -145,7 +146,7 @@ async def store_health(db: AsyncSession = Depends(get_db)):
                (SELECT message FROM sync_logs l WHERE l.outlet_id = o.id AND l.status <> 'success' ORDER BY id DESC LIMIT 1) AS last_error,
                (SELECT MAX(invoice_date) FROM unit_wise_invoices i WHERE i.outlet_id = o.id) AS last_bill_date,
                (SELECT COALESCE(SUM(total_amount), 0) FROM unit_wise_invoices i
-                 WHERE i.outlet_id = o.id AND i.invoice_date = CURRENT_DATE AND i.invoice_type <> 'return') AS today_sales
+                 WHERE i.outlet_id = o.id AND i.invoice_date = CURRENT_DATE AND i.invoice_type <> 'return' AND i.status <> 'cancelled') AS today_sales
         FROM outlets o WHERE o.is_active {access.outlet_filter("o.id", sp)} ORDER BY o.outlet_name""", **sp)
 
 

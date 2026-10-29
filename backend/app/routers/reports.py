@@ -54,7 +54,7 @@ async def sales_report(
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
 
-    where = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'"
+    where = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.status <> 'cancelled'"
     params: dict = {"fd": fd, "td": td}
     if outlet_id:
         where += " AND i.outlet_id = :oid"
@@ -224,8 +224,8 @@ async def pl_report(
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
 
-    w_sales = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type = 'retail'"
-    w_rtn   = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type = 'return'"
+    w_sales = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type = 'retail' AND i.status <> 'cancelled'"
+    w_rtn   = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type = 'return' AND i.status <> 'cancelled'"
     w_purch = "WHERE p.invoice_date BETWEEN :fd AND :td"
     params: dict = {"fd": fd, "td": td}
     if outlet_id:
@@ -258,7 +258,7 @@ async def pl_report(
             COALESCE(SUM(i.discount), 0)        AS discount
         FROM unit_wise_invoices i
         WHERE i.invoice_date BETWEEN :fd AND :td
-          AND i.invoice_type = 'retail'
+          AND i.invoice_type = 'retail' AND i.status <> 'cancelled'
         GROUP BY TO_CHAR(i.invoice_date, 'Mon YYYY'), DATE_TRUNC('month', i.invoice_date)
         ORDER BY DATE_TRUNC('month', i.invoice_date)
     """), params)
@@ -295,7 +295,7 @@ async def gst_report(
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date,   date.today())
 
-    where = "WHERE invoice_date BETWEEN :fd AND :td AND invoice_type != 'return'"
+    where = "WHERE invoice_date BETWEEN :fd AND :td AND invoice_type != 'return' AND status <> 'cancelled'"
     params: dict = {"fd": fd, "td": td}
     if outlet_id:
         where += " AND outlet_id = :oid"
@@ -588,7 +588,7 @@ async def hourly_sales_report(
     fd = _d(from_date, date.today())
     td = _d(to_date,   date.today())
 
-    where = "WHERE invoice_date BETWEEN :fd AND :td AND invoice_type != 'return' AND invoice_datetime IS NOT NULL"
+    where = "WHERE invoice_date BETWEEN :fd AND :td AND invoice_type != 'return' AND status <> 'cancelled' AND invoice_datetime IS NOT NULL"
     params: dict = {"fd": fd, "td": td}
     if outlet_id:
         where += " AND outlet_id = :oid"
@@ -611,7 +611,7 @@ async def hourly_sales_report(
     max_sales = max((_fmt(r[2]) for r in hours), default=1)
 
     # ── Matrix calculations ──
-    where_matrix = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.invoice_datetime IS NOT NULL"
+    where_matrix = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.status <> 'cancelled' AND i.invoice_datetime IS NOT NULL"
     if outlet_id:
         where_matrix += " AND i.outlet_id = :oid"
     where_matrix += access.outlet_filter("i.outlet_id", params)
@@ -705,7 +705,7 @@ async def hierarchy_report(
             COALESCE(SUM(i.total_gst),0)    AS gst
         FROM unit_wise_invoices i
         JOIN outlets o ON o.id = i.outlet_id
-        WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'
+        WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.status <> 'cancelled'
         GROUP BY o.outlet_name
         ORDER BY SUM(i.total_amount) DESC
     """), params)
@@ -720,7 +720,7 @@ async def hierarchy_report(
             COALESCE(SUM(i.total_amount),0) AS sales
         FROM unit_wise_invoices i
         JOIN outlets o ON o.id = i.outlet_id
-        WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'
+        WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.status <> 'cancelled'
         GROUP BY i.invoice_date, o.outlet_name
         ORDER BY i.invoice_date, o.outlet_name
     """), params)
@@ -1304,20 +1304,20 @@ async def unit_dashboard(db: AsyncSession = Depends(get_db)):
                COALESCE(SUM(i.total_gst), 0) AS gst,
                COALESCE(AVG(i.total_amount), 0) AS avg_bill
         FROM unit_wise_invoices i JOIN outlets o ON o.id = i.outlet_id
-        WHERE i.invoice_date = CURRENT_DATE AND i.invoice_type != 'return'
+        WHERE i.invoice_date = CURRENT_DATE AND i.invoice_type != 'return' AND i.status <> 'cancelled'
         GROUP BY o.outlet_name ORDER BY SUM(i.total_amount) DESC
     """))
     today_rows = today_q.fetchall()
     mtd_q = await db.execute(text("""
         SELECT COALESCE(SUM(i.total_amount), 0), COUNT(i.id)
         FROM unit_wise_invoices i
-        WHERE i.invoice_date >= DATE_TRUNC('month', CURRENT_DATE) AND i.invoice_type != 'return'
+        WHERE i.invoice_date >= DATE_TRUNC('month', CURRENT_DATE) AND i.invoice_type != 'return' AND i.status <> 'cancelled'
     """))
     mtd = mtd_q.fetchone()
     trend_q = await db.execute(text("""
         SELECT i.invoice_date, COUNT(i.id), COALESCE(SUM(i.total_amount), 0)
         FROM unit_wise_invoices i
-        WHERE i.invoice_date >= CURRENT_DATE - INTERVAL '7 days' AND i.invoice_type != 'return'
+        WHERE i.invoice_date >= CURRENT_DATE - INTERVAL '7 days' AND i.invoice_type != 'return' AND i.status <> 'cancelled'
         GROUP BY i.invoice_date ORDER BY i.invoice_date
     """))
     trend = [{"date": str(r[0]), "bills": int(r[1] or 0), "sales": _fmt(r[2])}
@@ -1347,7 +1347,7 @@ async def sales_trend_report(
     access.require_whole_bill_access()
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date, date.today())
-    w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'"
+    w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.status <> 'cancelled'"
     p: dict = {"fd": fd, "td": td}
     if outlet_id: w += " AND i.outlet_id = :oid"; p["oid"] = outlet_id
     w += access.outlet_filter("i.outlet_id", p)
@@ -1371,7 +1371,7 @@ async def top_items_report(
 ):
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date, date.today())
-    w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'"
+    w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.status <> 'cancelled'"
     p: dict = {"fd": fd, "td": td, "topn": top_n}
     if outlet_id: w += " AND i.outlet_id = :oid"; p["oid"] = outlet_id
     w += access.outlet_filter("i.outlet_id", p) + access.product_filter("p", p)
@@ -1398,7 +1398,7 @@ async def category_sales_report(
 ):
     fd = _d(from_date, date.today() - timedelta(days=30))
     td = _d(to_date, date.today())
-    w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'"
+    w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.status <> 'cancelled'"
     p: dict = {"fd": fd, "td": td}
     if outlet_id: w += " AND i.outlet_id = :oid"; p["oid"] = outlet_id
     w += access.outlet_filter("i.outlet_id", p) + access.product_filter("p", p)
@@ -1425,7 +1425,7 @@ async def profitability_analysis(
 ):
     fd = _d(from_date, date.today() - timedelta(days=90))
     td = _d(to_date, date.today())
-    w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return'"
+    w = "WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.status <> 'cancelled'"
     p: dict = {"fd": fd, "td": td}
     if outlet_id: w += " AND i.outlet_id = :oid"; p["oid"] = outlet_id
     w += access.outlet_filter("i.outlet_id", p) + access.product_filter("p", p)
@@ -1501,7 +1501,7 @@ async def item_velocity_report(
                    COUNT(DISTINCT i.id) AS bills_90d, SUM(ii.total) AS sales_90d,
                    MAX(i.invoice_date) AS last_sold
             FROM unit_wise_invoice_items ii JOIN unit_wise_invoices i ON i.id=ii.invoice_id
-            WHERE i.invoice_date >= CURRENT_DATE - INTERVAL '90 days' AND i.invoice_type!='return' {sw}
+            WHERE i.invoice_date >= CURRENT_DATE - INTERVAL '90 days' AND i.invoice_type != 'return' AND i.status <> 'cancelled' {sw}
             GROUP BY ii.product_id
         )
         SELECT p.item_code, p.name, p.category, p.brand,
@@ -1542,7 +1542,7 @@ async def customer_analytics_report(
         SELECT c.name, COUNT(i.id), COALESCE(SUM(i.total_amount),0),
                COALESCE(AVG(i.total_amount),0), MAX(i.invoice_date), MIN(i.invoice_date), c.phone
         FROM unit_wise_invoices i JOIN customers c ON c.id = i.customer_id
-        WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type!='return'
+        WHERE i.invoice_date BETWEEN :fd AND :td AND i.invoice_type != 'return' AND i.status <> 'cancelled'
           AND (CAST(:oid AS INT) IS NULL OR i.outlet_id = :oid) {w}
         GROUP BY c.id, c.name, c.phone ORDER BY SUM(i.total_amount) DESC LIMIT 200
     """), p)
@@ -1564,7 +1564,7 @@ async def tax_breakup_report(
     fd = _d(from_date, date.today().replace(day=1))
     td = _d(to_date, date.today())
     
-    where = ["i.invoice_date BETWEEN :fd AND :td", "i.invoice_type != 'return'"]
+    where = ["i.invoice_date BETWEEN :fd AND :td", "i.invoice_type != 'return' AND i.status <> 'cancelled'"]
     params = {"fd": fd, "td": td}
     
     if outlet_id:

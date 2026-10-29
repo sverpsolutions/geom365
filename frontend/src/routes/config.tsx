@@ -133,6 +133,7 @@ import Loyalty from '../pages/retail/Loyalty';
 import DiscountPolicy from '../pages/retail/DiscountPolicy';
 import ExcelImport from '../pages/retail/ExcelImport';
 import { PoEmailSettings } from '../pages/retail/purchaseControls';
+import TelegramAssistant from '../pages/settings/TelegramAssistant';
 
 export interface RouteConfig {
   id: string;
@@ -294,6 +295,7 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '1506', path: '/settings/discounts', component: DiscountPolicy, title: 'Discount Control' },
   { id: '1507', path: '/settings/po-email', component: PoEmailSettings, title: 'PO E-mail (Outlook)' },
   { id: '1508', path: '/imports', component: ExcelImport, title: 'Excel Import' },
+  { id: '1509', path: '/settings/telegram', component: TelegramAssistant, title: 'Telegram Business Assistant' },
 ];
 
 function ComingSoon({ name }: { name: string }) {

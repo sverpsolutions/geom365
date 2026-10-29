@@ -35,6 +35,8 @@ services:
       GST_API_URL: ${GST_API_URL:-}
       GST_API_KEY: ${GST_API_KEY:-}
       GST_API_KEY_HEADER: ${GST_API_KEY_HEADER:-}
+      # Telegram Business Assistant bot token (from @BotFather) — set in deploy/.env, optional
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     volumes:
       - uploads:/app/uploads
 

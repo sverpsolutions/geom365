@@ -27,6 +27,8 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(po_email_service.worker())   # vendor PO e-mails (Outlook) — queued / retry rows
     from app.services import store_shifts
     asyncio.create_task(store_shifts.rollover_task())  # 24-hour stores: keep billing across midnight
+    from app.services import telegram_bot
+    asyncio.create_task(telegram_bot.alerts_worker())  # Telegram scheduled alerts (idempotent per account / alert / slot)
     
     yield
     await engine.dispose()
@@ -101,6 +103,9 @@ app.include_router(manufacturing.router, prefix=API_PREFIX)
 app.include_router(mfg_setup.router, prefix=API_PREFIX)
 for _r in (mfg_printing, mfg_production, mfg_sales, approvals, payment_modes, expiry, imports, mfg_planning_api):
     app.include_router(_r.router, prefix=API_PREFIX)
+from app.routers import telegram as _tg
+app.include_router(_tg.hook, prefix=API_PREFIX)     # Telegram webhook: public, checked by its secret header
+app.include_router(_tg.router, prefix=API_PREFIX)
 for _r in (*retail_ops.routers, *purchase_controls.routers):
     app.include_router(_r, prefix=API_PREFIX)
 

@@ -227,6 +227,7 @@ const NAV_SECTIONS = [
       { label: 'Payment Modes', to: '/settings/payment-modes', icon: 'fas fa-wallet' },
       { label: 'Discount Control', to: '/settings/discounts', icon: 'fas fa-percent' },
       { label: 'PO E-mail (Outlook)', to: '/settings/po-email', icon: 'fas fa-envelope' },
+      { label: 'Telegram Assistant', to: '/settings/telegram', icon: 'fab fa-telegram' },
       { label: 'Loyalty Programme', to: '/loyalty', icon: 'fas fa-gift' },
       { label: 'Dashboard Builder', to: '/settings/dashboard-builder', icon: 'fas fa-th-large' },
       { label: 'Theme & Styling', to: '/settings/theme', icon: 'fas fa-palette' },
