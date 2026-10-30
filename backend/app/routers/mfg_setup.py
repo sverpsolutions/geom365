@@ -565,3 +565,24 @@ async def import_customer_items(file: UploadFile = File(...), hsn: str = Query("
     if not commit:
         return p
     return {**p, "result": await ci.commit(db, p, create_missing, user)}
+
+
+@router.post("/import/boms")
+async def import_boms(file: UploadFile = File(...), commit: bool = False, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """BOMs from Excel: preview first (nothing written); commit=true creates missing components + DRAFT BOMs for the ready rows."""
+    from app.services import mfg_bom_import as bi
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(400, "File too large (5 MB max).")
+    try:
+        rows = bi.parse(data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        raise HTTPException(400, "Could not read the Excel file (.xlsx).")
+    p = await bi.plan(db, rows)
+    if not commit:
+        return p
+    if not p["summary"]["ready"]:
+        raise HTTPException(400, "No BOM is ready to import — fix the problems shown in the preview.")
+    return {**p, "result": await bi.commit(db, p, user)}

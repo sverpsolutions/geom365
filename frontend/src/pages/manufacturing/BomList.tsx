@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { manufacturingApi, type MfgBom } from '../../api/manufacturing';
 import BomEditorModal from './BomEditorModal';
+import BomImport from './BomImport';
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-700 border-slate-300',
@@ -98,6 +99,7 @@ export default function BomList() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <BomImport onDone={fetchBoms} />
           <button
             onClick={() => {
               setSelectedBom(null);
