@@ -63,10 +63,38 @@ def item_name(brand: str, q, uom, pack) -> str:
     return " ".join(x for x in [b, size, pack] if x)[:150]
 
 
+PM_PREFIX = {"CAP": "CAP", "TAPE": "TAP", "ROLLS": "ROL", "ROLL": "ROL", "STICKER": "STK", "POUCH": "PCH", "POUCH LOGO": "PCL",
+             "OUTERCOVER": "OUT", "OUTER COVER": "OUT", "SCOOPS": "SCP", "SCOOP": "SCP", "BOTTOM": "BTM", "LABEL": "LBL", "CARTON": "CTN"}
+
+
+def parse_pm(rows: list) -> Optional[list[dict]]:
+    """Flat packing-material list: CATEGORY | ITEM NAME (any columns). None when the sheet is not in that layout."""
+    for hi, (i, r) in enumerate(rows):
+        cells = [str(v or "").strip().upper() for v in r]
+        if "CATEGORY" in cells and "ITEM NAME" in cells:
+            ci, ni = cells.index("CATEGORY"), cells.index("ITEM NAME")
+            groups: dict = {}
+            for j, rr in rows[hi + 1:]:
+                cat, name = (str(rr[ci] or "").strip() if ci < len(rr) else ""), (str(rr[ni] or "").strip() if ni < len(rr) else "")
+                if not name:
+                    continue
+                cat = cat.upper() or "OTHER"
+                groups.setdefault(cat, {"company": cat, "row": j, "items": [], "kind": "PM"})["items"].append(
+                    {"row": j, "brand_name": name, "size": "", "pack": ""})
+            return list(groups.values())
+        if hi > 5:
+            return None
+    return None
+
+
 def parse(data: bytes) -> list[dict]:
     ws = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True).active
+    rows = [(i, r) for i, r in enumerate(ws.iter_rows(values_only=True), 1) if any(v is not None for v in r)]
+    pm = parse_pm(rows)
+    if pm is not None:
+        return pm
     groups, cur = [], None
-    for i, r in enumerate(ws.iter_rows(values_only=True), 1):
+    for i, r in rows:
         a, b, c = (list(r) + [None] * 3)[:3]
         if a is None and b is None:
             continue
@@ -95,6 +123,23 @@ async def plan(db, groups: list[dict], hsn: str, mrp: Decimal) -> dict:
     gst = (await db.execute(text("SELECT gst_percent FROM hsn_master WHERE hsn_code = :h"), {"h": hsn})).scalar()
     out, seen = [], set()
     for g in groups:
+        if g.get("kind") == "PM":
+            code = "PM-" + PM_PREFIX.get(g["company"], re.sub(r"[^A-Z]", "", g["company"])[:3] or "OTH")
+            nxt = 1 + max([int(x.rsplit("-", 1)[1]) for x in codes if x.startswith(code + "-") and x.rsplit("-", 1)[1].isdigit()] or [0])
+            items = []
+            for it in g["items"]:
+                name = re.sub(r"\s+", " ", it["brand_name"]).strip()[:150]
+                status = "exists" if name.upper() in existing else "duplicate" if name.upper() in seen else "new"
+                seen.add(name.upper())
+                row = {"row": it["row"], "brand_name": it["brand_name"], "size": "", "pack": None, "name": name, "units_per_carton": 1,
+                       "unit_qty": None, "unit_uom": None, "status": status, "problem": None, "item_code": None}
+                if status == "new":
+                    row["item_code"] = f"{code}-{nxt:03d}"
+                    nxt += 1
+                items.append(row)
+            out.append({"company": g["company"], "row": g["row"], "customer_id": None, "customer_name": None, "match": "packing material",
+                        "brand_id": None, "brand_code": code, "new_brand": False, "kind": "PM", "items": items})
+            continue
         n = norm(g["company"])
         c, how = by_norm.get(n), "exact"
         if not c:
@@ -124,8 +169,9 @@ async def plan(db, groups: list[dict], hsn: str, mrp: Decimal) -> dict:
                     "new_brand": not brand, "items": items})
     new = sum(1 for g in out for i in g["items"] if i["status"] == "new")
     return {"companies": out, "hsn": hsn, "mrp": float(mrp), "gst_percent": float(gst) if gst is not None else None,
+            "kind": "PM" if out and all(g.get("kind") == "PM" for g in out) else "FG",
             "summary": {"companies": len(out), "matched": sum(1 for g in out if g["customer_id"] or g["match"] == "own brand"),
-                        "unmatched": sum(1 for g in out if not g["customer_id"] and g["match"] != "own brand"), "items": sum(len(g["items"]) for g in out),
+                        "unmatched": sum(1 for g in out if not g["customer_id"] and g["match"] not in ("own brand", "packing material")), "items": sum(len(g["items"]) for g in out),
                         "new": new, "exists": sum(1 for g in out for i in g["items"] if i["status"] == "exists"),
                         "duplicates": sum(1 for g in out for i in g["items"] if i["status"] == "duplicate"),
                         "check": sum(1 for g in out for i in g["items"] if i["problem"] and i["status"] == "new")}}
@@ -141,6 +187,15 @@ async def commit(db, p: dict, create_missing: bool, user) -> dict:
     for g in p["companies"]:
         new_items = [i for i in g["items"] if i["status"] == "new"]
         if not new_items:
+            continue
+        if g.get("kind") == "PM":
+            for i in new_items:
+                db.add(product(name=i["name"], item_code=i["item_code"], category=g["company"].title()[:100], hsn_code=p["hsn"] or None,
+                               gst_percent=gst, sale_tax_percent=gst, purchase_tax_percent=gst, unit="PCS", carton_size=1,
+                               item_type="PM", is_sellable=False, is_raw_material=False, is_raw_non_sellable=True, is_consumable=False,
+                               is_active=True, item_remarks=f"Packing material import · {g['company']}"))
+                made["items"] += 1
+            await db.flush()
             continue
         cid = g["customer_id"]
         if not cid and g["match"] != "own brand":
@@ -192,4 +247,7 @@ if __name__ == "__main__":
     assert short_code("INCITE", t) == "INC" and short_code("ALPHA HEALTH LABS", t) == "AHL2"
     assert norm("M.J. ENTERPRISE") == "M J ENTERPRISE" and norm("Priva Health Nutrition Pvt. Ltd.") == "PRIVA HEALTH NUTRITION"
     assert item_name("ALPHALACT PREMIUM-1.", Decimal("200"), "G", "TIN") == "ALPHALACT PREMIUM-1 200G TIN"
+    pm = parse_pm([(1, (None, "CATEGORY", "ITEM NAME")), (2, (None, "CAP", "RED CAP")), (3, (None, "TAPE", "TAP BROWN")), (4, (None, "CAP", "BLUE CAP"))])
+    assert [(g["company"], len(g["items"])) for g in pm] == [("CAP", 2), ("TAPE", 1)]
+    assert parse_pm([(1, ("ALPHA PVT LTD", None, None)), (2, ("Brand Name", "SIZE", "PACKIING TYPE"))]) is None
     print("mfg_customer_items OK")

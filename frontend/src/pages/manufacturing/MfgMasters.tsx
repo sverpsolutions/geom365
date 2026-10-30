@@ -122,15 +122,16 @@ function ItemListImport({ onDone }: { onDone: () => void }) {
   const problems = p ? p.companies.flatMap((g: any) => g.items.filter((i: any) => i.problem && i.status === 'new').map((i: any) => ({ ...i, company: g.company }))) : [];
   return (
     <>
-      <button className={btnSec} onClick={() => { setOpen(true); setP(null); setFile(null); }}><i className="fas fa-file-excel mr-1" />Import customer item list</button>
-      <Modal open={open} onClose={() => setOpen(false)} title="Import customer item list (plant inventory)" width="max-w-5xl">
+      <button className={btnSec} onClick={() => { setOpen(true); setP(null); setFile(null); }}><i className="fas fa-file-excel mr-1" />Import item list</button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Import item list (plant inventory)" width="max-w-5xl">
         <div className="space-y-3 text-sm">
           <p className="text-xs text-slate-500">Excel with a company name row, then <b>Brand Name | SIZE | PACKING TYPE</b> rows. SIZE “36 x 200” = 36 units of 200 g per carton.
-            Each company becomes a customer brand with a short code; items get codes like AHL-001. One HSN and MRP for all — change per item later. Items already imported are skipped.</p>
+            Each company becomes a customer brand with a short code; items get codes like AHL-001. One HSN and MRP for all — change per item later. Items already imported are skipped.<br />
+            Packing material list: columns <b>CATEGORY | ITEM NAME</b> → Packing Material items coded by category (PM-CAP-001…), no MRP.</p>
           <div className="grid sm:grid-cols-4 gap-3 items-end">
             <label className="sm:col-span-2 block"><span className="text-xs text-slate-600">Excel file</span>
               <input className={inp} type="file" accept=".xlsx" onChange={e => { setFile(e.target.files?.[0] || null); setP(null); }} /></label>
-            <label className="block"><span className="text-xs text-slate-600">HSN for all items</span><input className={inp} value={hsn} onChange={e => { setHsn(e.target.value.replace(/\D/g, '')); setP(null); }} /></label>
+            <label className="block"><span className="text-xs text-slate-600">HSN for all items (optional for packing material)</span><input className={inp} value={hsn} onChange={e => { setHsn(e.target.value.replace(/\D/g, '')); setP(null); }} /></label>
             <label className="block"><span className="text-xs text-slate-600">MRP for all items</span><input className={inp} type="number" min={0} value={mrp} onChange={e => { setMrp(e.target.value); setP(null); }} /></label>
           </div>
           <label className="flex items-center gap-2"><input type="checkbox" checked={createMissing} onChange={e => setCreateMissing(e.target.checked)} />Create customers that are not in the software yet</label>
@@ -142,11 +143,11 @@ function ItemListImport({ onDone }: { onDone: () => void }) {
                   <div key={k as string} className="border border-slate-200 rounded p-2"><div className="text-[11px] text-slate-500">{k}</div><div className="text-lg font-semibold">{v}</div></div>
                 ))}
               </div>
-              {p.gst_percent === null && <p className="text-amber-700 text-xs"><i className="fas fa-exclamation-triangle mr-1" />HSN {p.hsn} is not in the HSN master — items get GST 0% until you set it.</p>}
+              {p.gst_percent === null && p.hsn && <p className="text-amber-700 text-xs"><i className="fas fa-exclamation-triangle mr-1" />HSN {p.hsn} is not in the HSN master — items get GST 0% until you set it.</p>}
               <div className="max-h-72 overflow-y-auto">
                 <Table rows={p.companies} cols={[
                   ['Company (customer)', (g: any) => <>{g.company}{g.customer_name && g.match === 'close' && <div className="text-xs text-amber-700">matched to {g.customer_name}</div>}</>],
-                  ['Customer', (g: any) => g.match === 'own brand' ? 'Own brand' : g.customer_id ? 'Found' : createMissing ? <span className="text-indigo-700">New</span> : <span className="text-rose-600">Skipped</span>],
+                  ['Customer', (g: any) => g.match === 'packing material' ? 'Packing material' : g.match === 'own brand' ? 'Own brand' : g.customer_id ? 'Found' : createMissing ? <span className="text-indigo-700">New</span> : <span className="text-rose-600">Skipped</span>],
                   ['Code', (g: any) => <span className="font-mono">{g.brand_code}{g.new_brand && <span className="text-indigo-600 text-[10px] ml-1">new</span>}</span>],
                   ['Items', (g: any) => g.items.length, 'text-right'],
                   ['New', (g: any) => g.items.filter((i: any) => i.status === 'new').length, 'text-right'],

@@ -545,7 +545,7 @@ async def reverse_txn(txn_id: int, b: reason_in, db: AsyncSession = Depends(get_
 
 # ── customer-wise finished goods from the company-grouped Excel (plant inventory) ──
 @router.post("/import/customer-items")
-async def import_customer_items(file: UploadFile = File(...), hsn: str = Query(..., pattern=r"^\d{4,8}$"),
+async def import_customer_items(file: UploadFile = File(...), hsn: str = Query("", pattern=r"^(\d{4,8})?$"),
                                 mrp: Decimal = Query(Decimal("300"), ge=0), commit: bool = False, create_missing: bool = False,
                                 db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     """Preview first (nothing written); commit=true creates brands, items and carton packing in one transaction."""
@@ -559,7 +559,9 @@ async def import_customer_items(file: UploadFile = File(...), hsn: str = Query(.
         raise HTTPException(400, str(e))
     except Exception:
         raise HTTPException(400, "Could not read the Excel file (.xlsx).")
-    p = await ci.plan(db, groups, hsn, mrp)
+    if not hsn and not all(g.get("kind") == "PM" for g in groups):
+        raise HTTPException(400, "Enter the HSN for the finished goods.")
+    p = await ci.plan(db, groups, hsn, Decimal(0) if groups and groups[0].get("kind") == "PM" else mrp)
     if not commit:
         return p
     return {**p, "result": await ci.commit(db, p, create_missing, user)}
