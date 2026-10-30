@@ -65,7 +65,10 @@ function Brands() {
   };
   return (
     <>
-      <div className="flex justify-end mb-3"><button className={btnPri} onClick={() => setF({ code: '', name: '', is_own_brand: false, is_active: true })}><i className="fas fa-plus mr-1" />New Brand</button></div>
+      <div className="flex justify-end gap-2 mb-3">
+        <ItemListImport onDone={load} />
+        <button className={btnPri} onClick={() => setF({ code: '', name: '', is_own_brand: false, is_active: true })}><i className="fas fa-plus mr-1" />New Brand</button>
+      </div>
       <Table rows={rows} cols={[
         ['Code', (r) => <span className="font-mono">{r.code}</span>],
         ['Brand', (r) => r.name],
@@ -86,6 +89,81 @@ function Brands() {
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.is_active} onChange={(e) => setF({ ...f, is_active: e.target.checked })} />Active</label>
           <div className="flex justify-end gap-2 pt-2"><button className={btnSec} onClick={() => setF(null)}>Cancel</button><button className={btnPri} onClick={save}>Save</button></div>
         </div>}
+      </Modal>
+    </>
+  );
+}
+
+// ── customer-wise item list (company row, then Brand Name | SIZE | PACKING TYPE) → brands + finished-goods items ──
+function ItemListImport({ onDone }: { onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [hsn, setHsn] = useState('19011010');
+  const [mrp, setMrp] = useState('300');
+  const [createMissing, setCreateMissing] = useState(true);
+  const [p, setP] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const send = async (commit: boolean) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    setBusy(true);
+    try {
+      const r = await api.post('/manufacturing/import/customer-items', fd, { params: { hsn, mrp, commit, create_missing: createMissing }, headers: { 'Content-Type': 'multipart/form-data' } });
+      setP(r.data);
+      if (commit) {
+        const x = r.data.result;
+        toast.success(`${x.items} items, ${x.brands} brands, ${x.customers} customers created`);
+        onDone();
+      }
+    } catch (e) { err(e); } finally { setBusy(false); }
+  };
+  const s = p?.summary;
+  const problems = p ? p.companies.flatMap((g: any) => g.items.filter((i: any) => i.problem && i.status === 'new').map((i: any) => ({ ...i, company: g.company }))) : [];
+  return (
+    <>
+      <button className={btnSec} onClick={() => { setOpen(true); setP(null); setFile(null); }}><i className="fas fa-file-excel mr-1" />Import customer item list</button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Import customer item list (plant inventory)" width="max-w-5xl">
+        <div className="space-y-3 text-sm">
+          <p className="text-xs text-slate-500">Excel with a company name row, then <b>Brand Name | SIZE | PACKING TYPE</b> rows. SIZE “36 x 200” = 36 units of 200 g per carton.
+            Each company becomes a customer brand with a short code; items get codes like AHL-001. One HSN and MRP for all — change per item later. Items already imported are skipped.</p>
+          <div className="grid sm:grid-cols-4 gap-3 items-end">
+            <label className="sm:col-span-2 block"><span className="text-xs text-slate-600">Excel file</span>
+              <input className={inp} type="file" accept=".xlsx" onChange={e => { setFile(e.target.files?.[0] || null); setP(null); }} /></label>
+            <label className="block"><span className="text-xs text-slate-600">HSN for all items</span><input className={inp} value={hsn} onChange={e => { setHsn(e.target.value.replace(/\D/g, '')); setP(null); }} /></label>
+            <label className="block"><span className="text-xs text-slate-600">MRP for all items</span><input className={inp} type="number" min={0} value={mrp} onChange={e => { setMrp(e.target.value); setP(null); }} /></label>
+          </div>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={createMissing} onChange={e => setCreateMissing(e.target.checked)} />Create customers that are not in the software yet</label>
+          <div className="flex justify-end"><button className={btnSec} disabled={!file || busy} onClick={() => send(false)}>{busy && !p ? 'Reading…' : 'Preview'}</button></div>
+          {p && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-center">
+                {[['Companies', s.companies], ['Matched customers', s.matched], ['New customers', s.unmatched], ['New items', s.new], ['Already there', s.exists], ['Check size', s.check]].map(([k, v]) => (
+                  <div key={k as string} className="border border-slate-200 rounded p-2"><div className="text-[11px] text-slate-500">{k}</div><div className="text-lg font-semibold">{v}</div></div>
+                ))}
+              </div>
+              {p.gst_percent === null && <p className="text-amber-700 text-xs"><i className="fas fa-exclamation-triangle mr-1" />HSN {p.hsn} is not in the HSN master — items get GST 0% until you set it.</p>}
+              <div className="max-h-72 overflow-y-auto">
+                <Table rows={p.companies} cols={[
+                  ['Company (customer)', (g: any) => <>{g.company}{g.customer_name && g.match === 'close' && <div className="text-xs text-amber-700">matched to {g.customer_name}</div>}</>],
+                  ['Customer', (g: any) => g.match === 'own brand' ? 'Own brand' : g.customer_id ? 'Found' : createMissing ? <span className="text-indigo-700">New</span> : <span className="text-rose-600">Skipped</span>],
+                  ['Code', (g: any) => <span className="font-mono">{g.brand_code}{g.new_brand && <span className="text-indigo-600 text-[10px] ml-1">new</span>}</span>],
+                  ['Items', (g: any) => g.items.length, 'text-right'],
+                  ['New', (g: any) => g.items.filter((i: any) => i.status === 'new').length, 'text-right'],
+                  ['First item', (g: any) => g.items[0] ? <span className="text-xs">{g.items[0].item_code || '—'} · {g.items[0].name} · {g.items[0].units_per_carton}/ctn</span> : '—'],
+                ]} />
+              </div>
+              {problems.length > 0 && (
+                <details className="text-xs"><summary className="cursor-pointer text-amber-700">{problems.length} items need a size check after import</summary>
+                  <ul className="list-disc ml-5 mt-1">{problems.map((i: any) => <li key={i.row}>Row {i.row} · {i.company} · {i.brand_name}: {i.problem}</li>)}</ul></details>
+              )}
+              <div className="flex justify-end gap-2">
+                <button className={btnSec} onClick={() => setOpen(false)}>Close</button>
+                <button className={btnPri} disabled={busy || !s.new} onClick={() => confirm(`Create ${s.new} items now?`) && send(true)}>Import {s.new} items</button>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </>
   );

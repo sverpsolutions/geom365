@@ -541,3 +541,25 @@ async def reverse_txn(txn_id: int, b: reason_in, db: AsyncSession = Depends(get_
     await _audit(db, user, "reverse_stock_movement", txn_id, r["doc_no"], f"Movement #{txn_id} reversed: {b.reason}")
     await db.commit()
     return r
+
+
+# ── customer-wise finished goods from the company-grouped Excel (plant inventory) ──
+@router.post("/import/customer-items")
+async def import_customer_items(file: UploadFile = File(...), hsn: str = Query(..., pattern=r"^\d{4,8}$"),
+                                mrp: Decimal = Query(Decimal("300"), ge=0), commit: bool = False, create_missing: bool = False,
+                                db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """Preview first (nothing written); commit=true creates brands, items and carton packing in one transaction."""
+    from app.services import mfg_customer_items as ci
+    data = await file.read()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(400, "File too large (10 MB max).")
+    try:
+        groups = ci.parse(data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        raise HTTPException(400, "Could not read the Excel file (.xlsx).")
+    p = await ci.plan(db, groups, hsn, mrp)
+    if not commit:
+        return p
+    return {**p, "result": await ci.commit(db, p, create_missing, user)}
