@@ -723,6 +723,53 @@ async def report_wastage_yield(
     return out
 
 
+# ─── reports used by the Production Reports page ─────────────────────────────
+_LINES = """SELECT o.order_no, fg.name AS product_name, m.name AS material_name, m.item_code AS material_code, i.material_type,
+        i.required_qty, i.issued_qty, i.consumed_qty, i.returned_qty, i.unit
+    FROM mfg_order_items i JOIN mfg_orders o ON o.id = i.mfg_order_id JOIN products fg ON fg.id = o.product_id
+    JOIN products m ON m.id = i.product_id"""
+
+
+@router.get("/reports/consumption-variance")
+async def report_consumption_variance(limit: int = Query(500, ge=1, le=5000), db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    """BOM requirement vs actual consumption per order and material (latest orders first)."""
+    rows = (await db.execute(text(_LINES + " ORDER BY o.id DESC, i.id LIMIT :n"), {"n": limit})).mappings().all()
+    out = []
+    for r in rows:
+        req, cons = Decimal(r["required_qty"] or 0), Decimal(r["consumed_qty"] or 0)
+        out.append({**{k: (float(v) if isinstance(v, Decimal) else v) for k, v in r.items()},
+                    "variance": float(cons - req), "variance_pct": float((cons - req) / req * 100) if req else None})
+    return out
+
+
+@router.get("/reports/production-yield")
+async def report_production_yield(limit: int = Query(200, ge=1, le=2000), db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    """Orders with output: good qty vs planned, rejected / scrap, standard vs actual yield (no figure is assumed)."""
+    rows = (await db.execute(text("""SELECT o.order_no, p.name AS product_name, o.production_batch_no AS batch_no, o.planned_qty,
+            o.completed_qty AS good_qty, o.rejected_qty, o.scrap_qty, o.unit, o.status, o.qc_status, b.expected_yield_pct
+        FROM mfg_orders o JOIN products p ON p.id = o.product_id LEFT JOIN mfg_boms b ON b.id = o.bom_id
+        WHERE o.completed_qty > 0 OR o.rejected_qty > 0 OR o.scrap_qty > 0 ORDER BY o.id DESC LIMIT :n"""), {"n": limit})).mappings().all()
+    out = []
+    for r in rows:
+        d = {k: (float(v) if isinstance(v, Decimal) else v) for k, v in r.items()}
+        d["yield_pct"] = round(d["good_qty"] / d["planned_qty"] * 100, 2) if d["planned_qty"] else None
+        d["yield_variance_pct"] = round(d["yield_pct"] - d["expected_yield_pct"], 2) if d["yield_pct"] is not None and d["expected_yield_pct"] is not None else None
+        out.append(d)
+    return out
+
+
+@router.get("/reports/packaging-utilization")
+async def report_packaging_utilization(limit: int = Query(500, ge=1, le=5000), db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    """Packaging material lines: issued vs consumed vs returned; wastage = issued − consumed − returned."""
+    rows = (await db.execute(text(_LINES + """ WHERE i.material_type = 'PACKAGING' OR m.item_type = 'PM' ORDER BY o.id DESC, i.id LIMIT :n"""), {"n": limit})).mappings().all()
+    out = []
+    for r in rows:
+        iss, cons, ret = (Decimal(r[k] or 0) for k in ("issued_qty", "consumed_qty", "returned_qty"))
+        out.append({**{k: (float(v) if isinstance(v, Decimal) else v) for k, v in r.items()},
+                    "wastage_qty": float(max(iss - cons - ret, Decimal(0))), "efficiency_pct": round(float(cons / (iss - ret) * 100), 2) if iss - ret > 0 else None})
+    return out
+
+
 # ─── PURCHASE SHORTAGE INTEGRATION ───────────────────────────────────────────
 @router.post("/create-shortage-po")
 async def create_shortage_purchase_order(

@@ -212,7 +212,7 @@ export default function ManufacturingReportsPage() {
                         {Number(r.scrap_qty).toLocaleString()} {r.unit}
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-black text-emerald-700">
-                        {Number(r.yield_pct || 100).toFixed(1)}%
+                        {r.yield_pct == null ? '—' : `${Number(r.yield_pct).toFixed(1)}%`}
                       </td>
                       <td className="py-3 px-3">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
@@ -270,7 +270,7 @@ export default function ManufacturingReportsPage() {
                         {Number(r.wastage_qty || 0).toLocaleString()} {r.unit}
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-black text-emerald-700">
-                        {Number(r.efficiency_pct || 98.5).toFixed(1)}%
+                        {r.efficiency_pct == null ? '—' : `${Number(r.efficiency_pct).toFixed(1)}%`}
                       </td>
                     </tr>
                   ))
