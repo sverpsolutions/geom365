@@ -134,6 +134,7 @@ import DiscountPolicy from './pages/retail/DiscountPolicy';
 import ExcelImport from './pages/retail/ExcelImport';
 import { PoEmailSettings } from './pages/retail/purchaseControls';
 import TelegramAssistant from './pages/settings/TelegramAssistant';
+import { ReorderReports, SmartReorder, StockPlanning, SupplierVisits } from './pages/purchases/SmartReorder';
 
 // Placeholder components for other modules
 const Masters = () => <div className="h-96 flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl text-slate-400">Masters Module (Phase 3)</div>;
@@ -230,6 +231,10 @@ const App = () => {
             <Route path="purchases/grn" element={<Purchases />} />
             <Route path="purchases/grn/new" element={<PurchaseEntry />} />
             <Route path="purchases/grn/:id" element={<Purchases />} />
+            <Route path="purchases/smart-reorder" element={<SmartReorder />} />
+            <Route path="purchases/stock-planning" element={<StockPlanning />} />
+            <Route path="purchases/supplier-visits" element={<SupplierVisits />} />
+            <Route path="purchases/reorder-reports" element={<ReorderReports />} />
             <Route path="purchases/po" element={<POList />} />
             <Route path="purchases/po/create" element={<POCreate />} />
             <Route path="purchases/po/edit/:id" element={<POCreate />} />

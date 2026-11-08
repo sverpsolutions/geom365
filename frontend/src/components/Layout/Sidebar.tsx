@@ -95,6 +95,10 @@ const NAV_SECTIONS = [
     color: '#ef4444', // Red
     children: [
       { label: 'Excel Import (PO / GRN / Bill / Items / Prices)', to: '/imports', icon: 'fas fa-file-excel' },
+      { label: 'Smart Reorder', to: '/purchases/smart-reorder', icon: 'fas fa-robot' },
+      { label: 'Stock Planning', to: '/purchases/stock-planning', icon: 'fas fa-sliders-h' },
+      { label: 'Supplier Visits', to: '/purchases/supplier-visits', icon: 'fas fa-calendar-check' },
+      { label: 'Reorder Reports', to: '/purchases/reorder-reports', icon: 'fas fa-chart-pie' },
       { label: 'PO List', to: '/purchases/po', icon: 'fas fa-file-invoice' },
       { label: 'Create New PO', to: '/purchases/po/create', icon: 'fas fa-plus-circle' },
       { label: 'GRN — Inward', to: '/purchases/grn', icon: 'fas fa-truck-loading' },

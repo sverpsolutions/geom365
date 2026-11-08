@@ -2405,6 +2405,18 @@ const ProductAdd = () => {
                     onKeyDown={e => handlePriceEnter(e, 'f_low_stock_threshold')} />
                 </Field>
                 <Field>
+                  <Label>Supplier Visit Days</Label>
+                  <input {...register('supplier_visit_days')} type="number" min="0" className={`${inputCls} font-mono`} placeholder="Supplier default" />
+                </Field>
+                <Field>
+                  <Label>Safety Stock Days</Label>
+                  <input {...register('safety_stock_days')} type="number" min="0" className={`${inputCls} font-mono`} placeholder="Supplier default" />
+                </Field>
+                <Field>
+                  <Label>Lead Time Days</Label>
+                  <input {...register('lead_time_days')} type="number" min="0" className={`${inputCls} font-mono`} placeholder="Supplier default" />
+                </Field>
+                <Field>
                   <Label>Low Stock Alert</Label>
                   <input {...register('low_stock_threshold')} id="f_low_stock_threshold" type="number" 
                     className={`${inputCls} font-mono`} placeholder="5" 

@@ -411,6 +411,9 @@ class product_create(BaseModel):
     min_stock: Decimal = Decimal("0.000")
     reorder_level: Decimal = Decimal("0.00")
     max_stock_level: Decimal = Decimal("0.00")
+    supplier_visit_days: int | None = None
+    safety_stock_days: int | None = None
+    lead_time_days: int | None = None
     shelf_life_days: int | None = None
     rack_no: str | None = None
     aisle_no: str | None = None
@@ -473,7 +476,7 @@ class product_create(BaseModel):
     @field_validator('category_id', 'brand_id', 'hsn_id', 'suggested_hsn_id', 'unit_id', 'plu_code', 
                      'manufacturer_id', 'submanufacturer_id', 'classification_id', 'variant_id', 'flavour_id', 
                      'group_id', 'subgroup_id', 'subcategory_id', 'supplier_id', 'country_id', 'sub_category_brand_id',
-                     'carton_size', 'shelf_life_days', 'low_stock_threshold', mode='before')
+                     'carton_size', 'shelf_life_days', 'low_stock_threshold', 'supplier_visit_days', 'safety_stock_days', 'lead_time_days', mode='before')
     @classmethod
     def empty_str_to_int(cls, v):
         if v == "": return None
@@ -562,6 +565,9 @@ class product_update(BaseModel):
     min_stock: Decimal | None = None
     reorder_level: Decimal | None = None
     max_stock_level: Decimal | None = None
+    supplier_visit_days: int | None = None
+    safety_stock_days: int | None = None
+    lead_time_days: int | None = None
     shelf_life_days: int | None = None
     rack_no: str | None = None
     aisle_no: str | None = None
@@ -627,7 +633,7 @@ class product_update(BaseModel):
     @field_validator('category_id', 'brand_id', 'hsn_id', 'suggested_hsn_id', 'unit_id', 'plu_code', 
                      'manufacturer_id', 'submanufacturer_id', 'classification_id', 'variant_id', 'flavour_id', 
                      'group_id', 'subgroup_id', 'subcategory_id', 'supplier_id', 'country_id', 'sub_category_brand_id',
-                     'carton_size', 'shelf_life_days', 'low_stock_threshold', mode='before')
+                     'carton_size', 'shelf_life_days', 'low_stock_threshold', 'supplier_visit_days', 'safety_stock_days', 'lead_time_days', mode='before')
     @classmethod
     def empty_str_to_int(cls, v):
         if v == "": return None
@@ -719,6 +725,9 @@ class product_out(BaseModel):
     min_stock: Decimal = Decimal("0")
     reorder_level: Decimal = Decimal("0")
     max_stock_level: Decimal = Decimal("0")
+    supplier_visit_days: int | None = None
+    safety_stock_days: int | None = None
+    lead_time_days: int | None = None
     shelf_life_days: int | None = None
     rack_no: str | None = None
     aisle_no: str | None = None

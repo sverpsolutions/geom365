@@ -391,6 +391,9 @@ class product(base):
     low_stock_threshold: Mapped[int] = mapped_column(Integer, default=5)
     min_stock: Mapped[Decimal] = mapped_column(Numeric(15, 3), default=0.000)
     reorder_level: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0.00)
+    supplier_visit_days: Mapped[int | None] = mapped_column(Integer)
+    safety_stock_days: Mapped[int | None] = mapped_column(Integer)
+    lead_time_days: Mapped[int | None] = mapped_column(Integer)
     max_stock_level: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0.00)
     # manufacturing inventory: FG finished, RM raw material, PM packing material, SFG semi-finished, CONS consumable, OTH other
     item_type: Mapped[str] = mapped_column(String(4), default="FG", server_default="FG")

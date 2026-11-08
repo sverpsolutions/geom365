@@ -94,7 +94,7 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
 PATHS: dict[str, str] = {
     "/dashboard": "dashboard", "/products": "items", "/masters": "masters", "/states": "masters", "/channels": "masters",
     "/packaging": "masters", "/suppliers": "suppliers", "/customers": "customers", "/outlets": "outlets",
-    "/purchases/po": "purchase_order", "/purchases/multi-po": "purchase_order", "/purchases/intelligence": "purchase_order",
+    "/reorder": "purchase_order", "/purchases/po": "purchase_order", "/purchases/multi-po": "purchase_order", "/purchases/intelligence": "purchase_order",
     "/purchases": "grn", "/purchase-returns": "purchase_return",
     "/inventory": "stock_transfer", "/logistics": "stock_transfer", "/stock-take": "stock_adjustment", "/batches": "batches",
     "/warehouse": "warehouse", "/wms": "warehouse",
