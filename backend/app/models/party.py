@@ -89,6 +89,7 @@ class supplier(base):
     onboarding_token: Mapped[str | None] = mapped_column(String(100), unique=True)
     # Portal Sales Permission controls
     portal_sales_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    allow_wholesale_bill: Mapped[bool] = mapped_column(Boolean, default=False)  # we may raise wholesale bills to this supplier
     portal_sales_config: Mapped[dict | None] = mapped_column(JSON)
     portal_permissions: Mapped[dict | None] = mapped_column(JSON)
     # Approval tracking

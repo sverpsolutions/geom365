@@ -27,6 +27,8 @@ async def create_invoice(
     db: AsyncSession = Depends(get_db),
     current_user: current_user_dep = Depends(get_current_user),
 ):
+    if data.invoice_type == "wholesale":
+        raise HTTPException(status_code=400, detail="Wholesale bills are made under Wholesale → New Wholesale Bill.")
     try:
         inv = await billing_service.create_invoice(db, data, current_user.id)
         return inv

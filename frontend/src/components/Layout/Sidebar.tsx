@@ -90,6 +90,17 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: 'Wholesale',
+    icon: 'fas fa-boxes',
+    color: '#7c3aed',
+    children: [
+      { label: 'New Wholesale Bill', to: '/wholesale/new', icon: 'fas fa-plus' },
+      { label: 'Wholesale Bills', to: '/wholesale', icon: 'fas fa-file-invoice-dollar' },
+      { label: 'Party Ledger', to: '/wholesale/ledger', icon: 'fas fa-book' },
+      { label: 'E-Invoice Settings', to: '/wholesale/settings', icon: 'fas fa-plug' },
+    ],
+  },
+  {
     label: 'Purchases',
     icon: 'fas fa-shopping-cart',
     color: '#ef4444', // Red

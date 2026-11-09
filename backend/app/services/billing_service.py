@@ -18,7 +18,7 @@ from app.models.invoice import (
 )
 from app.models.product import product as product_model
 from app.models.outlet import outlet as outlet_model
-from app.services import shift_service, batch_service, scheme_service, discount_service, loyalty_service
+from app.services import shift_service, batch_service, scheme_service, discount_service, loyalty_service, gstzen
 from app.core import access
 from app.schemas.invoice import (
     invoice_create, payment_in,
@@ -37,6 +37,17 @@ async def _next_invoice_no(db: AsyncSession, outlet_id: Optional[int]) -> str:
     )
     count = result.scalar() or 0
     return f"{prefix}{count + 1:04d}"
+
+
+async def _next_wholesale_no(db: AsyncSession, on: date) -> str:
+    """{prefix}{FY}{serial}, e.g. WS26270040: one company-wide series per financial year, as at Gupta Bros. Stays within NIC's DocDtls.No rule (16 chars)."""
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext('wholesale_no'))"))
+    prefix = (await db.execute(text("SELECT wholesale_invoice_prefix FROM company_settings ORDER BY id LIMIT 1"))).scalar() or "WS"
+    head = prefix + gstzen.fy_code(on)
+    last = (await db.execute(text("""SELECT COALESCE(MAX(CAST(SUBSTR(invoice_no, :n) AS INTEGER)), 0) FROM unit_wise_invoices
+                                     WHERE LEFT(invoice_no, :l) = :h AND SUBSTR(invoice_no, :n) ~ '^[0-9]+$'"""),
+                             {"n": len(head) + 1, "l": len(head), "h": head})).scalar()
+    return f"{head}{last + 1:04d}"
 
 
 async def _next_payment_no(db: AsyncSession) -> str:
@@ -247,6 +258,7 @@ async def create_invoice(
     db: AsyncSession,
     data: invoice_create,
     user_id: Optional[int],
+    extra: Optional[dict] = None,  # wholesale: delivery-address columns, saved in the same transaction
 ) -> invoice:
     access.check_outlet(data.outlet_id)
     await access.check_products(db, [it.product_id for it in data.items])
@@ -254,8 +266,9 @@ async def create_invoice(
         p.payment_mode = p.payment_mode.strip().lower()
     await check_payment_modes(db, [p.payment_mode for p in data.payments] if data.payments else [data.payment_mode], data.outlet_id,
                               strict=bool(data.payments))
-    shift_id = await shift_service.guard(db, data.outlet_id, user_id, data.invoice_date)
-    invoice_no = await _next_invoice_no(db, data.outlet_id)
+    wholesale = data.invoice_type == "wholesale"   # a head-office document: not tied to a store's open day or a cashier's drawer
+    shift_id = None if wholesale else await shift_service.guard(db, data.outlet_id, user_id, data.invoice_date)
+    invoice_no = await (_next_wholesale_no(db, data.invoice_date) if wholesale else _next_invoice_no(db, data.outlet_id))
 
     # build item rows + collect computed dicts for totalling
     item_rows = []
@@ -463,7 +476,9 @@ async def create_invoice(
     if loyalty_amt > 0:
         await loyalty_service.redeem(db, customer_id=data.customer_id, outlet_id=data.outlet_id, amount=loyalty_amt,
                                      bill_total=totals["total_amount"], invoice_id=inv.id, invoice_no=invoice_no, user_id=user_id)
-    if data.invoice_type not in ("return", "credit_note", "proforma"):
+    if extra:
+        await db.execute(text("UPDATE unit_wise_invoices SET " + ", ".join(f"{k} = :{k}" for k in extra) + " WHERE id = :_i"), {**extra, "_i": inv.id})
+    if data.invoice_type not in ("return", "credit_note", "proforma", "wholesale"):
         await loyalty_service.earn(db, customer_id=data.customer_id, outlet_id=data.outlet_id, on=data.invoice_date,
                                    lines=[(i["product_id"], i["total"]) for i in items_data], paid_by_points=loyalty_amt,
                                    invoice_id=inv.id, invoice_no=invoice_no, user_id=user_id)
@@ -555,7 +570,7 @@ async def add_payment(
     access.check_outlet(inv.outlet_id)
     if inv.status == "cancelled":
         raise ValueError("Cannot collect payment on a cancelled invoice")
-    shift_id = await shift_service.guard(db, inv.outlet_id, user_id, data.payment_date)
+    shift_id = None if inv.invoice_type == "wholesale" else await shift_service.guard(db, inv.outlet_id, user_id, data.payment_date)
 
     pay_no = await _next_payment_no(db)
     pay = invoice_payment(
@@ -615,7 +630,11 @@ async def cancel_invoice(
     access.check_outlet(inv.outlet_id)
     if inv.status == "cancelled":
         raise ValueError("Invoice already cancelled")
-    await shift_service.guard(db, inv.outlet_id, user_id)
+    if inv.invoice_type == "wholesale":
+        if (await db.execute(text("SELECT einvoice_status FROM unit_wise_invoices WHERE id = :i"), {"i": invoice_id})).scalar() == "generated":
+            raise ValueError("This bill has an active E-Invoice: cancel the IRN first (the GST portal allows it within 24 hours).")
+    else:
+        await shift_service.guard(db, inv.outlet_id, user_id)
 
     # restore stock
     items_res = await db.execute(

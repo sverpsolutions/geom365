@@ -113,7 +113,7 @@ const BLANK_FORM: Partial<supplier_detail> = {
   gst_number: '', pan_number: '', cin_number: '', website: '',
   addresses: [], contacts: [], directors: [], auth_persons: [], brands: [],
   financial: { bank_name: '', account_no: '', ifsc_code: '', branch: '', credit_limit: 0, credit_days: 0 },
-  documents: [], internal_notes: [], gstins: [],
+  documents: [], internal_notes: [], gstins: [], allow_wholesale_bill: false,
 }
 
 const OnboardingModal = ({ isOpen, onClose, onSuccess }: { isOpen: boolean; onClose: () => void; onSuccess: (link: string) => void }) => {
@@ -581,6 +581,11 @@ export default function SuppliersPage({ searchQuery = '', onCountUpdate }: { sea
                 <SelectField label="Company Type" value={form.company_type} onChange={(v: string) => setForm(f => ({ ...f, company_type: v }))} options={['Proprietorship', 'Partnership', 'Pvt Ltd', 'LLP', 'Public Ltd']} />
                 <SelectField label="Category" value={form.category} onChange={(v: string) => setForm(f => ({ ...f, category: v }))} options={['FMCG', 'Beverage', 'Grocery', 'Frozen', 'Electronics', 'Dairy', 'Bakery', 'General']} />
               </div>
+              <label className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                <input type="checkbox" className="mt-0.5" checked={!!form.allow_wholesale_bill} onChange={e => setForm(f => ({ ...f, allow_wholesale_bill: e.target.checked }))} />
+                <span className="text-sm font-semibold text-slate-700">Allow wholesale bill
+                  <span className="block text-xs font-normal text-slate-500">We sometimes sell to this supplier: list it under Wholesale, and show those bills and receipts in its ledger.</span></span>
+              </label>
               <div className="border-t border-slate-100 pt-6">
                 <SectionTitle title="Primary Contact" />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

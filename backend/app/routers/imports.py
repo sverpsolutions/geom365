@@ -174,7 +174,10 @@ async def _wholesale(db, h, rows, user, job, b):
         items.append(invoice_item_in(product_id=r["product_id"], name=r["item_name"], qty=r["qty"], unit=r.get("unit") or r["_unit"],
                                      rate=(X._d(r["rate"]) / (1 + g / 100)).quantize(Decimal("0.0001")), gst_percent=g,
                                      disc_val=X._d(r.get("discount_pct")), disc_type="%", batch_id=bid, batch_no=r.get("batch_no")))
+    from app.routers.wholesale import interstate_for
+    cust = (await db.execute(text("SELECT * FROM customers WHERE id = :c"), {"c": int(h["customer_id"])})).mappings().first()
     data = invoice_create(outlet_id=int(h["outlet_id"]), customer_id=int(h["customer_id"]), invoice_type="wholesale", invoice_date=h.get("invoice_date") or date.today(),
+                          is_interstate=await interstate_for(db, int(h["outlet_id"]), dict(cust)), round_off=True,
                           payment_mode="credit", paid_amount=Decimal(0), items=items, discount_approval_no=h.get("discount_approval_no") or None,
                           notes=f"Wholesale import {job['import_no']}" + (f" · Customer PO {h['customer_po']}" if h.get("customer_po") else "")
                           + (f" · Terms: {h['payment_terms']}" if h.get("payment_terms") else ""))

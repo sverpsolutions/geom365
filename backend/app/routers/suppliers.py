@@ -216,6 +216,8 @@ async def update_supplier(
         db.expire(obj, ['updated_at', 'created_at'])
 
         exclude_nested = {"addresses", "legal", "contacts", "directors", "auth_persons", "brands", "financial", "documents", "gstins"}
+        if "allow_wholesale_bill" not in body.model_fields_set:   # a screen that does not send it must not switch it off
+            exclude_nested.add("allow_wholesale_bill")
         for key, value in body.model_dump(exclude=exclude_nested).items():
             if hasattr(obj, key):
                 setattr(obj, key, value)

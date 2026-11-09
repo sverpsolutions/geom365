@@ -135,6 +135,7 @@ import ExcelImport from './pages/retail/ExcelImport';
 import { PoEmailSettings } from './pages/retail/purchaseControls';
 import TelegramAssistant from './pages/settings/TelegramAssistant';
 import { ReorderReports, SmartReorder, StockPlanning, SupplierVisits } from './pages/purchases/SmartReorder';
+import { EinvoiceSettings, WholesaleBills, WholesaleLedger, WholesaleNew, WholesaleView } from './pages/wholesale/Wholesale';
 
 // Placeholder components for other modules
 const Masters = () => <div className="h-96 flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl text-slate-400">Masters Module (Phase 3)</div>;
@@ -232,6 +233,11 @@ const App = () => {
             <Route path="purchases/grn/new" element={<PurchaseEntry />} />
             <Route path="purchases/grn/:id" element={<Purchases />} />
             <Route path="purchases/smart-reorder" element={<SmartReorder />} />
+            <Route path="wholesale" element={<WholesaleBills />} />
+            <Route path="wholesale/new" element={<WholesaleNew />} />
+            <Route path="wholesale/ledger" element={<WholesaleLedger />} />
+            <Route path="wholesale/settings" element={<EinvoiceSettings />} />
+            <Route path="wholesale/:id" element={<WholesaleView />} />
             <Route path="purchases/stock-planning" element={<StockPlanning />} />
             <Route path="purchases/supplier-visits" element={<SupplierVisits />} />
             <Route path="purchases/reorder-reports" element={<ReorderReports />} />

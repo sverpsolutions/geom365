@@ -162,6 +162,7 @@ export interface supplier_detail extends supplier_list_item {
   product_categories?: string[] | any;
   company_description?: string | null;
   portal_sales_enabled?: boolean;
+  allow_wholesale_bill?: boolean
   portal_sales_config?: Record<string, boolean>;
 
   // Nested

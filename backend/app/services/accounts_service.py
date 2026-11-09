@@ -289,6 +289,22 @@ async def ledger(db: AsyncSession, supplier_id: int, from_date: date, to_date: d
         UNION ALL
         SELECT return_date, created_at, 'Debit note', prn_no, ref_purchase_no, total_amount, 0
           FROM unit_wise_purchase_returns WHERE supplier_id = :s AND status <> 'cancelled'
+        UNION ALL
+        SELECT i.invoice_date, i.created_at, 'Sale bill', i.invoice_no, i.payment_mode, i.total_amount, 0
+          FROM unit_wise_invoices i JOIN customers c ON c.id = i.customer_id
+          WHERE c.linked_supplier_id = :s AND i.status <> 'cancelled' AND i.invoice_type NOT IN ('return', 'credit_note', 'proforma')
+        UNION ALL
+        SELECT p.payment_date, p.created_at, 'Receipt', p.payment_no, p.payment_mode || ' ' || COALESCE(p.reference_no, ''), 0, p.amount
+          FROM unit_wise_payments p JOIN customers c ON c.id = p.customer_id LEFT JOIN unit_wise_invoices i ON i.id = p.invoice_id
+          WHERE c.linked_supplier_id = :s AND COALESCE(i.status, '') <> 'cancelled'
+        UNION ALL
+        SELECT i.invoice_date, i.created_at, 'Sale return', i.invoice_no, i.ref_invoice_no, 0, i.total_amount
+          FROM unit_wise_invoices i JOIN customers c ON c.id = i.customer_id
+          WHERE c.linked_supplier_id = :s AND i.status <> 'cancelled' AND i.invoice_type = 'return'
+        UNION ALL
+        SELECT i.invoice_date, i.created_at, 'Cash refund', i.invoice_no, i.ref_invoice_no, i.total_amount, 0
+          FROM unit_wise_invoices i JOIN customers c ON c.id = i.customer_id
+          WHERE c.linked_supplier_id = :s AND i.status <> 'cancelled' AND i.invoice_type = 'return' AND i.refund_method = 'cash'
     """
     opening = _two((await db.execute(text("SELECT COALESCE(opening_balance, 0) FROM suppliers WHERE id = :s"), p)).scalar())
     before = (await db.execute(text(f"SELECT COALESCE(SUM(credit - debit), 0) FROM ({lines_sql}) x WHERE d < :fd"), p)).scalar()
@@ -325,6 +341,43 @@ async def bank_book(db: AsyncSession, bank_account_id: int, from_date: date, to_
         bal += _two(r["receipt"]) - _two(r["payment"])
         out.append({**dict(r), "balance": bal})
     return {"account": dict(acc), "opening": opening, "lines": out, "closing": bal}
+
+
+async def customer_ledger(db: AsyncSession, customer_id: int, from_date: date, to_date: date) -> dict:
+    """Debit = they owe more (bill, cash refund), credit = they owe less (receipt, credit note). Sorted first, then the running balance."""
+    p = {"c": customer_id, "fd": from_date, "td": to_date}
+    lines_sql = """
+        SELECT invoice_date AS d, created_at AS t, 'Bill' AS type, invoice_no AS ref, invoice_type AS doc, total_amount AS debit, 0::numeric AS credit
+          FROM unit_wise_invoices WHERE customer_id = :c AND status <> 'cancelled' AND invoice_type NOT IN ('return', 'credit_note', 'proforma')
+        UNION ALL
+        SELECT p.payment_date, p.created_at, 'Receipt', p.payment_no, p.payment_mode || ' ' || COALESCE(p.reference_no, ''), 0, p.amount
+          FROM unit_wise_payments p LEFT JOIN unit_wise_invoices i ON i.id = p.invoice_id
+          WHERE p.customer_id = :c AND COALESCE(i.status, '') <> 'cancelled'
+        UNION ALL
+        SELECT invoice_date, created_at, 'Credit note', invoice_no, ref_invoice_no, 0, total_amount
+          FROM unit_wise_invoices WHERE customer_id = :c AND status <> 'cancelled' AND invoice_type = 'return'
+        UNION ALL
+        SELECT invoice_date, created_at, 'Cash refund', invoice_no, ref_invoice_no, total_amount, 0
+          FROM unit_wise_invoices WHERE customer_id = :c AND status <> 'cancelled' AND invoice_type = 'return' AND refund_method = 'cash'
+    """
+    base = _two((await db.execute(text("SELECT COALESCE(opening_balance, 0) FROM customers WHERE id = :c"), p)).scalar() or Decimal(0))
+    before = (await db.execute(text(f"SELECT COALESCE(SUM(debit - credit), 0) FROM ({lines_sql}) x WHERE d < :fd"), p)).scalar()
+    rows = (await db.execute(text(f"SELECT * FROM ({lines_sql}) x WHERE d BETWEEN :fd AND :td ORDER BY d, t, debit DESC"), p)).mappings().all()
+    bal = opening = base + _two(before)
+    out = []
+    for r in rows:
+        bal += _two(r["debit"]) - _two(r["credit"])
+        out.append({**dict(r), "balance": bal})
+    return {"opening": opening, "lines": out, "closing": bal}
+
+
+async def customer_outstanding(db: AsyncSession, ids: Optional[list[int]] = None) -> dict[int, Decimal]:
+    """What each customer owes: opening balance + unpaid bills, the same figure Receivables uses."""
+    rows = await db.execute(text("""
+        SELECT c.id, COALESCE(c.opening_balance, 0) + COALESCE(SUM(i.due_amount) FILTER (WHERE i.status <> 'cancelled' AND i.invoice_type <> 'return'), 0) AS owing
+        FROM customers c LEFT JOIN unit_wise_invoices i ON i.customer_id = c.id
+        WHERE CAST(:ids AS INTEGER[]) IS NULL OR c.id = ANY(CAST(:ids AS INTEGER[])) GROUP BY c.id"""), {"ids": ids})
+    return {r.id: r.owing for r in rows}
 
 
 async def receivables(db: AsyncSession) -> list[dict]:

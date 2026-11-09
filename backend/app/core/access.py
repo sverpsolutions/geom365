@@ -39,6 +39,7 @@ MODULES: list[tuple[str, str, str, list[str]]] = [
     ("batches", "Batch & Expiry", "module", ["view", "create", "edit"]),
     ("warehouse", "Warehouse / WMS", "module", ["view", "create", "edit", "delete"]),
     ("billing", "Sales & Billing (POS)", "module", ["view", "create", "edit", "cancel", "print", "export"]),
+    ("wholesale", "Wholesale Billing & E-Invoice", "module", ["view", "create", "edit", "cancel", "print"]),
     ("sales_return", "Sales Return / Credit Note", "module", ["view", "create", "cancel", "print"]),
     ("estimates", "Estimates", "module", ["view", "create", "edit", "delete"]),
     ("day_shift", "Day & Shift Open/Close", "module", ["view", "create", "approve", "submit", "reopen"]),
@@ -85,7 +86,7 @@ ROLE_TEMPLATES: dict[str, list[str]] = {
         + _F(*_REPORTS),
     "purchase_manager": _V("dashboard", "items", "masters", "outlets", "batches") + _F("suppliers", "purchase_order", "grn",
         "purchase_return", "accounts") + _F("rep_purchase", "rep_stock"),
-    "accounts_manager": _V("dashboard", "suppliers", "customers", "billing", "grn", "purchase_return") + _F("accounts", "cash", "day_shift")
+    "accounts_manager": _V("dashboard", "suppliers", "customers", "billing", "wholesale", "grn", "purchase_return") + _F("accounts", "cash", "day_shift")
         + _F("rep_finance", "rep_gst", "rep_sales", "rep_purchase"),
 }
 
@@ -98,7 +99,7 @@ PATHS: dict[str, str] = {
     "/purchases": "grn", "/purchase-returns": "purchase_return",
     "/inventory": "stock_transfer", "/logistics": "stock_transfer", "/stock-take": "stock_adjustment", "/batches": "batches",
     "/warehouse": "warehouse", "/wms": "warehouse",
-    "/billing": "billing", "/billing/returns": "sales_return", "/estimates": "estimates", "/shifts": "day_shift",
+    "/wholesale": "wholesale", "/billing": "billing", "/billing/returns": "sales_return", "/estimates": "estimates", "/shifts": "day_shift",
     "/cash": "cash", "/accounts": "accounts", "/schemes": "schemes", "/import-export": "import_export",
     "/users": "users", "/roles": "users", "/permissions": "users", "/access": "users", "/company": "settings",
     "/audit-logs": "audit", "/stock-reports": "rep_stock", "/manufacturing": "manufacturing",

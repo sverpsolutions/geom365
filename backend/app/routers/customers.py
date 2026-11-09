@@ -1,5 +1,5 @@
 import math
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, text, update
@@ -11,6 +11,7 @@ from app.schemas.party import (
     customer_create, customer_update, customer_out, customer_list_out, customer_summary, ledger_row,
 )
 from app.schemas.common import paginated_response, success_response
+from app.services import accounts_service
 from app.services.auth_service import write_audit
 from app.utils.search import word_match
 
@@ -44,6 +45,8 @@ async def list_customers(
         q.order_by(customer_model.name).offset((page - 1) * per_page).limit(per_page)
     )).scalars().all()
 
+    owing = await accounts_service.customer_outstanding(db, [r.id for r in rows])
+    rows = [customer_list_out.model_validate(r).model_copy(update={"balance": owing.get(r.id, r.balance)}) for r in rows]
     return {
         "data": rows, "total": total, "page": page,
         "per_page": per_page,
@@ -62,9 +65,10 @@ async def customers_summary(
         func.count().filter(active),
         func.count().filter(active, c.type == "wholesale"),
         func.count().filter(active, c.gst_number.isnot(None)),
-        func.coalesce(func.sum(c.balance).filter(active, c.balance > 0), 0),
     ))).one()
-    return dict(zip(("total", "active", "wholesale", "b2b", "outstanding"), row))
+    ids = (await db.execute(select(c.id).where(active))).scalars().all()
+    owing = sum(v for v in (await accounts_service.customer_outstanding(db, list(ids))).values() if v > 0)
+    return dict(zip(("total", "active", "wholesale", "b2b", "outstanding"), (*row, owing)))
 
 
 async def _ensure_unique(db: AsyncSession, gst_number: str | None, code: str | None, exclude_id: int | None = None):
@@ -172,12 +176,9 @@ async def customer_ledger(
     if not cust:
         raise HTTPException(status_code=404, detail="customer not found")
 
+    book = await accounts_service.customer_ledger(db, customer_id, date(2000, 1, 1), date(2100, 1, 1))
     ledger: list[ledger_row] = []
-    running = Decimal("0.00")
-
-    # opening balance row
     if cust.opening_balance != 0:
-        running += cust.opening_balance
         ledger.append(ledger_row(
             date=cust.created_at.date(),
             ref_no="OPEN",
@@ -185,47 +186,8 @@ async def customer_ledger(
             description="Opening Balance",
             debit=cust.opening_balance if cust.opening_balance > 0 else Decimal("0"),
             credit=abs(cust.opening_balance) if cust.opening_balance < 0 else Decimal("0"),
-            balance=running,
+            balance=book["opening"],
         ))
-
-    # invoices
-    inv_result = await db.execute(text("""
-        SELECT invoice_no, invoice_date, total_amount, due_amount, status
-        FROM unit_wise_invoices
-        WHERE customer_id = :cid AND status != 'cancelled'
-        ORDER BY invoice_date, id
-    """), {"cid": customer_id})
-    for inv in inv_result.fetchall():
-        running += Decimal(str(inv.total_amount))
-        ledger.append(ledger_row(
-            date=inv.invoice_date,
-            ref_no=inv.invoice_no,
-            type="invoice",
-            description=f"Invoice {inv.invoice_no}",
-            debit=Decimal(str(inv.total_amount)),
-            credit=Decimal("0"),
-            balance=running,
-        ))
-
-    # payments
-    pay_result = await db.execute(text("""
-        SELECT payment_no, payment_date, amount, payment_mode
-        FROM unit_wise_payments
-        WHERE customer_id = :cid
-        ORDER BY payment_date, id
-    """), {"cid": customer_id})
-    for pay in pay_result.fetchall():
-        running -= Decimal(str(pay.amount))
-        ledger.append(ledger_row(
-            date=pay.payment_date,
-            ref_no=pay.payment_no,
-            type="payment",
-            description=f"Payment ({pay.payment_mode})",
-            debit=Decimal("0"),
-            credit=Decimal(str(pay.amount)),
-            balance=running,
-        ))
-
-    # sort by date
-    ledger.sort(key=lambda x: x.date)
+    ledger += [ledger_row(date=r["d"], ref_no=r["ref"], type=r["type"].lower(), description=f"{r['type']} {r['doc'] or ''}".strip(),
+                          debit=r["debit"], credit=r["credit"], balance=r["balance"]) for r in book["lines"]]
     return ledger

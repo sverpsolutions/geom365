@@ -110,6 +110,7 @@ export interface product_search_item {
   cost_price?: number | string
   basic_cost?: number | string
   selling_price: string | number
+  wsp?: string | number
   mrp: string | number
   barcode_crt?: string | null
   gst_percent?: string | number

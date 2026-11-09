@@ -135,6 +135,7 @@ import ExcelImport from '../pages/retail/ExcelImport';
 import { PoEmailSettings } from '../pages/retail/purchaseControls';
 import TelegramAssistant from '../pages/settings/TelegramAssistant';
 import { ReorderReports, SmartReorder, StockPlanning, SupplierVisits } from '../pages/purchases/SmartReorder';
+import { EinvoiceSettings, WholesaleBills, WholesaleLedger, WholesaleNew, WholesaleView } from '../pages/wholesale/Wholesale';
 
 export interface RouteConfig {
   id: string;
@@ -298,6 +299,11 @@ export const APP_ROUTES: RouteConfig[] = [
   { id: '1508', path: '/imports', component: ExcelImport, title: 'Excel Import' },
   { id: '1509', path: '/settings/telegram', component: TelegramAssistant, title: 'Telegram Business Assistant' },
   { id: '1510', path: '/purchases/smart-reorder', component: SmartReorder, title: 'Smart Reorder' },
+  { id: '1520', path: '/wholesale', component: WholesaleBills, title: 'Wholesale Bills' },
+  { id: '1521', path: '/wholesale/new', component: WholesaleNew, title: 'New Wholesale Bill' },
+  { id: '1522', path: '/wholesale/ledger', component: WholesaleLedger, title: 'Party Ledger' },
+  { id: '1523', path: '/wholesale/settings', component: EinvoiceSettings, title: 'E-Invoice Settings' },
+  { id: '1524', path: '/wholesale/:id', component: WholesaleView, title: 'Wholesale Bill' },
   { id: '1511', path: '/purchases/stock-planning', component: StockPlanning, title: 'Stock Planning' },
   { id: '1512', path: '/purchases/supplier-visits', component: SupplierVisits, title: 'Supplier Visits' },
   { id: '1513', path: '/purchases/reorder-reports', component: ReorderReports, title: 'Reorder Reports' },

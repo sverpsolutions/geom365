@@ -387,6 +387,7 @@ class supplier_create(BaseModel):
     company_description: str | None = None
     portal_sales_enabled: bool = False
     portal_sales_config: dict | None = None
+    allow_wholesale_bill: bool = False
 
     # Nested data
     addresses: list[supplier_address_schema] = []
@@ -501,6 +502,7 @@ class supplier_update(BaseModel):
     status: bool | None = None
     portal_sales_enabled: bool | None = None
     portal_sales_config: dict | None = None
+    allow_wholesale_bill: bool | None = None
 
 
 class supplier_out(BaseModel):
@@ -549,6 +551,7 @@ class supplier_out(BaseModel):
     portal_sales_enabled: bool = False
     portal_sales_config: dict | None = None
     portal_permissions: dict | None = None
+    allow_wholesale_bill: bool = False
 
     # Nested fields
     addresses: list[supplier_address_schema] = []

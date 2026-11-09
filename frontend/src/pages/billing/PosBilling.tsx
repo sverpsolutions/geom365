@@ -51,7 +51,7 @@ export default function PosBilling() {
   const [custHits, setCustHits] = useState<customer_list_item[]>([])
   const [custHi, setCustHi] = useState(-1)  // arrow-key highlight in customer dropdown, -1 = none
   const [newCust, setNewCust] = useState<{ name: string; phone: string; city: string } | null>(null)
-  const [invType, setInvType] = useState('retail')
+  const invType = 'retail'   // wholesale bills: Wholesale → New Wholesale Bill
   // billing location: user's own outlet if assigned, else last one picked on this counter, else HO
   const userOutlet = useAuthStore(s => s.user?.outlet_id) ?? null
   const [outlets, setOutlets] = useState<{ id: number; unit_code: string; outlet_name: string }[]>([])
@@ -384,9 +384,6 @@ export default function PosBilling() {
         <select value={outletId ?? ''} onChange={e => setOutletId(Number(e.target.value) || null)} disabled={!!userOutlet}
           title="Billing location" className="w-[170px] border border-black/15 px-2 py-1 disabled:bg-slate-100">
           {outlets.map(o => <option key={o.id} value={o.id}>{o.outlet_name}</option>)}
-        </select>
-        <select value={invType} onChange={e => setInvType(e.target.value)} className="w-[115px] border border-black/15 px-2 py-1">
-          <option value="retail">Retail</option><option value="wholesale">Wholesale</option>
         </select>
         <input type="date" value={invDate} onChange={e => setInvDate(e.target.value)} disabled={!!dayShift?.day}
           title={dayShift?.day ? 'Bill date is the open business day' : undefined} className="w-[148px] border border-black/15 px-2 py-1 disabled:bg-slate-100" />

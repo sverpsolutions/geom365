@@ -105,6 +105,8 @@ for _r in (mfg_printing, mfg_production, mfg_sales, approvals, payment_modes, ex
     app.include_router(_r.router, prefix=API_PREFIX)
 from app.routers import reorder as _reorder
 app.include_router(_reorder.router, prefix=API_PREFIX)
+from app.routers import wholesale as _wholesale
+app.include_router(_wholesale.router, prefix=API_PREFIX)
 from app.routers import telegram as _tg
 app.include_router(_tg.hook, prefix=API_PREFIX)     # Telegram webhook: public, checked by its secret header
 app.include_router(_tg.router, prefix=API_PREFIX)
