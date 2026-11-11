@@ -1,5 +1,5 @@
 // Wholesale billing (from NCG / Gupta Bros): GST bills to wholesale customers, franchise outlets and cleared suppliers, with e-invoice, e-way bill, receipts and party ledger.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
@@ -86,9 +86,28 @@ export function WholesaleBills() {
   );
 }
 
+/** Up / Down moves through a search list, Enter picks the highlighted row. */
+function useListKeys<T>(list: T[], pick: (row: T) => void) {
+  const [hi, setHi] = useState(0);
+  useEffect(() => setHi(0), [list]);
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (!list.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHi(i => (i + 1) % list.length); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(i => (i - 1 + list.length) % list.length); }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(list[Math.min(hi, list.length - 1)]); }
+  };
+  const rowProps = (i: number) => ({
+    onMouseEnter: () => setHi(i),
+    ref: i === hi ? (el: HTMLButtonElement | null) => el?.scrollIntoView({ block: 'nearest' }) : undefined,
+  });
+  return { hi, onKeyDown, rowProps };
+}
+
 /* ── Party picker ── */
 function PartyPicker({ kind, onPick, autoFocus }: { kind?: string; onPick: (p: any) => void; autoFocus?: boolean }) {
   const [q, setQ] = useState(''), [hits, setHits] = useState<any[]>([]), [open, setOpen] = useState(false);
+  const choose = (p: any) => { onPick(p); setQ(''); setOpen(false); };
+  const keys = useListKeys(open ? hits : [], choose);
   useEffect(() => {
     if (!open) return;
     const h = setTimeout(() => api.get('/wholesale/parties', { params: { q: q.trim(), kind: kind || undefined } }).then(r => setHits(r.data)).catch(err), 200);
@@ -96,12 +115,12 @@ function PartyPicker({ kind, onPick, autoFocus }: { kind?: string; onPick: (p: a
   }, [q, kind, open]);
   return (
     <div className="relative">
-      <input autoFocus={autoFocus} className={inp} placeholder="Search customer, franchise outlet or supplier" value={q} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} onChange={e => setQ(e.target.value)} />
+      <input autoFocus={autoFocus} className={inp} placeholder="Search customer, franchise outlet or supplier" value={q} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} onChange={e => setQ(e.target.value)} onKeyDown={keys.onKeyDown} />
       {open && (
         <div className="absolute z-30 w-full bg-white border border-slate-200 rounded-md shadow-lg max-h-64 overflow-y-auto">
           {hits.length === 0 && <div className="px-3 py-2 text-xs text-slate-400">No party found. Franchise outlets need Store Type = Franchise; suppliers need "Allow wholesale bill".</div>}
-          {hits.map(p => (
-            <button key={p.kind + p.id} type="button" onMouseDown={() => { onPick(p); setQ(''); setOpen(false); }} className="block w-full text-left px-3 py-1.5 hover:bg-indigo-50 border-b border-slate-100 text-sm">
+          {hits.map((p, i) => (
+            <button key={p.kind + p.id} type="button" {...keys.rowProps(i)} onMouseDown={() => choose(p)} className={`block w-full text-left px-3 py-1.5 border-b border-slate-100 text-sm ${i === keys.hi ? 'bg-indigo-100' : ''}`}>
               {p.name} <Kind k={p.kind} /> <span className="text-[11px] text-slate-400 ml-1">{p.gst_number || 'No GSTIN'}{p.city ? ` · ${p.city}` : ''}</span>
             </button>
           ))}
@@ -158,6 +177,7 @@ export function WholesaleNew() {
       : [...ls, { product_id: p.id, name: p.name, code: p.item_code, unit: p.unit, hsn: p.hsn_code || '', gst: Number(p.gst_percent || 0), stock: Number(p.stock_qty || 0), qty: '1', rate: String(rate), disc: '0' }]);
     setQ(''); setHits([]); searchRef.current?.focus();
   }
+  const itemKeys = useListKeys(hits, add);
   const edit = (i: number, k: 'qty' | 'rate' | 'disc', v: string) => setLines(ls => ls.map((l, n) => n === i ? { ...l, [k]: v } : l));
 
   const totals = useMemo(() => {
@@ -214,10 +234,10 @@ export function WholesaleNew() {
 
       <div className="bg-white border border-slate-200 rounded-lg p-3 mb-3">
         <div className="relative mb-2">
-          <input ref={searchRef} className={inp} placeholder="Search item by name, code or barcode, Enter adds the first" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && hits[0]) { e.preventDefault(); add(hits[0]); } }} />
+          <input ref={searchRef} className={inp} placeholder="Search item by name, code or barcode. Up / Down to choose, Enter to add" value={q} onChange={e => setQ(e.target.value)} onKeyDown={itemKeys.onKeyDown} />
           {hits.length > 0 && (
             <div className="absolute z-30 w-full bg-white border border-slate-200 rounded-md shadow-lg max-h-64 overflow-y-auto">
-              {hits.map(p => <button key={p.id} type="button" onClick={() => add(p)} className="flex justify-between w-full text-left px-3 py-1.5 hover:bg-indigo-50 border-b border-slate-100 text-sm"><span>{p.name} <span className="text-[11px] text-slate-400">{p.item_code}</span></span><span className="text-[11px] text-slate-500">Stock {fmt(p.stock_qty)} · WSP {inr(p.wsp)} · MRP {inr(p.mrp)}</span></button>)}
+              {hits.map((p, i) => <button key={p.id} type="button" {...itemKeys.rowProps(i)} onClick={() => add(p)} className={`flex justify-between w-full text-left px-3 py-1.5 border-b border-slate-100 text-sm ${i === itemKeys.hi ? 'bg-indigo-100' : ''}`}><span>{p.name} <span className="text-[11px] text-slate-400">{p.item_code}</span></span><span className="text-[11px] text-slate-500">Stock {fmt(p.stock_qty)} · WSP {inr(p.wsp)} · MRP {inr(p.mrp)}</span></button>)}
             </div>
           )}
         </div>
